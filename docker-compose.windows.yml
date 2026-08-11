@@ -1,0 +1,21 @@
+# Windows / Docker Desktop 本地部署
+# 用法: docker compose -f docker-compose.windows.yml up -d
+#
+# 说明:
+# - Docker Desktop 不支持真正的 network_mode: host，改为端口映射
+# - Windows 下 USB 4G 棒子透传需配合 usbipd-win + WSL2，当前配置仅先保证 Web 管理界面可用
+services:
+  vohive:
+    image: vohive:latest
+    container_name: vohive
+    restart: unless-stopped
+    ports:
+      - "7575:7575"
+    privileged: true
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - TZ=Asia/Shanghai
+      - CONFIG_PATH=/app/config/config.yaml

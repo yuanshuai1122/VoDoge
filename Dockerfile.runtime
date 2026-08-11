@@ -1,0 +1,4 @@
+FROM scratch
+WORKDIR /app
+COPY .runtime/vohive /app/vohive
+ENTRYPOINT ["/app/vohive"]
