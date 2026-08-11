@@ -50,10 +50,7 @@ func (s *workerStartupIdentityBackendStub) GetNativeSPNLive(ctx context.Context)
 
 func initDevicePhoneNumberTestDB(t *testing.T) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "device_phone_number.db")
-	if err := db.Init(dbPath); err != nil {
-		t.Fatalf("db.Init() error=%v", err)
-	}
+	db.OpenTestDB(t)
 	t.Cleanup(func() { db.DB = nil })
 }
 
@@ -127,7 +124,7 @@ func TestPersistIdentityStateStoresATMSISDNAsModemPhoneNumber(t *testing.T) {
 	w.state.Identity.IMEI = "imei-at-1"
 	w.state.Identity.IMSI = "imsi-at-1"
 	w.state.Identity.ICCID = "8986000000000000002"
-	w.state.Runtime.Operator = "中国联通"
+	w.state.Runtime.Operator = "中国联�?
 
 	p.PersistIdentityState(w)
 

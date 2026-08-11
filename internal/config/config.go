@@ -91,6 +91,7 @@ func ResolveIPFamily(in string) (enableV4 bool, enableV6 bool, err error) {
 
 type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
+	Database DatabaseConfig `mapstructure:"database"`
 	Devices  []DeviceConfig `mapstructure:"devices"`
 	Telegram TelegramConfig `mapstructure:"telegram"`
 	Feishu   FeishuConfig   `mapstructure:"feishu"`
@@ -103,6 +104,24 @@ type Config struct {
 	Web      WebConfig      `mapstructure:"web"`
 	Proxy    ProxyConfig    `mapstructure:"proxy"`
 	VoWiFi   VoWiFiConfig   `mapstructure:"vowifi"`
+}
+
+// DatabaseConfig is PostgreSQL-only connection settings.
+type DatabaseConfig struct {
+	// DSN example: host=127.0.0.1 user=vohive password=vohive dbname=vohive port=5432 sslmode=disable TimeZone=UTC
+	DSN             string `mapstructure:"dsn"`
+	MaxOpenConns    int    `mapstructure:"max_open_conns"`
+	MaxIdleConns    int    `mapstructure:"max_idle_conns"`
+	ConnMaxLifetime string `mapstructure:"conn_max_lifetime"` // e.g. 30m
+	AutoMigrate     *bool  `mapstructure:"auto_migrate"`      // nil => true
+}
+
+// AutoMigrateEnabled returns whether schema auto-migrate is on (default true).
+func (d DatabaseConfig) AutoMigrateEnabled() bool {
+	if d.AutoMigrate == nil {
+		return true
+	}
+	return *d.AutoMigrate
 }
 
 // ProxyConfig 定义代理服务配置
@@ -407,6 +426,10 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("pushplus.enabled", false)
 	viper.SetDefault("web.username", "admin")
 	viper.SetDefault("web.password", "admin")
+	viper.SetDefault("database.max_open_conns", 20)
+	viper.SetDefault("database.max_idle_conns", 5)
+	viper.SetDefault("database.conn_max_lifetime", "30m")
+	viper.SetDefault("database.auto_migrate", true)
 	viper.SetDefault("vowifi.enabled", false)
 	viper.SetDefault("vowifi.mode", "vowifi")
 	viper.SetDefault("imscore.use_sipgo_udp", false)

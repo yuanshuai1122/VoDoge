@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vohive-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vohive
+      POSTGRES_PASSWORD: vohive
+      POSTGRES_DB: vohive
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vohive -d vohive"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   vohive:
     build:
       context: .
@@ -6,8 +24,8 @@ services:
     image: vohive:latest
     container_name: vohive
     restart: unless-stopped
-    network_mode: "host" # 推荐使用 Host 模式以便管理 4G 网卡接口
-    privileged: true     # 需要访问 USB 设备、网络管理能力与 /dev/net/tun
+    network_mode: "host"
+    privileged: true
     volumes:
       - ./config:/app/config
       - ./data:/app/data
@@ -15,4 +33,10 @@ services:
       - /dev:/dev
     environment:
       - TZ=Asia/Shanghai
-      - HTTPS_PROXY=http://10.10.10.10:6152
+      - VOHIVE_DB_DSN=host=127.0.0.1 user=vohive password=vohive dbname=vohive port=5432 sslmode=disable TimeZone=UTC
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

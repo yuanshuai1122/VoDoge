@@ -9,9 +9,7 @@ import (
 
 func initPolicyTestDB(t *testing.T) {
 	t.Helper()
-	if err := db.Init(filepath.Join(t.TempDir(), "policy.db")); err != nil {
-		t.Fatalf("db.Init() error=%v", err)
-	}
+	db.OpenTestDB(t)
 	t.Cleanup(func() {
 		if db.DB != nil {
 			if sqlDB, err := db.DB.DB(); err == nil && sqlDB != nil {
@@ -34,10 +32,10 @@ func TestResolveOfflineDevicePolicyFromCard(t *testing.T) {
 
 	got := resolveOfflineDevicePolicy("wwan0")
 	if !got.NetworkEnabled || !got.VoWiFiEnabled {
-		t.Fatalf("应取卡策略: %+v", got)
+		t.Fatalf("应取卡策�? %+v", got)
 	}
 	if got.IPVersion != "v4v6" || !got.SMSEnabled {
-		t.Fatalf("ip/sms 错: %+v", got)
+		t.Fatalf("ip/sms �? %+v", got)
 	}
 }
 
@@ -45,9 +43,9 @@ func TestResolveOfflineDevicePolicyNoCardSafeDefault(t *testing.T) {
 	initPolicyTestDB(t)
 	got := resolveOfflineDevicePolicy("unknown-device")
 	if got.NetworkEnabled || got.VoWiFiEnabled {
-		t.Fatalf("无卡应全关: %+v", got)
+		t.Fatalf("无卡应全�? %+v", got)
 	}
 	if !got.SMSEnabled || got.IPVersion != "v4" {
-		t.Fatalf("默认应 sms=on/ip=v4: %+v", got)
+		t.Fatalf("默认�?sms=on/ip=v4: %+v", got)
 	}
 }

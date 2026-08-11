@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -130,20 +131,26 @@ func main() {
 		logger.Info("carrier_overrides 已加载", "path", loadResult.Path, "entries", loadResult.Count)
 	}
 
-	// 3. 初始化数据库
-	legacyDBPath := "data/ec20.db"
-	dbPath := "data/vohive.db"
-	if err := migrateLegacyServerDB(legacyDBPath, dbPath); err != nil {
-		log.Fatalf("迁移旧数据库失败: %v", err)
+	// 3. 初始化数据库（仅 PostgreSQL）
+	dbOpts := db.DefaultOptions(db.ResolveDSN(cfg.Database.DSN))
+	if cfg.Database.MaxOpenConns > 0 {
+		dbOpts.MaxOpenConns = cfg.Database.MaxOpenConns
 	}
-	if err := db.Init(dbPath); err != nil {
+	if cfg.Database.MaxIdleConns > 0 {
+		dbOpts.MaxIdleConns = cfg.Database.MaxIdleConns
+	}
+	if lt := strings.TrimSpace(cfg.Database.ConnMaxLifetime); lt != "" {
+		if d, err := time.ParseDuration(lt); err == nil {
+			dbOpts.ConnMaxLifetime = d
+		} else {
+			logger.Warn("无效的 database.conn_max_lifetime，使用默认值", "value", lt, "err", err)
+		}
+	}
+	dbOpts.AutoMigrate = cfg.Database.AutoMigrateEnabled()
+	if err := db.Open(dbOpts); err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
-	dbResolvedPath := dbPath
-	if absPath, err := filepath.Abs(dbPath); err == nil {
-		dbResolvedPath = absPath
-	}
-	logger.Info("数据库已初始化", "path", dbPath, "resolved_path", dbResolvedPath)
+	logger.Info("数据库已初始化", "driver", "postgres", "auto_migrate", dbOpts.AutoMigrate)
 	countryResult := upstreamproxy.InitCountryTable(context.Background(), upstreamproxy.CountryTableOptions{
 		CachePath: upstreamproxy.DefaultCountryTableCachePath,
 	})

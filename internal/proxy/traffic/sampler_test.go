@@ -237,9 +237,7 @@ func TestSampleSkipsInactiveNetworkAndClearsInterfaceBaseline(t *testing.T) {
 
 func initSamplerTrafficTestDB(t *testing.T) {
 	t.Helper()
-	if err := db.Init(filepath.Join(t.TempDir(), "traffic.db")); err != nil {
-		t.Fatalf("db.Init() error = %v", err)
-	}
+	db.OpenTestDB(t)
 	t.Cleanup(func() {
 		db.DB = nil
 	})

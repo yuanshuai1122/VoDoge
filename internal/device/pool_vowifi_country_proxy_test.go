@@ -26,9 +26,7 @@ func loadDeviceCountryTableFixture(t *testing.T) {
 
 func openDeviceTestDB(t *testing.T) {
 	t.Helper()
-	if err := db.Init(filepath.Join(t.TempDir(), "test.db")); err != nil {
-		t.Fatalf("db.Init() error=%v", err)
-	}
+	db.OpenTestDB(t)
 }
 
 func TestResolveVoWiFiCountryProxySelectsUSProxy(t *testing.T) {

@@ -8,11 +8,7 @@ import (
 
 func initPhoneNumberTestDB(t *testing.T) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "phone_number.db")
-	if err := Init(dbPath); err != nil {
-		t.Fatalf("Init() error=%v", err)
-	}
-	t.Cleanup(func() { DB = nil })
+	OpenTestDB(t)
 }
 
 func loadSIMCardByIMSI(t *testing.T, imsi string) SIMCard {
@@ -44,18 +40,11 @@ func countSIMCardsByICCID(t *testing.T, iccid string) int64 {
 
 func simCardColumnExists(t *testing.T, column string) bool {
 	t.Helper()
-	var rows []struct {
-		Name string `gorm:"column:name"`
+	ok, err := hasTableColumn(DB, "sim_cards", column)
+	if err != nil {
+		t.Fatalf("hasTableColumn(sim_cards,%s) error=%v", column, err)
 	}
-	if err := DB.Raw("PRAGMA table_info(sim_cards)").Scan(&rows).Error; err != nil {
-		t.Fatalf("PRAGMA table_info(sim_cards) error=%v", err)
-	}
-	for _, row := range rows {
-		if row.Name == column {
-			return true
-		}
-	}
-	return false
+	return ok
 }
 
 func ensureLegacySIMCardColumn(t *testing.T, column string) {
@@ -63,7 +52,7 @@ func ensureLegacySIMCardColumn(t *testing.T, column string) {
 	if simCardColumnExists(t, column) {
 		return
 	}
-	if err := DB.Exec("ALTER TABLE sim_cards ADD COLUMN " + column + " text").Error; err != nil {
+	if err := DB.Exec("ALTER TABLE sim_cards ADD COLUMN IF NOT EXISTS " + column + " text").Error; err != nil {
 		t.Fatalf("add legacy sim_cards column %s error=%v", column, err)
 	}
 }
@@ -99,11 +88,7 @@ func TestUpdateSIMCardPhoneNumberByIMSICreatesSubscriptionOnly(t *testing.T) {
 }
 
 func TestSIMSubscriptionMigrationMovesSyntheticReaderRows(t *testing.T) {
-	old := DB
-	dbPath := filepath.Join(t.TempDir(), "sim_subscription_migration.db")
-	if err := Init(dbPath); err != nil {
-		t.Fatalf("Init() error=%v", err)
-	}
+	OpenTestDB(t)
 	ensureLegacySIMCardColumn(t, "phone_number")
 	ensureLegacySIMCardColumn(t, "modem_phone_number")
 	ensureLegacySIMCardColumn(t, "vowifi_phone_number")
@@ -120,21 +105,10 @@ func TestSIMSubscriptionMigrationMovesSyntheticReaderRows(t *testing.T) {
 	`, "8986000000000000001", "001010000000001", "中国联通", now, now, now).Error; err != nil {
 		t.Fatalf("seed real row error=%v", err)
 	}
-	if sqlDB, err := DB.DB(); err == nil && sqlDB != nil {
-		_ = sqlDB.Close()
-	}
-	DB = nil
-	t.Cleanup(func() {
-		if DB != nil {
-			if sqlDB, err := DB.DB(); err == nil && sqlDB != nil {
-				_ = sqlDB.Close()
-			}
-		}
-		DB = old
-	})
 
-	if err := Init(dbPath); err != nil {
-		t.Fatalf("re-Init() error=%v", err)
+	// Re-run migrations (sim_cards → subscriptions) without truncating.
+	if err := runMigrations(DB); err != nil {
+		t.Fatalf("runMigrations() error=%v", err)
 	}
 
 	sub := loadSIMSubscriptionByIMSI(t, "001010000000001")
@@ -150,15 +124,7 @@ func TestSIMSubscriptionMigrationMovesSyntheticReaderRows(t *testing.T) {
 }
 
 func TestSIMSubscriptionPhoneSurvivesReInitWithRealSIMCardRow(t *testing.T) {
-	old := DB
-	dbPath := filepath.Join(t.TempDir(), "sim_subscription_reinit.db")
-	if err := Init(dbPath); err != nil {
-		t.Fatalf("Init() error=%v", err)
-	}
-	t.Cleanup(func() {
-		closePhoneNumberTestDB(t)
-		DB = old
-	})
+	OpenTestDB(t)
 
 	imei := "imei-reinit"
 	if err := UpsertSIMCardIdentity("8986000000000000123", "001010000000123", "中国联通", &imei); err != nil {
@@ -168,10 +134,7 @@ func TestSIMSubscriptionPhoneSurvivesReInitWithRealSIMCardRow(t *testing.T) {
 		t.Fatalf("UpdateSIMCardVoWiFiPhoneNumberByIMSI() error=%v", err)
 	}
 
-	closePhoneNumberTestDB(t)
-	if err := Init(dbPath); err != nil {
-		t.Fatalf("re-Init() error=%v", err)
-	}
+	ReopenTestDB(t)
 
 	sub := loadSIMSubscriptionByIMSI(t, "001010000000123")
 	if sub.CurrentICCID != "8986000000000000123" {

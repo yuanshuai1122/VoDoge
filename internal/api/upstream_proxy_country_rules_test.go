@@ -34,9 +34,7 @@ func loadAPICountryTableFixture(t *testing.T) {
 func newUpstreamProxyCountryRulesTestServer(t *testing.T) *Server {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	if err := db.Init(filepath.Join(t.TempDir(), "api.db")); err != nil {
-		t.Fatalf("db.Init() error=%v", err)
-	}
+	db.OpenTestDB(t)
 	t.Cleanup(func() { db.DB = nil })
 	return &Server{}
 }

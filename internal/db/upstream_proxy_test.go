@@ -12,9 +12,7 @@ import (
 
 func openTestDB(t *testing.T) {
 	t.Helper()
-	if err := Init(filepath.Join(t.TempDir(), "test.db")); err != nil {
-		t.Fatalf("Init() error=%v", err)
-	}
+	OpenTestDB(t)
 	loadCountryTableFixture(t)
 }
 

@@ -7,10 +7,7 @@ import (
 
 func initIPv6TestDB(t *testing.T) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "ipv6.db")
-	if err := Init(dbPath); err != nil {
-		t.Fatalf("Init() error=%v", err)
-	}
+	OpenTestDB(t)
 	t.Cleanup(func() { DB = nil })
 }
 

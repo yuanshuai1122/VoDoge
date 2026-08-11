@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
@@ -15,6 +16,38 @@ import (
 var DB *gorm.DB
 
 var ErrSMSNotFound = errors.New("sms not found")
+
+// Options configures PostgreSQL connection (SQLite is not supported).
+type Options struct {
+	DSN             string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	AutoMigrate     bool
+}
+
+// DefaultOptions returns production-ish defaults for the given DSN.
+func DefaultOptions(dsn string) Options {
+	return Options{
+		DSN:             strings.TrimSpace(dsn),
+		MaxOpenConns:    20,
+		MaxIdleConns:    5,
+		ConnMaxLifetime: 30 * time.Minute,
+		AutoMigrate:     true,
+	}
+}
+
+// ResolveDSN returns the first non-empty DSN from env then fallback.
+// Order: VOHIVE_DB_DSN, DATABASE_URL, fallback.
+func ResolveDSN(fallback string) string {
+	if v := strings.TrimSpace(os.Getenv("VOHIVE_DB_DSN")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(os.Getenv("DATABASE_URL")); v != "" {
+		return v
+	}
+	return strings.TrimSpace(fallback)
+}
 
 // Device 模块设备表 (主键: IMEI)
 type Device struct {
@@ -107,44 +140,55 @@ type SMSContact struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-// Init 初始化数据库连接
-func Init(dbPath string) error {
-	var err error
-	dsn := strings.TrimSpace(dbPath)
+// Init opens PostgreSQL with default pool settings. dsn must be non-empty.
+// For tests, pass TEST_DATABASE_URL / VOHIVE_DB_DSN via ResolveDSN.
+func Init(dsn string) error {
+	return Open(DefaultOptions(dsn))
+}
+
+// Open initializes the global DB handle with the given options.
+func Open(opts Options) error {
+	dsn := strings.TrimSpace(opts.DSN)
 	if dsn == "" {
-		dsn = dbPath
+		return fmt.Errorf("database dsn is empty: set database.dsn or VOHIVE_DB_DSN / DATABASE_URL")
 	}
-	driverName := strings.TrimSpace(os.Getenv("VOHIVE_SQLITE_DRIVER"))
-	if driverName == "" {
-		driverName = "modernc"
+	if opts.MaxOpenConns <= 0 {
+		opts.MaxOpenConns = 20
+	}
+	if opts.MaxIdleConns <= 0 {
+		opts.MaxIdleConns = 5
+	}
+	if opts.ConnMaxLifetime <= 0 {
+		opts.ConnMaxLifetime = 30 * time.Minute
 	}
 
-	dialector, err := openSQLiteDialector(driverName, dsn)
-	if err != nil {
-		return err
-	}
-
-	DB, err = gorm.Open(dialector, &gorm.Config{
+	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("open postgres: %w", err)
 	}
 
-	sqlDB, err := DB.DB()
+	sqlDB, err := gdb.DB()
 	if err != nil || sqlDB == nil {
-		return fmt.Errorf("open db: %w", err)
+		return fmt.Errorf("open db pool: %w", err)
 	}
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
-	sqlDB.SetConnMaxLifetime(0)
+	sqlDB.SetMaxOpenConns(opts.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(opts.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(opts.ConnMaxLifetime)
 
-	if err := applySQLitePragmas(DB); err != nil {
-		return err
+	DB = gdb
+
+	if opts.AutoMigrate {
+		if err := runMigrations(DB); err != nil {
+			return err
+		}
 	}
+	return nil
+}
 
-	// 自动迁移
-	if err := DB.AutoMigrate(
+func runMigrations(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(
 		&Device{},
 		&CardPolicy{},
 		&SIMCard{},
@@ -163,16 +207,16 @@ func Init(dbPath string) error {
 		&TrafficWeek{},
 		&TrafficMonth{},
 	); err != nil {
-		return err
+		return fmt.Errorf("automigrate: %w", err)
 	}
-	if err := migrateSIMCardsToSubscriptions(DB); err != nil {
-		return err
+	if err := migrateSIMCardsToSubscriptions(tx); err != nil {
+		return fmt.Errorf("migrate sim subscriptions: %w", err)
 	}
-	if err := migrateSIMCardIdentityColumnsOnly(DB); err != nil {
-		return err
+	if err := migrateSIMCardIdentityColumnsOnly(tx); err != nil {
+		return fmt.Errorf("migrate sim identity columns: %w", err)
 	}
-	if err := RunICCIDReKeyMigration(DB); err != nil {
-		return err
+	if err := RunICCIDReKeyMigration(tx); err != nil {
+		return fmt.Errorf("iccid rekey migration: %w", err)
 	}
 	return nil
 }
@@ -306,17 +350,13 @@ func migrateSIMCardsToSubscriptions(tx *gorm.DB) error {
 	return tx.Where("iccid LIKE ?", "reader-imsi-%").Delete(&SIMCard{}).Error
 }
 
-func hasSQLiteTableColumn(tx *gorm.DB, table string, column string) (bool, error) {
-	var rows []struct {
-		Name string `gorm:"column:name"`
+func hasTableColumn(tx *gorm.DB, table string, column string) (bool, error) {
+	if tx == nil {
+		return false, fmt.Errorf("nil db")
 	}
-	if err := tx.Raw("PRAGMA table_info(" + table + ")").Scan(&rows).Error; err != nil {
-		return false, err
-	}
-	for _, row := range rows {
-		if row.Name == column {
-			return true, nil
-		}
+	// Prefer GORM Migrator (works on PostgreSQL).
+	if tx.Migrator().HasTable(table) {
+		return tx.Migrator().HasColumn(table, column), nil
 	}
 	return false, nil
 }
@@ -326,30 +366,16 @@ func migrateSIMCardIdentityColumnsOnly(tx *gorm.DB) error {
 		return nil
 	}
 	for _, column := range []string{"phone_number", "modem_phone_number", "vowifi_phone_number"} {
-		exists, err := hasSQLiteTableColumn(tx, "sim_cards", column)
+		exists, err := hasTableColumn(tx, "sim_cards", column)
 		if err != nil {
 			return err
 		}
 		if !exists {
 			continue
 		}
-		if err := tx.Exec("ALTER TABLE sim_cards DROP COLUMN " + column).Error; err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func applySQLitePragmas(db *gorm.DB) error {
-	stmts := []string{
-		"PRAGMA busy_timeout=5000",
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA synchronous=NORMAL",
-		"PRAGMA foreign_keys=ON",
-	}
-	for _, stmt := range stmts {
-		if err := db.Exec(stmt).Error; err != nil {
-			return err
+		// Columns may no longer exist on the Go model; drop by name (PostgreSQL).
+		if err := tx.Exec(`ALTER TABLE sim_cards DROP COLUMN IF EXISTS ` + column).Error; err != nil {
+			return fmt.Errorf("drop column %s: %w", column, err)
 		}
 	}
 	return nil

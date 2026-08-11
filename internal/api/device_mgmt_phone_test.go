@@ -24,10 +24,7 @@ import (
 
 func initDeviceMgmtPhoneTestDB(t *testing.T) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "device_mgmt_phone.db")
-	if err := db.Init(dbPath); err != nil {
-		t.Fatalf("db.Init() error=%v", err)
-	}
+	db.OpenTestDB(t)
 	t.Cleanup(func() { db.DB = nil })
 }
 
@@ -153,8 +150,8 @@ func TestBuildOverviewLiteItemIncludesActiveEsimProfileName(t *testing.T) {
 			EID:    "eid-a",
 			AIDHex: "A000",
 			Profiles: []esim.ProfileItem{
-				{ICCID: "iccid-disabled", Name: "Disabled", State: 0, StateText: "未启用"},
-				{ICCID: "iccid-enabled", Name: "China Mobile", State: 1, StateText: "已启用"},
+				{ICCID: "iccid-disabled", Name: "Disabled", State: 0, StateText: "未启�?},
+				{ICCID: "iccid-enabled", Name: "China Mobile", State: 1, StateText: "已启�?},
 			},
 		}},
 	})
@@ -259,7 +256,7 @@ func TestHandleEsimListProfilesRefreshUsesProfilesRefreshPath(t *testing.T) {
 		return []esim.EUICCProfiles{{
 			EID:      "eid-a",
 			AIDHex:   "A000",
-			Profiles: []esim.ProfileItem{{ICCID: "iccid-a2", State: 1, StateText: "已启用"}},
+			Profiles: []esim.ProfileItem{{ICCID: "iccid-a2", State: 1, StateText: "已启�?}},
 		}}, nil
 	})
 	mgrTestSetOverviewCache(t, mgr, &esim.EsimOverview{
@@ -267,7 +264,7 @@ func TestHandleEsimListProfilesRefreshUsesProfilesRefreshPath(t *testing.T) {
 		Profiles: []esim.EUICCProfiles{{
 			EID:      "eid-a",
 			AIDHex:   "A000",
-			Profiles: []esim.ProfileItem{{ICCID: "iccid-a1", State: 1, StateText: "已启用"}},
+			Profiles: []esim.ProfileItem{{ICCID: "iccid-a1", State: 1, StateText: "已启�?}},
 		}},
 	})
 
@@ -301,7 +298,7 @@ func TestHandleEsimGetOverviewRefreshUsesFullRefreshPath(t *testing.T) {
 		Profiles: []esim.EUICCProfiles{{
 			EID:      "eid-old",
 			AIDHex:   "OLD",
-			Profiles: []esim.ProfileItem{{ICCID: "iccid-old", State: 1, StateText: "已启用"}},
+			Profiles: []esim.ProfileItem{{ICCID: "iccid-old", State: 1, StateText: "已启�?}},
 		}},
 	})
 	setNestedPrivateField(t, mgr, []string{"overviewLoader"}, func() (*esim.EsimOverview, error) {
@@ -310,7 +307,7 @@ func TestHandleEsimGetOverviewRefreshUsesFullRefreshPath(t *testing.T) {
 			Profiles: []esim.EUICCProfiles{{
 				EID:      "eid-new",
 				AIDHex:   "NEW",
-				Profiles: []esim.ProfileItem{{ICCID: "iccid-new", State: 1, StateText: "已启用"}},
+				Profiles: []esim.ProfileItem{{ICCID: "iccid-new", State: 1, StateText: "已启�?}},
 			}},
 		}, nil
 	})
@@ -488,11 +485,11 @@ func TestFormatEsimDownloadDoneEventIncludesSpaceDelta(t *testing.T) {
 
 func TestFormatEsimDownloadDoneEventIncludesWarningFields(t *testing.T) {
 	event := formatEsimDownloadDoneEvent(esim.DownloadProfileResult{
-		Warning:     "Profile 下载完成，但通知未完全确认",
+		Warning:     "Profile 下载完成，但通知未完全确�?,
 		WarningCode: "download_notification_handle_failed",
 	})
 
-	if !containsAll(event, `"step":"done"`, `"msg":"Profile 下载完成"`, `"pct":100`, `"warning":"Profile 下载完成，但通知未完全确认"`, `"warning_code":"download_notification_handle_failed"`) {
+	if !containsAll(event, `"step":"done"`, `"msg":"Profile 下载完成"`, `"pct":100`, `"warning":"Profile 下载完成，但通知未完全确�?`, `"warning_code":"download_notification_handle_failed"`) {
 		t.Fatalf("event=%q want done payload with warning fields", event)
 	}
 }
@@ -501,12 +498,12 @@ func TestWriteEsimDownloadDoneEventWritesSingleWarningDoneFrame(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	writeEsimDownloadDoneEvent(ctx, esim.DownloadProfileResult{
-		Warning:     "Profile 下载完成，但通知未完全确认",
+		Warning:     "Profile 下载完成，但通知未完全确�?,
 		WarningCode: "download_notification_handle_failed",
 	})
 
 	body := recorder.Body.String()
-	if !containsAll(body, `data: {"step":"done"`, `"warning":"Profile 下载完成，但通知未完全确认"`, `"warning_code":"download_notification_handle_failed"`) {
+	if !containsAll(body, `data: {"step":"done"`, `"warning":"Profile 下载完成，但通知未完全确�?`, `"warning_code":"download_notification_handle_failed"`) {
 		t.Fatalf("body=%q want SSE done frame with warning fields", body)
 	}
 }
@@ -519,7 +516,7 @@ func TestFormatEsimDownloadErrorEventKeepsLegacyFieldsAndAddsCode(t *testing.T) 
 
 	if !containsAll(event,
 		`"step":"error"`,
-		`"msg":"下载失败: eUICC 安装 profile 时空间不足，请删除未使用的 profile 后重试"`,
+		`"msg":"下载失败: eUICC 安装 profile 时空间不足，请删除未使用�?profile 后重�?`,
 		`"pct":-1`,
 		`"code":"euicc_insufficient_memory"`,
 		`"details":"loadProfileElements,installFailedDueToInsufficientMemoryForProfile"`,
@@ -560,7 +557,7 @@ func TestEsimDownloadExecPropagatesWarningResult(t *testing.T) {
 	result, err := esimDownloadExec(func(ctx context.Context, aidHex, smdp, matchingID, confirmationCode, imei string, progressFn esim.DownloadProgressFn) (esim.DownloadProfileResult, error) {
 		gotIMEI = imei
 		return esim.DownloadProfileResult{
-			Warning:     "Profile 下载完成，但通知未完全确认",
+			Warning:     "Profile 下载完成，但通知未完全确�?,
 			WarningCode: "download_notification_handle_failed",
 		}, nil
 	}, context.Background(), "A000", "example.com", "", "", "350225641234561", nil)
@@ -707,7 +704,7 @@ func TestHandleEsimRetryNotificationMapsStatusCodes(t *testing.T) {
 		wantStatus int
 		wantParts  []string
 	}{
-		{name: "success", err: nil, wantStatus: http.StatusOK, wantParts: []string{`"status":"ok"`, `"message":"通知重试发送成功"`}},
+		{name: "success", err: nil, wantStatus: http.StatusOK, wantParts: []string{`"status":"ok"`, `"message":"通知重试发送成�?`}},
 		{name: "busy", err: esim.ErrOperationInProgress, wantStatus: http.StatusConflict, wantParts: []string{`"busy":true`, `"code":"ESIM_BUSY"`, `"reason":"retry_notification"`}},
 		{name: "invalid", err: esim.NewNotificationError(esim.NotificationErrorInvalidSequence, "bad seq", nil), wantStatus: http.StatusBadRequest, wantParts: []string{`bad seq`}},
 		{name: "not found", err: esim.NewNotificationError(esim.NotificationErrorNotFound, "missing", nil), wantStatus: http.StatusNotFound, wantParts: []string{`missing`}},

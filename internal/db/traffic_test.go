@@ -273,10 +273,7 @@ func (l *trafficSelectCounter) Count() int64 { return l.count.Load() }
 func initTrafficTestDB(t *testing.T) time.Time {
 	t.Helper()
 
-	dbPath := filepath.Join(t.TempDir(), "traffic.db")
-	if err := Init(dbPath); err != nil {
-		t.Fatalf("Init() error = %v", err)
-	}
+	OpenTestDB(t)
 	t.Cleanup(func() {
 		DB = nil
 	})

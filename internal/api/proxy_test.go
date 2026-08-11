@@ -138,10 +138,7 @@ func TestNormalizeProxyInstanceForSaveRestoresMaskedPassword(t *testing.T) {
 func TestProxyOverviewReadsInstancesFromDatabaseAcrossServerInstances(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	dbPath := filepath.Join(t.TempDir(), "proxy_overview.db")
-	if err := db.Init(dbPath); err != nil {
-		t.Fatalf("Init() error = %v", err)
-	}
+	db.OpenTestDB(t)
 	t.Cleanup(func() {
 		db.DB = nil
 	})
@@ -205,7 +202,7 @@ func TestBuildProxyConfigsAllowsInterfaceWithoutGlobalIPv4(t *testing.T) {
   - id: dev-lo
     name: Loopback
 `)
-	// 零路径架构: interface 由运行时解析并存在 worker.Config.Interface 里,不从文件读取。
+	// 零路径架�? interface 由运行时解析并存�?worker.Config.Interface �?不从文件读取�?
 	p := device.NewPool(&config.Config{})
 	setNestedPrivateField(t, p, []string{"workers"}, map[string]*device.Worker{
 		"dev-lo": {ID: "dev-lo", Config: config.DeviceConfig{ID: "dev-lo", Interface: "lo"}},
@@ -242,8 +239,8 @@ func TestBuildProxyConfigsAllowsMissingRuntimeInterface(t *testing.T) {
   - id: dev-missing
     name: Missing Interface
 `)
-	// 零路径架构: interface 由运行时解析并存在 worker.Config.Interface 里,不从文件读取。
-	// 即使接口不存在于系统(如测试环境),buildProxyConfigs 只需能查到 interface 名即可。
+	// 零路径架�? interface 由运行时解析并存�?worker.Config.Interface �?不从文件读取�?
+	// 即使接口不存在于系统(如测试环�?,buildProxyConfigs 只需能查�?interface 名即可�?
 	p := device.NewPool(&config.Config{})
 	setNestedPrivateField(t, p, []string{"workers"}, map[string]*device.Worker{
 		"dev-missing": {ID: "dev-missing", Config: config.DeviceConfig{ID: "dev-missing", Interface: missingIface}},

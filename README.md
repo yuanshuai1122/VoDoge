@@ -30,7 +30,7 @@ VoHive 把模组热插拔管理、SOCKS5/HTTP 代理编排、短信收发、VoWi
 
 - **Backend**: Go 1.26+（Gin、GORM、Viper 等）
 - **Frontend**: 规划迁移至 Next.js + React + shadcn/ui（见 `docs/`）
-- **Database**: 规划仅 PostgreSQL（见 `docs/backend-sqlite-to-postgres-plan.md`；当前代码基线仍含 SQLite 启动路径，待按计划改造）
+- **Database**: **PostgreSQL only**（配置 `database.dsn` 或环境变量 `VOHIVE_DB_DSN` / `DATABASE_URL`）
 - **CI/CD**: GitHub Actions
 
 ## 文档
