@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Play, Square, RotateCw, Trash2, Activity } from "lucide-react";
+import { Play, Square, RotateCw, Trash2, Activity, Plus, Pencil } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, ErrorState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
@@ -26,8 +27,10 @@ import {
   deleteUpstreamProxy,
   probeUpstreamProxy,
   type ProxyInstanceStatus,
+  type UpstreamProxy,
 } from "@/lib/api/endpoints/proxy";
 import { ApiError } from "@/lib/api/errors";
+import { UpstreamDialog } from "@/components/proxy/upstream-dialog";
 
 export default function ProxyPage() {
   return (
@@ -221,6 +224,17 @@ function InstancesPanel() {
 
 function UpstreamPanel() {
   const queryClient = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<UpstreamProxy | null>(null);
+
+  const openCreate = () => {
+    setEditing(null);
+    setDialogOpen(true);
+  };
+  const openEdit = (p: UpstreamProxy) => {
+    setEditing(p);
+    setDialogOpen(true);
+  };
 
   const query = useQuery({
     queryKey: ["proxy", "upstream"],
@@ -257,15 +271,36 @@ function UpstreamPanel() {
 
   if (query.data.length === 0) {
     return (
-      <EmptyState
-        title="暂无上游代理"
-        description="上游代理用于二次转发出站流量。"
-      />
+      <>
+        <EmptyState
+          title="暂无上游代理"
+          description="上游代理用于二次转发出站流量。"
+          action={
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="size-4" />
+              新增上游代理
+            </Button>
+          }
+        />
+        <UpstreamDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          editing={editing}
+        />
+      </>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border">
+    <div className="flex flex-col gap-3">
+      <div className="flex justify-end">
+        <Button size="sm" onClick={openCreate}>
+          <Plus className="size-4" />
+          新增上游代理
+        </Button>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -302,6 +337,14 @@ function UpstreamPanel() {
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label="编辑"
+                    onClick={() => openEdit(p)}
+                  >
+                    <Pencil className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     aria-label="删除"
                     disabled={remove.isPending}
                     onClick={() => {
@@ -318,6 +361,13 @@ function UpstreamPanel() {
           ))}
         </TableBody>
       </Table>
+      </div>
+
+      <UpstreamDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editing={editing}
+      />
     </div>
   );
 }
