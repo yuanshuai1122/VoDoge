@@ -67,14 +67,66 @@ export async function rescanDevices(): Promise<void> {
   ok(await api.post("/devices/actions/rescan"));
 }
 
-/** POST /api/devices/:id/actions/at -> {status:"ok", response} */
-export async function executeAT(id: string, command: string): Promise<string> {
+/**
+ * POST /api/devices/:id/actions/at -> {status:"ok", response}
+ * 请求字段是 `cmd`（注意 USSD 用的是 `command`，两者不一致）。
+ */
+export async function executeAT(
+  id: string,
+  cmd: string,
+  timeoutMs?: number,
+): Promise<string> {
   const body = await api.post(
     `/devices/${encodeURIComponent(id)}/actions/at`,
-    { command },
+    { cmd, timeout_ms: timeoutMs },
     { timeoutMs: 60_000 },
   );
   return pick<string>(body, "response");
+}
+
+/**
+ * USSD 是多轮会话：execute -> (continue)* -> cancel。
+ * 响应形如 {status:"ok", result, channel}，channel 为 "vowifi" 或 "cs"。
+ * result 中携带 session_id，续轮时必须回传。
+ */
+export interface USSDResult {
+  status: string;
+  channel: string;
+  result: {
+    session_id?: string;
+    text?: string;
+    [key: string]: unknown;
+  };
+}
+
+export async function executeUSSD(
+  id: string,
+  command: string,
+): Promise<USSDResult> {
+  return api.post<USSDResult>(
+    `/devices/${encodeURIComponent(id)}/actions/ussd`,
+    { command },
+    { timeoutMs: 130_000 },
+  );
+}
+
+export async function continueUSSD(
+  id: string,
+  sessionId: string,
+  input: string,
+): Promise<USSDResult> {
+  return api.post<USSDResult>(
+    `/devices/${encodeURIComponent(id)}/actions/ussd/continue`,
+    { session_id: sessionId, input },
+    { timeoutMs: 130_000 },
+  );
+}
+
+export async function cancelUSSD(id: string, sessionId?: string): Promise<void> {
+  await api.post(
+    `/devices/${encodeURIComponent(id)}/actions/ussd/cancel`,
+    { session_id: sessionId ?? "" },
+  );
 }
 
 /** PATCH /api/devices/:id/network，enabled 必填 */
