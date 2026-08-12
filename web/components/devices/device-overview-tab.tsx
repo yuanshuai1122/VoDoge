@@ -22,6 +22,7 @@ import {
 import { useEventSource } from "@/lib/sse/use-event-source";
 import { ApiError } from "@/lib/api/errors";
 import { maskIdentifier } from "@/lib/format";
+import { TrafficChart } from "@/components/traffic/traffic-chart";
 import type { DeviceOverview } from "@/types/device";
 
 export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
@@ -175,6 +176,8 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
           />
         </CardContent>
       </Card>
+
+      <TrafficChart deviceId={deviceId} />
 
       {device.traffic && Object.keys(device.traffic).length > 0 && (
         <Card>
