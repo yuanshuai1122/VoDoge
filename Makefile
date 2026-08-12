@@ -35,6 +35,7 @@ frontend-dist:
 	rm -rf internal/web/dist
 	mkdir -p internal/web
 	cp -R web/dist internal/web/dist
+	touch internal/web/dist/.gitkeep
 
 build-amd64: frontend-dist
 	@test -n "$(UPX)" || { echo "错误: 需要安装 upx"; exit 1; }

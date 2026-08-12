@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -32,40 +30,6 @@ import (
 
 	"github.com/emiago/sipgo/sip"
 )
-
-func migrateLegacyServerDB(legacyPath, targetPath string) error {
-	legacyPath = filepath.Clean(legacyPath)
-	targetPath = filepath.Clean(targetPath)
-	if legacyPath == targetPath {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-		return fmt.Errorf("create db dir: %w", err)
-	}
-	if _, err := os.Stat(targetPath); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat target db: %w", err)
-	}
-	if _, err := os.Stat(legacyPath); os.IsNotExist(err) {
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("stat legacy db: %w", err)
-	}
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		from := legacyPath + suffix
-		to := targetPath + suffix
-		if _, err := os.Stat(from); os.IsNotExist(err) {
-			continue
-		} else if err != nil {
-			return fmt.Errorf("stat legacy db sidecar %s: %w", suffix, err)
-		}
-		if err := os.Rename(from, to); err != nil {
-			return fmt.Errorf("rename legacy db sidecar %s: %w", suffix, err)
-		}
-	}
-	return nil
-}
 
 func main() {
 	// 开启 SIP_DEBUG 以排查问题（针对旧系统或备用系统）

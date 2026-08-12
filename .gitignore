@@ -18,7 +18,8 @@
 /web/node_modules/
 /web-reader/dist/
 /web-reader/node_modules/
-/internal/web/dist/
+/internal/web/dist/*
+!/internal/web/dist/.gitkeep
 /dist/*
 
 # IDE 和编辑器
@@ -64,7 +65,6 @@ go.work.sum
 docs/vohive-forum-tutorial-short.md
 docs/vohive-forum-tutorial.md
 .codex
-docs/*
 web/tests
 .worktrees/
 Quectel_EC2xEG2xEG9xEM05_Series_AT_Commands_Manual_V2.2.pdf
