@@ -31,6 +31,7 @@ import {
 } from "@/lib/api/endpoints/proxy";
 import { ApiError } from "@/lib/api/errors";
 import { UpstreamDialog } from "@/components/proxy/upstream-dialog";
+import { CountryRules } from "@/components/proxy/country-rules";
 
 export default function ProxyPage() {
   return (
@@ -41,6 +42,7 @@ export default function ProxyPage() {
         <TabsList>
           <TabsTrigger value="instances">本机实例</TabsTrigger>
           <TabsTrigger value="upstream">上游代理</TabsTrigger>
+          <TabsTrigger value="countries">国家路由</TabsTrigger>
         </TabsList>
 
         <TabsContent value="instances" className="mt-4">
@@ -49,6 +51,10 @@ export default function ProxyPage() {
 
         <TabsContent value="upstream" className="mt-4">
           <UpstreamPanel />
+        </TabsContent>
+
+        <TabsContent value="countries" className="mt-4">
+          <CountryRules />
         </TabsContent>
       </Tabs>
     </>

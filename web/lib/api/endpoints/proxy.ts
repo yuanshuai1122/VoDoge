@@ -120,17 +120,39 @@ export async function probeUpstreamProxy(id: string): Promise<ProbeResult> {
   );
 }
 
-export async function listUpstreamCountries(): Promise<unknown> {
-  return api.get("/upstream-proxy-countries");
+/** 对齐 internal/upstreamproxy.CountryDisplay */
+export interface CountryDisplay {
+  country_code: string;
+  country_name: string;
+  mccs: string[];
 }
 
-export async function listCountryRules(): Promise<unknown> {
-  return api.get("/upstream-proxy-country-rules");
+/** 对齐 internal/api.upstreamProxyCountryRuleResponse */
+export interface CountryRule {
+  country_code: string;
+  country_name: string;
+  mccs: string[];
+  upstream_proxy_id: string;
+  enabled: boolean;
+  updated_at?: string;
+}
+
+/**
+ * GET /api/upstream-proxy-countries —— 裸数组。
+ * MCC/MNC 表未就绪时后端返回 503 mcc_mnc_table_unavailable。
+ */
+export async function listUpstreamCountries(): Promise<CountryDisplay[]> {
+  return rawArray<CountryDisplay>(await api.get("/upstream-proxy-countries"));
+}
+
+/** GET /api/upstream-proxy-country-rules —— 裸数组 */
+export async function listCountryRules(): Promise<CountryRule[]> {
+  return rawArray<CountryRule>(await api.get("/upstream-proxy-country-rules"));
 }
 
 export async function upsertCountryRule(
   code: string,
-  input: unknown,
+  input: { upstream_proxy_id: string; enabled: boolean },
 ): Promise<void> {
   await api.put(
     `/upstream-proxy-country-rules/${encodeURIComponent(code)}`,
