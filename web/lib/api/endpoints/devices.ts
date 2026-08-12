@@ -1,10 +1,10 @@
 import { api } from "../client";
 import { ok, pick, pickOr, pickFirstDevice } from "../unwrap";
+import type { DeviceOverview, DeviceListResult } from "../../../types/device";
 import type {
-  DeviceOverview,
-  DeviceListResult,
+  DeviceConfigDTO,
   DiscoveredDevice,
-} from "../../../types/device";
+} from "../../../types/device-config";
 
 /** GET /api/devices -> {devices, device_limit} */
 export async function listDevices(): Promise<DeviceListResult> {
@@ -33,18 +33,33 @@ export async function getDeviceOverview(id: string): Promise<DeviceOverview> {
 /** GET /api/devices/discovered -> {devices} */
 export async function listDiscoveredDevices(): Promise<DiscoveredDevice[]> {
   return pick<DiscoveredDevice[]>(
-    await api.get("/devices/discovered"),
+    await api.get("/devices/discovered", { timeoutMs: 60_000 }),
     "devices",
   );
+}
+
+/**
+ * POST /api/devices
+ * 请求体是 {config: {...}}，不是裸配置。
+ * 成功响应带 started / requires_restart / warning：
+ * 配置写入成功但运行时启动失败也会返回 200，warning 必须展示。
+ */
+export interface AddDeviceResult {
+  status: string;
+  started?: boolean;
+  requires_restart?: boolean;
+  warning?: string;
+}
+
+export async function addDeviceWithConfig(
+  config: DeviceConfigDTO,
+): Promise<AddDeviceResult> {
+  return api.post<AddDeviceResult>("/devices", { config }, { timeoutMs: 60_000 });
 }
 
 /** GET /api/devices/:id/config -> {config} */
 export async function getDeviceConfig(id: string): Promise<unknown> {
   return pick(await api.get(`/devices/${encodeURIComponent(id)}/config`), "config");
-}
-
-export async function addDevice(input: unknown): Promise<void> {
-  ok(await api.post("/devices", input));
 }
 
 export async function updateDevice(id: string, input: unknown): Promise<void> {

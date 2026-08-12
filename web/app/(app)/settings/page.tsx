@@ -7,6 +7,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { NotificationSettingsPanel } from "@/components/settings/notification-settings";
+import { SystemPanel } from "@/components/settings/system-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -130,6 +131,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        <SystemPanel />
         <NotificationSettingsPanel />
       </div>
     </>

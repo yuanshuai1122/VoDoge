@@ -114,6 +114,4 @@ export interface DeviceListResult {
   device_limit?: number;
 }
 
-export interface DiscoveredDevice {
-  [key: string]: unknown;
-}
+// DiscoveredDevice 与 DeviceConfigDTO 见 types/device-config.ts

@@ -1,9 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { RefreshCw, RotateCw, Trash2 } from "lucide-react";
+import { RefreshCw, RotateCw, Trash2, Plus } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, ErrorState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
@@ -28,9 +29,11 @@ import {
 } from "@/lib/api/endpoints/devices";
 import { ApiError } from "@/lib/api/errors";
 import { Sensitive } from "@/components/common/sensitive";
+import { AddDeviceDialog } from "@/components/devices/add-device-dialog";
 
 export default function DevicesPage() {
   const queryClient = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
 
   const query = useQuery({
     queryKey: ["devices", "list"],
@@ -81,17 +84,23 @@ export default function DevicesPage() {
             : "模组发现、状态与配置"
         }
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={rescan.isPending}
-            onClick={() => rescan.mutate()}
-          >
-            <RotateCw
-              className={rescan.isPending ? "size-4 animate-spin" : "size-4"}
-            />
-            重新扫描
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={rescan.isPending}
+              onClick={() => rescan.mutate()}
+            >
+              <RotateCw
+                className={rescan.isPending ? "size-4 animate-spin" : "size-4"}
+              />
+              重新扫描
+            </Button>
+            <Button size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="size-4" />
+              添加设备
+            </Button>
+          </>
         }
       />
 
@@ -108,8 +117,8 @@ export default function DevicesPage() {
           title="暂无设备"
           description="插入模组后点击「重新扫描」，或确认容器已透传 /dev 与 USB 设备。"
           action={
-            <Button size="sm" onClick={() => rescan.mutate()}>
-              重新扫描
+            <Button size="sm" onClick={() => setAddOpen(true)}>
+              添加设备
             </Button>
           }
         />
@@ -198,6 +207,7 @@ export default function DevicesPage() {
           </Table>
         </div>
       )}
+      <AddDeviceDialog open={addOpen} onOpenChange={setAddOpen} />
     </>
   );
 }

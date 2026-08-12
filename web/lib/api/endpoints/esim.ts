@@ -1,5 +1,5 @@
 import { api } from "../client";
-import { rawArray } from "../unwrap";
+import { pick, raw, rawArray } from "../unwrap";
 import type { EUICCProfiles } from "../../../types/esim";
 
 /**
@@ -26,10 +26,15 @@ export async function getEsimOverview(deviceId: string): Promise<unknown> {
   });
 }
 
-export async function getChipInfo(deviceId: string): Promise<unknown> {
-  return api.get(`/devices/${encodeURIComponent(deviceId)}/esim/chip-info`, {
-    timeoutMs: 60_000,
-  });
+/** GET /devices/:id/esim/chip-info —— 裸对象 */
+export async function getChipInfo(
+  deviceId: string,
+): Promise<Record<string, unknown>> {
+  return raw<Record<string, unknown>>(
+    await api.get(`/devices/${encodeURIComponent(deviceId)}/esim/chip-info`, {
+      timeoutMs: 60_000,
+    }),
+  );
 }
 
 export async function switchProfile(
@@ -75,10 +80,25 @@ export async function deleteProfile(
   );
 }
 
-export async function listNotifications(deviceId: string): Promise<unknown> {
-  return api.get(`/devices/${encodeURIComponent(deviceId)}/esim/notifications`, {
-    timeoutMs: 60_000,
-  });
+/** 对齐 internal/esim.NotificationItem */
+export interface EsimNotification {
+  sequence_number: number;
+  event: string;
+  iccid?: string;
+  address?: string;
+  aid_hex?: string;
+  can_retry: boolean;
+}
+
+/** GET /devices/:id/esim/notifications -> {items} */
+export async function listNotifications(
+  deviceId: string,
+): Promise<EsimNotification[]> {
+  const body = await api.get(
+    `/devices/${encodeURIComponent(deviceId)}/esim/notifications`,
+    { timeoutMs: 60_000 },
+  );
+  return pick<EsimNotification[]>(body, "items");
 }
 
 export async function retryNotification(

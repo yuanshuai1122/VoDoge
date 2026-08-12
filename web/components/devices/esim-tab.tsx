@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorState } from "@/components/common/empty-state";
 import { EsimDownloadDialog } from "./esim-download-dialog";
+import { EsimNotifications, EsimChipInfo } from "./esim-notifications";
 import {
   listProfiles,
   switchProfile,
@@ -154,6 +155,9 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
           </Card>
         ))
       )}
+
+      <EsimNotifications deviceId={deviceId} />
+      <EsimChipInfo deviceId={deviceId} />
 
       <EsimDownloadDialog
         deviceId={deviceId}
