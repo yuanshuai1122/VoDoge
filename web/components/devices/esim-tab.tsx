@@ -20,7 +20,7 @@ import {
 import { useEsimMutation } from "@/hooks/use-esim-mutation";
 import { useEsimLock } from "@/stores/esim-lock";
 import { isProfileEnabled, type ProfileItem } from "@/types/esim";
-import { maskIdentifier } from "@/lib/format";
+import { Sensitive } from "@/components/common/sensitive";
 
 export function EsimTab({ deviceId }: { deviceId: string }) {
   const [downloadOpen, setDownloadOpen] = useState(false);
@@ -120,7 +120,7 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
               <CardTitle className="text-base">
                 eUICC
                 <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
-                  EID {maskIdentifier(group.eid, 6)}
+                  EID <Sensitive value={group.eid} visible={6} />
                 </span>
               </CardTitle>
             </CardHeader>
@@ -195,7 +195,7 @@ function ProfileRow({
           )}
         </div>
         <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-          {maskIdentifier(profile.iccid)}
+          <Sensitive value={profile.iccid} />
           {profile.service_provider_name && ` · ${profile.service_provider_name}`}
           {profile.state_text && ` · ${profile.state_text}`}
         </p>

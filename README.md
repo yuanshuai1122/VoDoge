@@ -44,7 +44,7 @@ Compose 自带 PostgreSQL；后端默认监听 `:7575`。
 
 ### 本地开发
 
-前端独立起服务、`/api/*` 自动反代到后端：
+前端独立起服务、`/api/*` 自动反代到后端（后端无全局 CORS，必须走反代）：
 
 ```bash
 npm install --prefix web && npm run dev --prefix web
@@ -52,6 +52,16 @@ npm install --prefix web && npm run dev --prefix web
 
 生产构建时 `next build` 会静态导出到 `web/dist`，再由 `make frontend-dist` / Dockerfile 拷入
 `internal/web/dist` 供 Go 嵌入——**先构建前端，`go build ./cmd/vohive` 才能产出带 UI 的二进制**。
+
+详见 [`web/README.md`](web/README.md)。
+
+### 冒烟检查
+
+针对运行中的服务跑一遍 API 主路径（登录 / 设备 / 短信 / 代理 / SSE）：
+
+```bash
+node scripts/smoke-api.mjs
+```
 
 ## 文档
 

@@ -27,7 +27,7 @@ import {
   deleteDevice,
 } from "@/lib/api/endpoints/devices";
 import { ApiError } from "@/lib/api/errors";
-import { maskIdentifier } from "@/lib/format";
+import { Sensitive } from "@/components/common/sensitive";
 
 export default function DevicesPage() {
   const queryClient = useQueryClient();
@@ -161,7 +161,7 @@ export default function DevicesPage() {
 
                   {/* ICCID 默认打码，避免截图/共享时泄漏 */}
                   <TableCell className="font-mono text-xs">
-                    {maskIdentifier(d.modem?.iccid)}
+                    <Sensitive value={d.modem?.iccid} />
                   </TableCell>
 
                   <TableCell>
