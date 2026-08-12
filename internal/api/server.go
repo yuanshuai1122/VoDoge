@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -176,8 +177,28 @@ func (s *Server) allowLoginAttempt(ip string, now time.Time) bool {
 	return true
 }
 
+// reTokenQuery 匹配 URL 查询串中的 token 参数值，用于访问日志脱敏。
+var reTokenQuery = regexp.MustCompile(`([?&]token=)[^&]*`)
+
+// accessLogFormatter 等价于 gin 默认访问日志格式，但会抹掉 ?token= 的值。
+// SSE 端点允许用 query 传凭证（见 sseTokenQueryRoutes），若沿用 gin.Default()
+// 的 Logger，token 会随 query 串写入 stdout，进而落入 docker logs / journal。
+func accessLogFormatter(p gin.LogFormatterParams) string {
+	return fmt.Sprintf("[GIN] %v | %3d | %13v | %15s | %-7s %#v\n",
+		p.TimeStamp.Format("2006/01/02 - 15:04:05"),
+		p.StatusCode,
+		p.Latency,
+		p.ClientIP,
+		p.Method,
+		reTokenQuery.ReplaceAllString(p.Path, "${1}***"),
+	)
+}
+
 func (s *Server) newRouter() *gin.Engine {
-	r := gin.Default()
+	// 等价于 gin.Default()（Logger + Recovery），仅替换为脱敏的日志格式化器。
+	r := gin.New()
+	r.Use(gin.LoggerWithFormatter(accessLogFormatter))
+	r.Use(gin.Recovery())
 	r.Use(s.requestIDMiddleware())
 
 	r.GET("/ping", func(c *gin.Context) {
@@ -220,13 +241,15 @@ func (s *Server) newRouter() *gin.Engine {
 	// API 路由组
 	api := r.Group("/api")
 
-	// 登录接口 (无需鉴权)
+	// 无需 authMiddleware 的接口。
+	// 注意：/rotateip 与 websheet 并非"无鉴权"——前者在 handler 内经 authorizeRotate
+	// 校验（Bearer 或 username/password 双模式，供外部脚本调用）；后者以随机 session id
+	// 作为能力凭证，且需接收运营商侧回调。
 	api.GET("/docs", s.handleAPIDocs)
 	api.GET("/docs/assets/*filepath", s.handleDocsAsset)
 	api.POST("/auth/login", s.handleLogin)
 	api.POST("/rotateip", s.handleRotate)
 	api.OPTIONS("/logs/stream", s.handleLogStreamOptions)
-	api.POST("/system/uninstall", s.handleUninstall)
 	s.registerWebsheetRoutes(api)
 
 	// 以下接口需要鉴权
@@ -259,6 +282,7 @@ func (s *Server) newRouter() *gin.Engine {
 		api.GET("/system/info", s.handleSystemInfo)            // 获取系统运行与版本信息
 		api.GET("/system/update/check", s.handleCheckUpdate)   // 检查系统更新
 		api.POST("/system/update/apply", s.handleApplyUpdate)  // 应用系统更新
+		api.POST("/system/uninstall", s.handleUninstall)       // 卸载/自毁（破坏性，必须鉴权）
 
 		api.GET("/devices", s.handleDeviceMgmtList)                                            // 获取设备列表（管理页用）
 		api.POST("/devices", s.handleDeviceMgmtAddDevice)                                      // 添加新设备
@@ -2073,13 +2097,29 @@ func (s *Server) isSessionTokenValid(token string, now time.Time) bool {
 	return hmac.Equal([]byte(sig), []byte(expectedSig))
 }
 
+// sseTokenQueryRoutes 列出允许用 ?token= 传递凭证的流式端点。
+//
+// 浏览器原生 EventSource 无法设置请求头，这些 SSE 端点若只认 Authorization
+// 就无法在前端使用。回退仅对本白名单开放：token 出现在 URL 中会进入访问日志、
+// Referer 与浏览器历史，因此不对普通端点放开。
+var sseTokenQueryRoutes = map[string]struct{}{
+	"/api/logs/stream":                                      {},
+	"/api/devices/:device_id/overview/stream":               {},
+	"/api/devices/:device_id/operator_selection/scan/stream": {},
+	"/api/devices/:device_id/esim/actions/download":          {},
+}
+
 func (s *Server) requestSessionToken(c *gin.Context) string {
 	token := strings.TrimSpace(c.GetHeader("Authorization"))
-	if token == "" {
-		return ""
+	if token != "" {
+		token = strings.TrimPrefix(token, "Bearer ")
+		return strings.TrimSpace(token)
 	}
-	token = strings.TrimPrefix(token, "Bearer ")
-	return strings.TrimSpace(token)
+
+	if _, ok := sseTokenQueryRoutes[c.FullPath()]; ok {
+		return strings.TrimSpace(c.Query("token"))
+	}
+	return ""
 }
 
 func (s *Server) isAuthenticatedRequest(c *gin.Context, now time.Time) bool {

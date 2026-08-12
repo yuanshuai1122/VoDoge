@@ -7,7 +7,8 @@
 | 文档 | 说明 |
 |------|------|
 | [NOTICE.md](./NOTICE.md) | 版权声明 |
-| [frontend-react-migration-plan.md](./frontend-react-migration-plan.md) | 前端 React 重写计划 |
+| [frontend-api-matrix.md](./frontend-api-matrix.md) | **API 契约矩阵（接口唯一依据）** |
+| [frontend-react-migration-plan.md](./frontend-react-migration-plan.md) | 前端 React 重写计划 v1.0 |
 | [frontend-react-decisions.md](./frontend-react-decisions.md) | 前端决策 |
 | [frontend-react-progress.md](./frontend-react-progress.md) | 前端进度 |
 | [backend-sqlite-to-postgres-plan.md](./backend-sqlite-to-postgres-plan.md) | SQLite → PostgreSQL 计划 |
