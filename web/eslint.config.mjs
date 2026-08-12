@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 生产构建的静态导出目录（next.config.ts 的 distDir），产物不参与 lint
+    "dist/**",
   ]),
 ]);
 
