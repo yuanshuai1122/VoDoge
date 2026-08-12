@@ -25,7 +25,7 @@ import {
   type CardPolicy,
 } from "@/lib/api/endpoints/card-policy";
 import { ApiError } from "@/lib/api/errors";
-import { maskIdentifier } from "@/lib/format";
+import { Sensitive } from "@/components/common/sensitive";
 
 const IP_VERSIONS = ["", "ipv4", "ipv6", "ipv4v6"];
 
@@ -110,7 +110,7 @@ function PolicyForm({
     <div className="flex max-w-xl flex-col gap-5">
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground">ICCID</span>
-        <code className="text-xs">{maskIdentifier(iccid)}</code>
+        <Sensitive value={iccid} className="font-mono text-xs" />
         {draft.source && (
           <Badge variant="outline">
             {draft.source === "user" ? "用户设置" : "系统推导"}

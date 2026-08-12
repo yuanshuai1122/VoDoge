@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# VoHive 前端
 
-## Getting Started
+Next.js 16（App Router）+ React 19 + TypeScript + Tailwind 4 + shadcn/ui。
 
-First, run the development server:
+接口依据是 [`docs/frontend-api-matrix.md`](../docs/frontend-api-matrix.md)，
+**不是** `openapi.vohive.yaml`——后者缺 17 个真实端点且声明了 3 个不存在的端点。
+
+## 开发
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+前端在 `:3000`，`/api/*` 由 `next.config.ts` 的 rewrites 反代到后端 `:7575`。
+**必须走反代**：后端没有全局 CORS 中间件，跨域直连只有 `/api/logs/stream` 可用。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+后端需要单独起（仓库根目录）：
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+docker compose up -d postgres
+go run ./cmd/vohive -c config/config.yaml
+```
 
-## Learn More
+## 构建
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+生产模式为**静态导出**：产物落在 `web/dist/`，由 `make frontend-dist` 或 Dockerfile
+拷入 `internal/web/dist` 供 Go 嵌入托管，最终仍是单镜像交付（ADR-005）。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+因此以下 Next 能力**不可用**：Server Actions、Route Handlers、middleware、ISR、
+`next/image` 优化、以及没有 `generateStaticParams()` 的动态路由。
+设备详情用 `/devices/detail?id=` 而非 `/devices/[id]` 正是这个原因。
 
-## Deploy on Vercel
+## 检查
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run typecheck
+npm run lint
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 环境变量
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `NEXT_PUBLIC_API_BASE` | 空（同源） | API 前缀。留空即走同源 `/api`，推荐保持默认；指向其它 origin 需自行解决 CORS |
+
+## 目录
+
+```
+app/            路由与页面（薄，只做编排）
+components/
+  ui/           shadcn 组件
+  layout/ devices/ sms/ settings/ traffic/ common/ auth/
+lib/
+  api/          client / unwrap（6 种成功形状）/ errors（3 种错误形状）/ endpoints
+  sse/          EventSource 封装
+  auth/         token 存储
+  device-status.ts  生命周期 + 布尔位 → 展示状态
+hooks/  stores/  types/
+```
+
+## 几个必须知道的后端行为
+
+- **改密后所有 token 立即失效**：token 的 HMAC 密钥就是登录密码，改密成功后前端强制登出。
+- **SSE 用 query 传 token**：`EventSource` 无法设请求头，后端仅对 4 个流式端点开放 `?token=`。
+  token 会进浏览器历史，**不要把流地址渲染成可见链接**。
+- **eSIM 操作互斥**：所有 eSIM 调用经 APDU 仲裁器串行化，可能返回 409 `ESIM_BUSY`，
+  由 `stores/esim-lock` 统一调度，不要自行重试。
+- **短信按 ICCID 归属**：换卡后历史记录跟卡走，不跟设备走。
+- **分页是游标式**：没有总数也没有 `has_more`，靠"返回条数 == limit"判断还有更多。
+
+## 冒烟
+
+针对运行中的后端跑一遍主路径：
+
+```bash
+node ../scripts/smoke-api.mjs
+```

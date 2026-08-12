@@ -21,7 +21,7 @@ import {
 } from "@/lib/api/endpoints/devices";
 import { useEventSource } from "@/lib/sse/use-event-source";
 import { ApiError } from "@/lib/api/errors";
-import { maskIdentifier } from "@/lib/format";
+import { Sensitive } from "@/components/common/sensitive";
 import { TrafficChart } from "@/components/traffic/traffic-chart";
 import type { DeviceOverview } from "@/types/device";
 
@@ -129,9 +129,9 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <Row label="设备 ID" value={<code className="text-xs">{device.id}</code>} />
-            <Row label="IMEI" value={maskIdentifier(m?.imei)} mono />
-            <Row label="ICCID" value={maskIdentifier(m?.iccid)} mono />
-            <Row label="IMSI" value={maskIdentifier(m?.imsi)} mono />
+            <Row label="IMEI" value={<Sensitive value={m?.imei} />} mono />
+            <Row label="ICCID" value={<Sensitive value={m?.iccid} />} mono />
+            <Row label="IMSI" value={<Sensitive value={m?.imsi} />} mono />
             <Row label="本机号码" value={device.local_phone || "-"} />
             <Row label="固件" value={m?.firmware || "-"} />
             <Row label="接入方式" value={device.backend_mode || "-"} />
