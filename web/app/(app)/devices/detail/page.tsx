@@ -15,6 +15,7 @@ import { AtTab } from "@/components/devices/at-tab";
 import { UssdTab } from "@/components/devices/ussd-tab";
 import { CardPolicyTab } from "@/components/devices/card-policy-tab";
 import { ConfigTab } from "@/components/devices/config-tab";
+import { OperatorTab } from "@/components/devices/operator-tab";
 
 /**
  * 设备详情。
@@ -27,6 +28,7 @@ const TABS = [
   { value: "esim", label: "eSIM" },
   { value: "at", label: "AT" },
   { value: "ussd", label: "USSD" },
+  { value: "operator", label: "选网" },
   { value: "card-policy", label: "卡策略" },
   { value: "config", label: "配置" },
 ] as const;
@@ -110,6 +112,10 @@ function DeviceDetail() {
 
         <TabsContent value="ussd" className="mt-4">
           <UssdTab deviceId={deviceId} />
+        </TabsContent>
+
+        <TabsContent value="operator" className="mt-4">
+          <OperatorTab deviceId={deviceId} />
         </TabsContent>
 
         <TabsContent value="card-policy" className="mt-4">
