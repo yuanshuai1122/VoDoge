@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
-import { EmptyState } from "@/components/common/empty-state";
+import { NotificationSettingsPanel } from "@/components/settings/notification-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -130,10 +130,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <EmptyState
-          title="通知设置开发中"
-          description="计划阶段 9：Telegram / 飞书 / QQ / Webhook / Bark / Email / PushPlus 配置。注意后端只为 webhook、bark、email 提供测试接口。"
-        />
+        <NotificationSettingsPanel />
       </div>
     </>
   );

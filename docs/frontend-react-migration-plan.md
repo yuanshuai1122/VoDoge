@@ -62,7 +62,7 @@ ADR-001 全部维持有效，静态导出不影响其中任何一项：
 ```
 app/                     路由与页面（薄，只做编排）
   (auth)/login
-  (app)/ | devices | devices/[id]/{overview,esim,at,ussd,card-policy,config}
+  (app)/ | devices | devices/detail?id=&tab={overview,esim,at,ussd,card-policy,config}
         | sms | proxy | logs | settings
 components/
   ui/                    shadcn
@@ -82,6 +82,12 @@ stores/                  zustand
 ```
 
 ★ = 本项目特有、不能省的收敛层。
+
+> **路由约束（2026-08-12 实测）**：设备详情用 `/devices/detail?id=&tab=` 而非
+> `/devices/[id]`。静态导出**不支持没有 `generateStaticParams()` 的动态路由**
+> （见 `node_modules/next/dist/docs/01-app/02-guides/static-exports.md`），
+> 而设备 ID 只有运行时才知道，无法在构建期枚举。
+> 使用 `useSearchParams` 的页面必须包在 `<Suspense>` 内，否则构建报错。
 
 ---
 
