@@ -1,0 +1,28 @@
+# VoHive 配置示例
+#
+# 用法：
+#   cp config/config.example.yaml config/config.yaml
+# 然后按需修改。config/config.yaml 不纳入版本控制（见 .gitignore）。
+#
+# 通知渠道（Telegram / 飞书 / QQ / Bark / Email / PushPlus / Webhook）
+# 建议在 Web 界面「系统设置 → 通知」中配置并落盘，此处不再重复罗列。
+
+server:
+  port: 7575
+  debug: false
+
+# 持久化：仅支持 PostgreSQL，无 SQLite 回退路径。
+# DSN 为空或连接失败时进程直接退出。
+# 优先级：环境变量 VOHIVE_DB_DSN > DATABASE_URL > 本文件 database.dsn
+database:
+  dsn: "host=127.0.0.1 user=vohive password=vohive dbname=vohive port=5432 sslmode=disable TimeZone=UTC"
+  max_open_conns: 20
+  max_idle_conns: 5
+  conn_max_lifetime: 30m
+  # 启动时执行 AutoMigrate；生产环境首启后可关闭
+  auto_migrate: true
+
+# Web 管理后台登录凭据，首次登录后请在界面中修改
+web:
+  username: admin
+  password: admin123

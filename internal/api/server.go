@@ -194,7 +194,7 @@ func (s *Server) newRouter() *gin.Engine {
 				return
 			}
 
-			testFiles := []string{"index.html", "assets", "vite.svg"}
+			testFiles := []string{"index.html", "_next", "favicon.ico"}
 			results := make(map[string]string)
 			for _, name := range testFiles {
 				f, err := s.fs.Open(name)
@@ -2171,7 +2171,8 @@ func (s *Server) handleStatic(c *gin.Context) {
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Pragma", "no-cache")
 		c.Header("Expires", "0")
-	} else if strings.HasPrefix(filePath, "assets/") {
+	} else if strings.HasPrefix(filePath, "_next/static/") || strings.HasPrefix(filePath, "assets/") {
+		// _next/static: Next 静态导出的哈希资源；assets: 旧 Vite 构建产物
 		c.Header("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		c.Header("Cache-Control", "public, max-age=3600")

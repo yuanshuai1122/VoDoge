@@ -56,10 +56,10 @@ dependency_hygiene() {
 	forbidden_refs="$(
 		{
 			git grep -nE 'github[.]com/iniwex5|github[.]com/boa-z/qqbot|iniwex[/]vohive|DOCKERHUB[_]|secrets[.]DOCKERHUB|vohive[-]release|GO[.]?PRIVATE|GO[.]?NOSUMDB|GH[_]PAT' -- \
-				go.mod go.sum .github Dockerfile Dockerfile.github Dockerfile.runtime docker-compose.yml docker-compose.hub.yml DOCKERHUB.md Makefile scripts internal cmd pkg web/src \
+				go.mod go.sum .github Dockerfile Dockerfile.github Dockerfile.runtime docker-compose.yml docker-compose.hub.yml DOCKERHUB.md Makefile scripts internal cmd pkg web/app \
 				':!internal/web/dist/**' ':!web/dist/**' || true
 			git grep -nE 'replace[[:space:]].*=>[[:space:]]*(\.{1,2}/|/|~)' -- \
-				go.mod go.sum .github Dockerfile Dockerfile.github Dockerfile.runtime docker-compose.yml docker-compose.hub.yml DOCKERHUB.md Makefile scripts internal cmd pkg web/src \
+				go.mod go.sum .github Dockerfile Dockerfile.github Dockerfile.runtime docker-compose.yml docker-compose.hub.yml DOCKERHUB.md Makefile scripts internal cmd pkg web/app \
 				':!internal/web/dist/**' ':!web/dist/**' || true
 		} | sed '/^$/d'
 	)"
@@ -197,6 +197,7 @@ web_build() {
 	rm -rf internal/web/dist
 	mkdir -p internal/web
 	cp -R web/dist internal/web/dist
+	touch internal/web/dist/.gitkeep
 }
 
 tidy_check() {
@@ -204,7 +205,7 @@ tidy_check() {
 }
 
 go_tests() {
-	read -r -a packages <<< "${CI_GO_TEST_PACKAGES:-./internal/device ./internal/mbim ./internal/qmi ./internal/backend ./internal/esim ./internal/cscall ./internal/proxy/traffic ./internal/notify ./internal/qqbot/...}"
+	read -r -a packages <<< "${CI_GO_TEST_PACKAGES:-./internal/db ./internal/api ./internal/device ./internal/mbim ./internal/qmi ./internal/backend ./internal/esim ./internal/cscall ./internal/proxy/traffic ./internal/notify ./internal/qqbot/...}"
 	if [[ ${#packages[@]} -eq 0 ]]; then
 		printf '\n==> no Go test packages configured\n'
 		return
