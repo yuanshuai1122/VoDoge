@@ -41,6 +41,65 @@
 
 ---
 
+### 2026-08-12 — [阶段 0] API 契约梳理完成，计划重写为 v1.0
+
+- **状态**：done
+- **做法**：通读 `internal/api/`（路由注册、认证、SSE、各域 handler）、`internal/device/lifecycle.go`，
+  并与 `openapi.vohive.yaml` 做端点级 diff。**未运行验证**（本机无 Go 工具链）。
+- **产出**：`docs/frontend-api-matrix.md` — 97 条实际端点、认证机制、响应/错误形状、
+  4 个 SSE 协议、游标分页、9 个生命周期状态、spec 偏差、5 个后端遗留问题。
+- **推翻的三个旧假设**：
+  1. **不能以 OpenAPI 为准** — spec 缺 17 条真实端点，且含 3 条不存在的端点（微信 QR 配置）。
+     照 spec 生成类型会同时漏功能和生成死代码。
+  2. **原生 EventSource 不可用** — token 仅从 `Authorization` 头读取，无 query 回退，
+     而 EventSource 设不了请求头。4 个流式端点全部需要 fetch-based 自研客户端。
+  3. **API 归一化是主要工作量** — 108 个成功响应中仅 47 个用 `{status:"ok"}` 包装，
+     成功形状 6 种、错误形状 3 种，且 `retryAfterMs` 为 camelCase。
+- **计划变更**：`frontend-react-migration-plan.md` 重写为 **v1.0**，新增
+  **阶段 2「API 基础设施」**（2–3 天，v0.3 里仅是 P2-1 一个条目），并给出全量工期估算
+  （MVP 约 9–12 人日，全量约 19–24 人日）。
+- **顺带修正**：v0.3 遗留的 §10 与 §11「下一步」自相矛盾，重写时已统一。
+- **待决**：① 两个无鉴权端点（`/system/uninstall`、`/rotateip`）是否有意设计；
+  ② SSE 走自研客户端还是推动后端加 `?token=` 回退。
+  → **均已在下一条中解决。**
+
+---
+
+### 2026-08-12 — 后端配合改造：卸载端点鉴权 + SSE token 回退
+
+- **状态**：done（**未编译验证**，本机无 Go 工具链）
+- **决策来源**：用户确认「① 漏了 ② 按你的来」。
+
+**① `/api/system/uninstall` 补鉴权**
+
+原注册在 `authMiddleware` 之前，handler 进来即执行自毁（停服务 + 删数据目录 + 删配置），
+**任何能访问端口者都可触发**。已移入鉴权组。
+
+**更正**：同时提出的 `/api/rotateip` **判断有误**——其 handler 首行即调用 `authorizeRotate`，
+支持 Bearer 或 username/password 双模式（POST-only + 复用登录限流），是给外部脚本的有意设计。
+**未改动**，若移入 `authMiddleware` 会打断既有集成。已在 server.go 补注释说明，避免后人再次误判。
+
+**② SSE 支持 `?token=`（白名单）**
+
+`requestSessionToken` 增加 query 回退，但**仅对 4 个流式路由开放**
+（`sseTokenQueryRoutes`）：logs/stream、overview/stream、operator_selection/scan/stream、
+esim/actions/download。`Authorization` 头优先；白名单外端点继续拒绝 query 凭证。
+
+配套：`gin.Default()` → `gin.New()` + `LoggerWithFormatter(accessLogFormatter)` + `Recovery()`，
+对访问日志中的 `token=` 做脱敏。gin 默认 Logger 会把整个查询串写入 stdout，
+在容器/journal 下会直接落盘 token。
+
+- **变更文件**：`internal/api/server.go`、`internal/api/auth_sse_token_test.go`（新增 6 个用例：
+  白名单内外的 query 回退、header 优先级、日志脱敏、其它 query 参数不被误伤）
+- **文档同步**：`frontend-api-matrix.md` §0/§1.3/§3/§5.8/§8；
+  `frontend-react-migration-plan.md` 选型表、P2-5、§6.1、工期、风险表、§10
+- **前端影响**：P2-5 从「自研 fetch+ReadableStream 解析器」降级为「原生 EventSource 薄封装」，
+  阶段 2 工期 2–3 天 → 1.5–2 天，总工期 19–24 → 18–23 人日
+- **遗留**（api-matrix §8，均不阻塞前端）：eSIM 激活码仍走 GET query；
+  `/api/docs` 免鉴权但其 spec 需鉴权导致页面空白；`/api/health` 需鉴权与"外部监控用"注释矛盾
+
+---
+
 ### 2026-08-12 — CI 与配置样例补齐
 
 - **状态**：done  
