@@ -8,6 +8,7 @@ import { ErrorState } from "@/components/common/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { listDashboardDevices } from "@/lib/api/endpoints/devices";
+import { TrafficChart } from "@/components/traffic/traffic-chart";
 import type { DeviceOverview } from "@/types/device";
 
 export default function DashboardPage() {
@@ -35,6 +36,10 @@ export default function DashboardPage() {
       ) : (
         <Summary devices={devicesQuery.data} />
       )}
+
+      <div className="mt-6">
+        <TrafficChart />
+      </div>
 
       <div className="mt-8">
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">
