@@ -92,6 +92,11 @@ type Server struct {
 	// eSIM 下载任务表：POST 建任务、GET 按 task_id 订阅进度，
 	// 使激活码不必出现在 URL 中（见 esim_download.go）。
 	esimDownloads *esimDownloadRegistry
+
+	// 允许 ?token= 的路径集合，从路由表派生（见 routes.go）。
+	// 每个请求都要查，故缓存；路由表在运行期不会变。
+	sseTokenOnce  sync.Once
+	sseTokenCache map[string]struct{}
 }
 
 type realtimeTrafficSubscriber interface {
@@ -197,176 +202,6 @@ func accessLogFormatter(p gin.LogFormatterParams) string {
 		p.Method,
 		reTokenQuery.ReplaceAllString(p.Path, "${1}***"),
 	)
-}
-
-func (s *Server) newRouter() *gin.Engine {
-	// 等价于 gin.Default()（Logger + Recovery），仅替换为脱敏的日志格式化器。
-	r := gin.New()
-	r.Use(gin.LoggerWithFormatter(accessLogFormatter))
-	r.Use(gin.Recovery())
-	r.Use(s.requestIDMiddleware())
-
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "pong"})
-	})
-
-	if s.cfg.Debug {
-		r.GET("/debug/embed", s.authMiddleware(), func(c *gin.Context) {
-			if s.fs == nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{
-					"status":  "error",
-					"message": "静态资源未启用",
-				})
-				return
-			}
-
-			testFiles := []string{"index.html", "_next", "favicon.ico"}
-			results := make(map[string]string)
-			for _, name := range testFiles {
-				f, err := s.fs.Open(name)
-				if err != nil {
-					results[name] = "ERROR: " + err.Error()
-				} else {
-					stat, _ := f.Stat()
-					if stat.IsDir() {
-						results[name] = "DIR"
-					} else {
-						results[name] = fmt.Sprintf("FILE (size=%d)", stat.Size())
-					}
-					f.Close()
-				}
-			}
-			c.JSON(http.StatusOK, results)
-		})
-	}
-
-	// 静态文件服务 (SPA)
-	r.NoRoute(s.handleStatic)
-
-	// API 路由组
-	api := r.Group("/api")
-
-	// 无需 authMiddleware 的接口。
-	// 注意：/rotateip 与 websheet 并非"无鉴权"——前者在 handler 内经 authorizeRotate
-	// 校验（Bearer 或 username/password 双模式，供外部脚本调用）；后者以随机 session id
-	// 作为能力凭证，且需接收运营商侧回调。
-	api.GET("/docs", s.handleAPIDocs)
-	api.GET("/docs/assets/*filepath", s.handleDocsAsset)
-	// spec 必须与承载它的 Swagger UI 页面同级：/docs 免鉴权而 spec 需鉴权时，
-	// 页面能打开却永远拉不到定义，只会一直空白。
-	// 这里公开的只是接口形状，spec 中描述的端点本身依然需要 Bearer token。
-	api.GET("/openapi.yaml", s.handleOpenAPIYAML)
-	api.GET("/openapi.json", s.handleOpenAPIJSON)
-	api.POST("/auth/login", s.handleLogin)
-	api.POST("/rotateip", s.handleRotate)
-	api.OPTIONS("/logs/stream", s.handleLogStreamOptions)
-	s.registerWebsheetRoutes(api)
-
-	// 以下接口需要鉴权
-	api.Use(s.authMiddleware())
-	{
-		// ===== 仪表盘 =====
-		api.GET("/dashboard/devices", s.handleListDevices)          // 获取所有设备概览（仪表盘卡片用）
-		api.GET("/devices/:device_id/status", s.handleStatusDetail) // 获取单个设备详细状态
-		// 返回逐设备的健康明细（设备 ID、信号、联网状态），因此需要鉴权。
-		// 外部监控请用免鉴权的 GET /ping，那个只回 pong、不含任何设备信息。
-		api.GET("/health", s.handleHealth)
-		api.GET("/traffic/analysis", s.handleTrafficAnalysis)       // 流量分析统计
-
-		// ===== 短信 =====
-		api.POST("/sms/send", s.handleSendSMS)                    // 发送短信（自动选择 AT 或 VoWiFi）
-		api.GET("/sms/delivery/:message_id", s.handleSMSDelivery) // 查询发送投递状态
-		api.GET("/sms/contacts", s.handleGetSMSContacts)          // 获取短信联系人列表
-		api.GET("/sms/thread", s.handleGetSMSThread)              // 获取与某联系人的短信会话
-		api.DELETE("/sms/messages/:id", s.handleDeleteSMSMessage) // 删除单条历史短信
-		api.DELETE("/sms/thread", s.handleDeleteSMSThread)        // 删除指定历史短信会话
-
-		// ===== 系统设置 =====
-		api.GET("/settings/notifications", s.handleGetNotificationSettings)    // 获取通知设置
-		api.PUT("/settings/notifications", s.handleUpdateNotificationSettings) // 更新通知设置
-		api.POST("/settings/notifications/webhook/test", s.handleTestWebhookNotification)
-		api.POST("/settings/notifications/bark/test", s.handleTestBarkNotification)
-		api.POST("/settings/notifications/email/test", s.handleTestEmailNotification)
-		api.POST("/settings/password", s.handleChangePassword) // 修改登录密码
-		api.GET("/system/info", s.handleSystemInfo)            // 获取系统运行与版本信息
-		api.GET("/system/update/check", s.handleCheckUpdate)   // 检查系统更新
-		api.POST("/system/update/apply", s.handleApplyUpdate)  // 应用系统更新
-		api.POST("/system/uninstall", s.handleUninstall)       // 卸载/自毁（破坏性，必须鉴权）
-
-		api.GET("/devices", s.handleDeviceMgmtList)                                            // 获取设备列表（管理页用）
-		api.POST("/devices", s.handleDeviceMgmtAddDevice)                                      // 添加新设备
-		api.GET("/devices/discovered", s.handleDeviceMgmtDiscovered)                           // 获取已发现的硬件设备
-		api.POST("/devices/actions/rescan", s.handleDeviceRescan)                              // 手动触发设备重扫描
-		api.GET("/devices/:device_id/overview/stream", s.handleDeviceMgmtOverviewStreamSingle) // SSE 单体深层实时流
-		api.GET("/devices/:device_id/overview", s.handleDeviceMgmtOverviewLite)                // 获取设备详情（轻量版）
-		api.GET("/devices/:device_id/config", s.handleDeviceMgmtGetDeviceConfig)               // 获取设备配置
-		api.PUT("/devices/:device_id", s.handleDeviceMgmtUpdateDevice)                         // 更新设备配置
-		api.DELETE("/devices/:device_id", s.handleDeviceMgmtDeleteDevice)                      // 删除设备
-		api.POST("/devices/:device_id/actions/refresh", s.handleDeviceMgmtRefreshInfo)         // 手动触发刷新设备缓存信息
-		api.POST("/devices/:device_id/actions/reboot", s.handleDeviceMgmtReboot)               // 重启设备模组
-		api.POST("/devices/:device_id/actions/at", s.handleDeviceMgmtExecuteAT)                // 执行 AT 命令
-		api.POST("/devices/:device_id/actions/ussd", s.handleDeviceMgmtExecuteUSSD)            // 执行 USSD 指令
-		api.POST("/devices/:device_id/actions/ussd/continue", s.handleDeviceMgmtContinueUSSD)  // USSD 续轮输入（多轮交互）
-		api.POST("/devices/:device_id/actions/ussd/cancel", s.handleDeviceMgmtCancelUSSD)      // 取消 USSD 会话
-		api.PATCH("/devices/:device_id/usbnet-mode", s.handleDeviceMgmtSetUSBNetMode)          // 设置 USBNET 模式
-		api.PATCH("/devices/:device_id/flight-mode", s.handleDeviceMgmtSetFlightMode)          // 切换飞行模式
-		api.PATCH("/devices/:device_id/network", s.handleDeviceNetworkPatch)
-
-		api.GET("/cards/policies", s.handleListCardPolicies)
-		api.GET("/cards/:iccid/policy", s.handleGetCardPolicy)
-		api.PUT("/cards/:iccid/policy", s.handlePutCardPolicy)
-
-		api.GET("/devices/:device_id/operator_selection/scan", s.handleDeviceMgmtOperatorScan)              // 扫描运营商
-		api.GET("/devices/:device_id/operator_selection/scan/stream", s.handleDeviceMgmtOperatorScanStream) // SSE 扫描运营商
-		api.GET("/devices/:device_id/operator_selection", s.handleDeviceMgmtGetOperatorSelection)           // 获取当前选网配置
-		api.POST("/devices/:device_id/operator_selection", s.handleDeviceMgmtSetOperatorSelection)          // 锁定运营商或恢复自动
-
-		// ===== 代理管理 =====
-		api.GET("/proxy-instances/overview", s.handleProxyOverview)                             // 获取代理实例概览
-		api.PUT("/proxy-instances/config", s.handleProxyUpdateConfig)                           // 保存代理配置
-		api.GET("/proxy-instances/:instance_id", s.handleProxyInstanceGet)                      // 获取单个代理实例
-		api.POST("/proxy-instances/:instance_id/actions/start", s.handleProxyInstanceStart)     // 启动代理实例
-		api.POST("/proxy-instances/:instance_id/actions/stop", s.handleProxyInstanceStop)       // 停止代理实例
-		api.POST("/proxy-instances/:instance_id/actions/restart", s.handleProxyInstanceRestart) // 重启代理实例
-
-		// ===== 前置代理管理 =====
-		api.GET("/upstream-proxies", s.handleListUpstreamProxies)                                         // 列出所有前置代理
-		api.POST("/upstream-proxies", s.handleCreateUpstreamProxy)                                        // 新增前置代理
-		api.PUT("/upstream-proxies/:proxy_id", s.handleUpdateUpstreamProxy)                               // 更新前置代理
-		api.DELETE("/upstream-proxies/:proxy_id", s.handleDeleteUpstreamProxy)                            // 删除前置代理
-		api.POST("/upstream-proxies/:proxy_id/actions/probe", s.handleProbeUpstreamProxy)                 // 探测前置代理
-		api.GET("/upstream-proxy-countries", s.handleListUpstreamProxyCountries)                          // 列出可配置国家
-		api.GET("/upstream-proxy-country-rules", s.handleListUpstreamProxyCountryRules)                   // 列出国家规则
-		api.PUT("/upstream-proxy-country-rules/:country_code", s.handleUpsertUpstreamProxyCountryRule)    // 保存国家规则
-		api.DELETE("/upstream-proxy-country-rules/:country_code", s.handleDeleteUpstreamProxyCountryRule) // 删除国家规则
-
-		// ===== eSIM =====
-		api.GET("/devices/:device_id/esim", s.handleEsimGetOverview) // 获取 eSIM 总览
-		api.GET("/devices/:device_id/esim/profiles", s.handleEsimListProfiles)
-		api.GET("/devices/:device_id/esim/notifications", s.handleEsimListNotifications)
-		api.POST("/devices/:device_id/esim/notifications/:sequence/actions/retry", s.handleEsimRetryNotification) // 获取 eSIM profile 列表
-		api.POST("/devices/:device_id/esim/actions/switch", s.handleEsimSwitchProfile)                            // 切换 eSIM profile
-		api.GET("/devices/:device_id/esim/eids", s.handleEsimGetEID)                                              // 获取 EID
-		api.GET("/devices/:device_id/esim/chip-info", s.handleEsimGetChipInfo)                                    // 获取 eUICC 芯片信息
-		// 下载分两步：POST 建任务（激活码走 body），GET 按 task_id 订阅 SSE 进度。
-		// 旧的「单个 GET + query 传激活码」已移除，那样会把一次性激活码留在
-		// 浏览器历史与访问日志里。
-		api.POST("/devices/:device_id/esim/actions/download", s.handleEsimDownloadStart)
-		api.GET("/devices/:device_id/esim/actions/download/stream", s.handleEsimDownloadStream)
-		api.PATCH("/devices/:device_id/esim/profiles/:iccid", s.handleEsimRenameProfile)                          // 修改 profile 名称
-		api.DELETE("/devices/:device_id/esim/profiles/:iccid", s.handleEsimDeleteProfile)                         // 删除 eSIM profile
-
-		// ===== VoWiFi =====
-		api.PATCH("/devices/:device_id/vowifi", s.handleDeviceVoWiFiPatch)                          // 启用/禁用 VoWiFi
-		api.POST("/devices/:device_id/vowifi/actions/reconnect", s.handleDeviceMgmtReconnectVoWiFi) // 重连 VoWiFi
-		api.POST("/devices/:device_id/vowifi/e911/websheet", s.handleDeviceE911Websheet)            // 打开 E911 设置 websheet
-		// api.POST("/devices/:id/simulate-call", s.handleSimulateCall)   // 模拟呼叫
-
-		// ===== 日志 =====
-		api.GET("/logs/stream", s.handleLogStream)   // SSE 实时日志流
-		api.GET("/logs/history", s.handleLogHistory) // 获取历史日志
-	}
-	return r
 }
 
 func (s *Server) Run() error {
@@ -2110,18 +1945,6 @@ func (s *Server) isSessionTokenValid(token string, now time.Time) bool {
 	return hmac.Equal([]byte(sig), []byte(expectedSig))
 }
 
-// sseTokenQueryRoutes 列出允许用 ?token= 传递凭证的流式端点。
-//
-// 浏览器原生 EventSource 无法设置请求头，这些 SSE 端点若只认 Authorization
-// 就无法在前端使用。回退仅对本白名单开放：token 出现在 URL 中会进入访问日志、
-// Referer 与浏览器历史，因此不对普通端点放开。
-var sseTokenQueryRoutes = map[string]struct{}{
-	"/api/logs/stream":                                      {},
-	"/api/devices/:device_id/overview/stream":               {},
-	"/api/devices/:device_id/operator_selection/scan/stream": {},
-	"/api/devices/:device_id/esim/actions/download/stream":   {},
-}
-
 func (s *Server) requestSessionToken(c *gin.Context) string {
 	token := strings.TrimSpace(c.GetHeader("Authorization"))
 	if token != "" {
@@ -2129,10 +1952,20 @@ func (s *Server) requestSessionToken(c *gin.Context) string {
 		return strings.TrimSpace(token)
 	}
 
-	if _, ok := sseTokenQueryRoutes[c.FullPath()]; ok {
+	// 只有路由表里标了 sseToken 的流式端点才接受 query 凭证。
+	// 白名单从路由表派生（见 routes.go），不再是一份需要同步维护的清单。
+	if _, ok := s.sseTokenPaths()[c.FullPath()]; ok {
 		return strings.TrimSpace(c.Query("token"))
 	}
 	return ""
+}
+
+// sseTokenPaths 惰性求值一次并缓存：每个请求都要查它，不能每次重建路由表。
+func (s *Server) sseTokenPaths() map[string]struct{} {
+	s.sseTokenOnce.Do(func() {
+		s.sseTokenCache = s.sseTokenQueryPaths()
+	})
+	return s.sseTokenCache
 }
 
 func (s *Server) isAuthenticatedRequest(c *gin.Context, now time.Time) bool {

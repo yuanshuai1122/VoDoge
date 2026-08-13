@@ -6,20 +6,24 @@
  * 以致完全不能作为前端依据（docs/frontend-api-matrix.md §7）。
  * 有了这项检查，二者再次分叉时会在本地流水线里立刻暴露。
  *
- * 判据来自源码而非人工维护的清单：
- *  - `api.METHOD("/x", ...)` 注册在 /api 组下，对应 spec 中的 `/x`（servers 前缀为 /api）
- *  - `r.METHOD("/x", ...)`   注册在根，spec 不描述（如 /ping、/debug/embed）
+ * 判据是 internal/api/routes.go 里的路由表——那张表本身就是注册用的数据，
+ * 不存在"清单说一套、代码做一套"的可能。表项形如：
+ *
+ *   {"GET", "/devices", s.handleDeviceMgmtList, authRequired, false, "设备列表"},
+ *
+ * 挂在根而非 /api 组下的路由（/ping、/debug/embed）不在表里，spec 也不描述。
  *
  * 用法：node scripts/check-routes.mjs
  */
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const API_DIR = "internal/api";
 const SPEC = path.join(API_DIR, "openapi.vohive.yaml");
+const ROUTES_FILE = path.join(API_DIR, "routes.go");
 
-const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
 
 /**
  * 不纳入公开契约的路由。
@@ -51,25 +55,29 @@ function normalize(p) {
 
 function collectRegisteredRoutes() {
   const routes = new Set();
-  const files = readdirSync(API_DIR).filter(
-    (f) => f.endsWith(".go") && !f.endsWith("_test.go"),
-  );
+  const src = readFileSync(ROUTES_FILE, "utf8");
 
-  for (const f of files) {
-    const src = readFileSync(path.join(API_DIR, f), "utf8");
-    for (const line of src.split("\n")) {
-      // 跳过注释掉的注册
-      if (/^\s*\/\//.test(line)) continue;
+  for (const line of src.split("\n")) {
+    // 跳过注释掉的表项
+    if (/^\s*\/\//.test(line)) continue;
 
-      // api.GET("/devices", ...) —— 挂在 /api 组下
-      const m = line.match(
-        new RegExp(`\\bapi\\.(${METHODS.join("|")})\\("([^"]+)"`),
-      );
-      if (m) {
-        const p = normalize(m[2]);
-        if (!isInternal(p)) routes.add(`${m[1]} ${p}`);
-      }
+    // {"GET", "/devices", s.handleX, authRequired, false, "..."},
+    const m = line.match(
+      new RegExp(`^\\s*\\{"(${METHODS.join("|")})",\\s*"([^"]+)"`),
+    );
+    if (m) {
+      const p = normalize(m[2]);
+      if (!isInternal(p)) routes.add(`${m[1]} ${p}`);
     }
+  }
+
+  // websheet 的代理通道由两层循环展开（方法 × 路径），不是逐条字面量。
+  // 那些路径全部属于内部通道，本就不纳入契约，这里无需还原。
+  if (routes.size === 0) {
+    console.error(
+      `没有从 ${ROUTES_FILE} 解析出任何路由——表的写法可能变了，请同步本脚本`,
+    );
+    process.exit(2);
   }
   return routes;
 }
@@ -99,7 +107,9 @@ function collectSpecRoutes() {
       currentPath = normalize(pathMatch[1]);
       continue;
     }
-    const methodMatch = line.match(/^ {4}(get|post|put|patch|delete):\s*$/);
+    const methodMatch = line.match(
+      /^ {4}(get|post|put|patch|delete|options):\s*$/,
+    );
     if (methodMatch && currentPath) {
       routes.add(`${methodMatch[1].toUpperCase()} ${currentPath}`);
     }

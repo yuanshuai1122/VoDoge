@@ -10,21 +10,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// registerWebsheetRoutes 只在测试里单独用；正常启动时路由由 newRouter 统一注册。
+// 两者共用 s.websheetRoutes()，不会出现测试挂的路由与线上不一致。
 func (s *Server) registerWebsheetRoutes(api *gin.RouterGroup) {
-	api.GET("/websheets/:id", s.handleWebsheetBootstrap)
-	api.GET("/websheets/:id/status", s.handleWebsheetStatus)
-	api.GET("/websheets/:id/proxy", s.handleWebsheetProxy)
-	api.POST("/websheets/:id/proxy", s.handleWebsheetProxy)
-	api.PUT("/websheets/:id/proxy", s.handleWebsheetProxy)
-	api.PATCH("/websheets/:id/proxy", s.handleWebsheetProxy)
-	api.DELETE("/websheets/:id/proxy", s.handleWebsheetProxy)
-	api.GET("/websheets/:id/proxy/*target", s.handleWebsheetProxy)
-	api.POST("/websheets/:id/proxy/*target", s.handleWebsheetProxy)
-	api.PUT("/websheets/:id/proxy/*target", s.handleWebsheetProxy)
-	api.PATCH("/websheets/:id/proxy/*target", s.handleWebsheetProxy)
-	api.DELETE("/websheets/:id/proxy/*target", s.handleWebsheetProxy)
-	api.POST("/websheets/:id/callback", s.handleWebsheetCallback)
-	api.POST("/websheets/:id/done", s.handleWebsheetDone)
+	registerRoutes(api, s.websheetRoutes())
 }
 
 func (s *Server) websheetSession(c *gin.Context) (*websheet.Session, error) {

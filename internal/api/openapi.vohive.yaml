@@ -1533,6 +1533,15 @@ paths:
                 type: string
         '401':
           $ref: '#/components/responses/Unauthorized'
+    options:
+      tags: [logs]
+      summary: 日志流 CORS 预检
+      description: |
+        开发期前端直连后端（绕开会缓冲 SSE 的 Next dev 代理）时用到。
+        免鉴权——预检请求本就不带凭证。
+      responses:
+        '204':
+          description: 允许跨源访问
 
   /logs/history:
     get:
