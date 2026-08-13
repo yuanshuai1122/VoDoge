@@ -1,7 +1,7 @@
 package api
 
 import (
-	"context"
+	"bytes"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -494,16 +494,18 @@ func TestFormatEsimDownloadDoneEventIncludesWarningFields(t *testing.T) {
 }
 
 func TestWriteEsimDownloadDoneEventWritesSingleWarningDoneFrame(t *testing.T) {
-	recorder := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(recorder)
-	writeEsimDownloadDoneEvent(ctx, esim.DownloadProfileResult{
+	var buf bytes.Buffer
+	writeEsimDownloadEvent(&buf, esimDownloadDoneEvent(esim.DownloadProfileResult{
 		Warning:     "Profile 下载完成，但通知未完全确认",
 		WarningCode: "download_notification_handle_failed",
-	})
+	}))
 
-	body := recorder.Body.String()
+	body := buf.String()
 	if !containsAll(body, `data: {"step":"done"`, `"warning":"Profile 下载完成，但通知未完全确认"`, `"warning_code":"download_notification_handle_failed"`) {
 		t.Fatalf("body=%q want SSE done frame with warning fields", body)
+	}
+	if strings.Count(body, "data: ") != 1 {
+		t.Fatalf("body=%q want exactly one SSE frame", body)
 	}
 }
 
@@ -548,26 +550,6 @@ func TestWriteEsimDeleteSuccessJSONWritesWarningFields(t *testing.T) {
 	}
 	if body := recorder.Body.String(); body == "" || !containsAll(body, `"status":"ok"`, `"message":"Profile 删除成功"`, `"warning":"Profile 已删除，但删除通知发送未完全确认"`, `"warning_code":"delete_notification_not_observed"`) {
 		t.Fatalf("body=%q want success-with-warning delete payload", body)
-	}
-}
-
-func TestEsimDownloadExecPropagatesWarningResult(t *testing.T) {
-	var gotIMEI string
-	result, err := esimDownloadExec(func(ctx context.Context, aidHex, smdp, matchingID, confirmationCode, imei string, progressFn esim.DownloadProgressFn) (esim.DownloadProfileResult, error) {
-		gotIMEI = imei
-		return esim.DownloadProfileResult{
-			Warning:     "Profile 下载完成，但通知未完全确认",
-			WarningCode: "download_notification_handle_failed",
-		}, nil
-	}, context.Background(), "A000", "example.com", "", "", "350225641234561", nil)
-	if err != nil {
-		t.Fatalf("esimDownloadExec() error=%v", err)
-	}
-	if result.WarningCode != "download_notification_handle_failed" {
-		t.Fatalf("result=%#v want warning result passthrough", result)
-	}
-	if gotIMEI != "350225641234561" {
-		t.Fatalf("imei=%q want forwarded custom IMEI", gotIMEI)
 	}
 }
 

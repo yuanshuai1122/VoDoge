@@ -88,6 +88,10 @@ type Server struct {
 	loginAttempts map[string]loginAttempt
 
 	shutdownCh chan struct{}
+
+	// eSIM 下载任务表：POST 建任务、GET 按 task_id 订阅进度，
+	// 使激活码不必出现在 URL 中（见 esim_download.go）。
+	esimDownloads *esimDownloadRegistry
 }
 
 type realtimeTrafficSubscriber interface {
@@ -117,6 +121,7 @@ func New(cfg *config.Config, pool *device.Pool, fs http.FileSystem, proxyMgr *se
 		websheets:     vwebsheet.New(vwebsheet.Config{BasePath: "/api/websheets"}),
 		loginAttempts: make(map[string]loginAttempt),
 		shutdownCh:    make(chan struct{}),
+		esimDownloads: newEsimDownloadRegistry(),
 	}
 
 	return s
@@ -343,7 +348,11 @@ func (s *Server) newRouter() *gin.Engine {
 		api.POST("/devices/:device_id/esim/actions/switch", s.handleEsimSwitchProfile)                            // 切换 eSIM profile
 		api.GET("/devices/:device_id/esim/eids", s.handleEsimGetEID)                                              // 获取 EID
 		api.GET("/devices/:device_id/esim/chip-info", s.handleEsimGetChipInfo)                                    // 获取 eUICC 芯片信息
-		api.GET("/devices/:device_id/esim/actions/download", s.handleEsimDownloadProfile)                         // 下载 eSIM profile（SSE 流式进度）
+		// 下载分两步：POST 建任务（激活码走 body），GET 按 task_id 订阅 SSE 进度。
+		// 旧的「单个 GET + query 传激活码」已移除，那样会把一次性激活码留在
+		// 浏览器历史与访问日志里。
+		api.POST("/devices/:device_id/esim/actions/download", s.handleEsimDownloadStart)
+		api.GET("/devices/:device_id/esim/actions/download/stream", s.handleEsimDownloadStream)
 		api.PATCH("/devices/:device_id/esim/profiles/:iccid", s.handleEsimRenameProfile)                          // 修改 profile 名称
 		api.DELETE("/devices/:device_id/esim/profiles/:iccid", s.handleEsimDeleteProfile)                         // 删除 eSIM profile
 
@@ -2110,7 +2119,7 @@ var sseTokenQueryRoutes = map[string]struct{}{
 	"/api/logs/stream":                                      {},
 	"/api/devices/:device_id/overview/stream":               {},
 	"/api/devices/:device_id/operator_selection/scan/stream": {},
-	"/api/devices/:device_id/esim/actions/download":          {},
+	"/api/devices/:device_id/esim/actions/download/stream":   {},
 }
 
 func (s *Server) requestSessionToken(c *gin.Context) string {

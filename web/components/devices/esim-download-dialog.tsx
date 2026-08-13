@@ -16,7 +16,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useEventSource } from "@/lib/sse/use-event-source";
-import { downloadProfileStreamPath } from "@/lib/api/endpoints/esim";
+import {
+  downloadProfileStreamPath,
+  startDownloadProfile,
+} from "@/lib/api/endpoints/esim";
 import { useEsimLockStore } from "@/stores/esim-lock";
 import type { EsimDownloadEvent } from "@/types/esim";
 
@@ -46,13 +49,14 @@ export function EsimDownloadDialog({
     matching_id: "",
     confirmation_code: "",
   });
-  // 非空表示正在下载，同时作为 SSE 的 query 参数
-  const [active, setActive] = useState<DownloadParams | null>(null);
+  // 非空表示有正在订阅的下载任务；激活参数不再进 URL，这里只留 id
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
   const [progress, setProgress] = useState<EsimDownloadEvent | null>(null);
 
   const finish = useCallback(
     (ok: boolean, event: EsimDownloadEvent) => {
-      setActive(null);
+      setTaskId(null);
       end(deviceId);
       if (ok) {
         toast.success(event.warning ? `下载完成（${event.warning}）` : "Profile 下载完成");
@@ -79,27 +83,37 @@ export function EsimDownloadDialog({
 
   const status = useEventSource(downloadProfileStreamPath(deviceId), {
     events: { message: onMessage },
-    enabled: active !== null,
-    query: active
-      ? {
-          smdp: active.smdp,
-          matching_id: active.matching_id || undefined,
-          confirmation_code: active.confirmation_code || undefined,
-        }
-      : undefined,
+    enabled: taskId !== null,
+    query: taskId ? { task_id: taskId } : undefined,
   });
 
-  function start() {
+  async function start() {
     if (!form.smdp.trim()) {
       toast.error("SM-DP+ 地址为必填项");
       return;
     }
     setProgress(null);
+    setStarting(true);
     begin(deviceId, "download_profile");
-    setActive({ ...form });
+    try {
+      const { task_id, already_running } = await startDownloadProfile(deviceId, {
+        smdp: form.smdp.trim(),
+        matching_id: form.matching_id.trim() || undefined,
+        confirmation_code: form.confirmation_code.trim() || undefined,
+      });
+      if (already_running) {
+        toast.info("该设备已有进行中的下载，正在接入其进度");
+      }
+      setTaskId(task_id);
+    } catch (err) {
+      end(deviceId);
+      toast.error(err instanceof Error ? err.message : "发起下载失败");
+    } finally {
+      setStarting(false);
+    }
   }
 
-  const downloading = active !== null;
+  const downloading = starting || taskId !== null;
   const pct = progress?.pct ?? 0;
 
   return (
@@ -115,7 +129,8 @@ export function EsimDownloadDialog({
         <DialogHeader>
           <DialogTitle>下载 eSIM Profile</DialogTitle>
           <DialogDescription>
-            填写运营商提供的 SM-DP+ 信息。下载最长约 5 分钟，期间请勿关闭。
+            填写运营商提供的 SM-DP+ 信息。下载最长约 5 分钟；
+            期间连接中断不会中止下载，重连后会补上错过的进度。
           </DialogDescription>
         </DialogHeader>
 
@@ -165,7 +180,11 @@ export function EsimDownloadDialog({
               </div>
               <p className="text-xs text-muted-foreground">
                 {progress?.msg ??
-                  (status === "open" ? "已连接，等待进度…" : "正在建立连接…")}
+                  (starting
+                    ? "正在发起下载…"
+                    : status === "open"
+                      ? "已连接，等待进度…"
+                      : "正在建立连接…")}
               </p>
             </div>
           )}

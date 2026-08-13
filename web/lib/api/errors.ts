@@ -22,6 +22,12 @@ export class ApiError extends Error {
   readonly retryAfterMs?: number;
   /** 仅 busy 时有值，占用原因（如 "rename_profile"）。 */
   readonly reason?: string;
+  /**
+   * 原始错误体。少数端点会在错误响应里带上调用方需要的数据——例如
+   * eSIM 下载的 409 会返回进行中任务的 task_id，调用方要用它去订阅进度。
+   * 归一化后的字段之外的东西都在这里，取用时自行做类型收窄。
+   */
+  readonly body?: Record<string, unknown>;
 
   constructor(
     message: string,
@@ -32,6 +38,7 @@ export class ApiError extends Error {
       busy?: boolean;
       retryAfterMs?: number;
       reason?: string;
+      body?: Record<string, unknown>;
     },
   ) {
     super(message);
@@ -42,6 +49,7 @@ export class ApiError extends Error {
     this.busy = opts.busy ?? false;
     this.retryAfterMs = opts.retryAfterMs;
     this.reason = opts.reason;
+    this.body = opts.body;
   }
 
   get isUnauthorized(): boolean {
@@ -88,6 +96,7 @@ export function parseApiError(httpStatus: number, body: unknown): ApiError {
       busy: true,
       retryAfterMs: asNumber(rec.retryAfterMs),
       reason: asString(rec.reason),
+      body: rec,
     });
   }
 
@@ -98,18 +107,20 @@ export function parseApiError(httpStatus: number, body: unknown): ApiError {
       httpStatus,
       code: asString(rec.code),
       requestId: asString(rec.request_id),
+      body: rec,
     });
   }
 
   // 形状 2
   const err = asString(rec.error);
   if (err) {
-    return new ApiError(err, { httpStatus, code: asString(rec.code) });
+    return new ApiError(err, { httpStatus, code: asString(rec.code), body: rec });
   }
 
   return new ApiError(defaultMessageFor(httpStatus), {
     httpStatus,
     requestId: asString(rec.request_id),
+    body: rec,
   });
 }
 

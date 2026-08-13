@@ -1338,38 +1338,61 @@ paths:
           $ref: '#/components/responses/ErrorMessage'
 
   /devices/{device_id}/esim/actions/download:
+    post:
+      tags: [esim]
+      summary: 发起 eSIM Profile 下载
+      description: |
+        创建一个后台下载任务并立即返回 `task_id`，随后用
+        `GET /devices/{device_id}/esim/actions/download/stream?task_id=...` 订阅进度。
+
+        激活参数（`matching_id` / `confirmation_code`）只经请求体提交，不出现在 URL 中：
+        它们通常一次性且可被抢用，进入浏览器历史、Referer 或中间层访问日志是不可接受的暴露面。
+
+        下载不与订阅连接绑定——断线后用同一个 `task_id` 重新订阅即可，已产生的事件会被补发。
+      parameters:
+        - $ref: '#/components/parameters/DeviceIDPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EsimDownloadRequest'
+      responses:
+        '202':
+          description: 任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EsimDownloadTaskAccepted'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+        '409':
+          description: 该设备已有进行中的下载任务；响应中的 `task_id` 可直接订阅
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EsimDownloadBusy'
+
+  /devices/{device_id}/esim/actions/download/stream:
     get:
       tags: [esim]
-      summary: 下载 eSIM Profile（SSE）
+      summary: 订阅 eSIM Profile 下载进度（SSE）
       description: |
-        返回 `text/event-stream`。
+        返回 `text/event-stream`。订阅时先补发该任务已产生的全部事件，再推送后续事件。
         每条 `data` 负载格式为：
         `{"step":"preflight|auth_client|auth_server|install|notify|done|error","msg":"...","pct":10}`
-        当最终 `step=done` 但通知未完全确认时，会额外附带 `warning` / `warning_code`。
+        当最终 `step=done` 但通知未完全确认时，会额外附带 `warning` / `warning_code`；
+        `step=error` 时可能附带 `code` / `details`。流在终态事件后结束。
       parameters:
         - $ref: '#/components/parameters/DeviceIDPath'
         - in: query
-          name: smdp
+          name: task_id
           required: true
           schema:
             type: string
-        - in: query
-          name: matching_id
-          schema:
-            type: string
-        - in: query
-          name: confirmation_code
-          schema:
-            type: string
-        - in: query
-          name: aid_hex
-          schema:
-            type: string
-        - in: query
-          name: imei
-          schema:
-            type: string
-          description: 可选，下载 profile 时使用的 IMEI；为空则使用设备 IMEI
+          description: POST 下载接口返回的任务 id
       responses:
         '200':
           description: SSE 下载进度流
@@ -3379,6 +3402,51 @@ components:
           type: string
         aid_hex:
           type: string
+
+    EsimDownloadRequest:
+      type: object
+      required: [smdp]
+      properties:
+        smdp:
+          type: string
+          description: SM-DP+ 地址
+        matching_id:
+          type: string
+          description: Matching ID（激活码的一部分，仅经请求体提交）
+        confirmation_code:
+          type: string
+          description: 确认码（仅经请求体提交）
+        aid_hex:
+          type: string
+        imei:
+          type: string
+          description: 可选，下载 profile 时使用的 IMEI；为空则使用设备 IMEI
+
+    EsimDownloadTaskAccepted:
+      type: object
+      required: [status, task_id]
+      properties:
+        status:
+          type: string
+          example: ok
+        task_id:
+          type: string
+          description: 用于订阅进度流的任务 id
+
+    EsimDownloadBusy:
+      type: object
+      required: [error, task_id]
+      properties:
+        error:
+          type: string
+        busy:
+          type: boolean
+        code:
+          type: string
+          example: ESIM_DOWNLOAD_IN_PROGRESS
+        task_id:
+          type: string
+          description: 进行中任务的 id，可直接订阅其进度流
 
     DeviceStatusResponse:
       type: object

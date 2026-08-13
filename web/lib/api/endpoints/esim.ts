@@ -1,4 +1,5 @@
 import { api } from "../client";
+import { ApiError } from "../errors";
 import { pick, raw, rawArray } from "../unwrap";
 import type { EUICCProfiles } from "../../../types/esim";
 
@@ -112,12 +113,46 @@ export async function retryNotification(
   );
 }
 
+export interface StartDownloadInput {
+  smdp: string;
+  matching_id?: string;
+  confirmation_code?: string;
+  aid_hex?: string;
+  imei?: string;
+}
+
 /**
- * 下载 profile 的 SSE 路径与查询参数。
+ * 发起下载：激活参数走 POST body，只有不敏感的 task_id 会进 URL。
  *
- * 注意这是 GET + query，激活码（confirmation_code）会进入浏览器历史；
- * 后端访问日志已对 token 脱敏，但激活码本身没有脱敏（api-matrix §8-4）。
+ * 早先是 GET + query，激活码因此会落进浏览器历史、Referer 和中间层访问日志；
+ * 激活码通常一次性且可被抢用，那个暴露面不可接受。
+ *
+ * 设备已有进行中的任务时后端返回 409 + task_id，这里当作正常结果返回，
+ * 调用方直接订阅那个任务即可（重复点击、刷新页面都会走到这条路径）。
  */
+export async function startDownloadProfile(
+  deviceId: string,
+  input: StartDownloadInput,
+): Promise<{ task_id: string; already_running: boolean }> {
+  try {
+    const body = await api.post<{ task_id?: string }>(
+      `/devices/${encodeURIComponent(deviceId)}/esim/actions/download`,
+      input,
+      { timeoutMs: 30_000 },
+    );
+    return { task_id: body?.task_id ?? "", already_running: false };
+  } catch (err) {
+    if (err instanceof ApiError && err.httpStatus === 409) {
+      const taskId = err.body?.task_id;
+      if (typeof taskId === "string" && taskId) {
+        return { task_id: taskId, already_running: true };
+      }
+    }
+    throw err;
+  }
+}
+
+/** 订阅下载进度的 SSE 路径；配 ?task_id= 使用。 */
 export function downloadProfileStreamPath(deviceId: string): string {
-  return `/devices/${encodeURIComponent(deviceId)}/esim/actions/download`;
+  return `/devices/${encodeURIComponent(deviceId)}/esim/actions/download/stream`;
 }

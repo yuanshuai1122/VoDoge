@@ -91,7 +91,7 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 
 | # | 问题 | 影响 |
 |---|------|------|
-| 1 | eSIM 激活码经 **GET query** 传输 | `confirmation_code` 进浏览器历史与 Referer；改 POST body 需前后端同步改 |
+| 1 | ~~eSIM 激活码经 **GET query** 传输~~ | ✅ 已修复：POST 建任务 + GET 按 `task_id` 订阅，激活参数只走请求体 |
 | 2 | ~~`/api/docs` 拉不到 spec~~ | ✅ 已修复：spec 移至免鉴权区 |
 | 3 | ~~`/api/health` 注释与实现矛盾~~ | ✅ 已澄清：返回逐设备明细故需鉴权，监控改用 `/ping` |
 | 4 | ~~Next dev 代理缓冲 SSE~~ | ✅ 已缓解：4 个 SSE 端点均加 CORS（仅 Debug 放行 localhost），前端 dev 直连 :7575 |

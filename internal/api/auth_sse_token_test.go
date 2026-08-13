@@ -34,10 +34,17 @@ func TestRequestSessionTokenQueryFallbackOnlyForSSERoutes(t *testing.T) {
 			wantTok: "abc",
 		},
 		{
-			name:    "eSIM 下载流接受 query token",
-			route:   "/api/devices/:device_id/esim/actions/download",
-			reqPath: "/api/devices/dev1/esim/actions/download?smdp=x&token=abc",
+			name:    "eSIM 下载进度流接受 query token",
+			route:   "/api/devices/:device_id/esim/actions/download/stream",
+			reqPath: "/api/devices/dev1/esim/actions/download/stream?task_id=t1&token=abc",
 			wantTok: "abc",
+		},
+		{
+			// 建任务是普通 POST，凭证走 header；放开 query 只会白白多一条泄漏路径
+			name:    "eSIM 建下载任务拒绝 query token",
+			route:   "/api/devices/:device_id/esim/actions/download",
+			reqPath: "/api/devices/dev1/esim/actions/download?token=abc",
+			wantTok: "",
 		},
 		{
 			name:    "运营商扫描流接受 query token",

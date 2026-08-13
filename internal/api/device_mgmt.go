@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -1785,67 +1784,11 @@ func esimDeleteSuccessBody(result esim.DeleteProfileResult) gin.H {
 	return body
 }
 
-func formatEsimDownloadDoneEvent(result esim.DownloadProfileResult) string {
-	base := `{"step":"done","msg":"Profile 下载完成","pct":100`
-	if result.SpaceDelta != nil {
-		spaceDeltaJSON, err := json.Marshal(result.SpaceDelta)
-		if err == nil {
-			base += fmt.Sprintf(`,"space_delta":%s`, spaceDeltaJSON)
-		}
-	}
-	if warning := strings.TrimSpace(result.Warning); warning != "" {
-		base += fmt.Sprintf(`,"warning":%q`, warning)
-	}
-	if warningCode := strings.TrimSpace(result.WarningCode); warningCode != "" {
-		base += fmt.Sprintf(`,"warning_code":%q`, warningCode)
-	}
-	return base + `}`
-}
-
-func formatEsimDownloadErrorEvent(err error) string {
-	msg := "下载失败"
-	var downloadErr *esim.DownloadProfileError
-	if errors.As(err, &downloadErr) && downloadErr != nil {
-		if downloadErr.Message != "" {
-			msg += ": " + downloadErr.Message
-		} else if err != nil {
-			msg += ": " + err.Error()
-		}
-		base := fmt.Sprintf(`{"step":"error","msg":%q,"pct":-1`, msg)
-		if code := strings.TrimSpace(downloadErr.Code); code != "" {
-			base += fmt.Sprintf(`,"code":%q`, code)
-		}
-		if details := strings.TrimSpace(downloadErr.Details); details != "" {
-			base += fmt.Sprintf(`,"details":%q`, details)
-		}
-		return base + `}`
-	}
-	if err != nil {
-		msg += ": " + err.Error()
-	}
-	return fmt.Sprintf(`{"step":"error","msg":%q,"pct":-1}`, msg)
-}
-
-func writeEsimDownloadDoneEvent(c *gin.Context, result esim.DownloadProfileResult) {
-	fmt.Fprintf(c.Writer, "data: %s\n\n", formatEsimDownloadDoneEvent(result))
-	if flusher, ok := c.Writer.(http.Flusher); ok {
-		flusher.Flush()
-	}
-}
-
-func writeEsimDownloadErrorEvent(c *gin.Context, err error) {
-	fmt.Fprintf(c.Writer, "data: %s\n\n", formatEsimDownloadErrorEvent(err))
-	if flusher, ok := c.Writer.(http.Flusher); ok {
-		flusher.Flush()
-	}
-}
+// eSIM 下载的事件构造与 SSE 写出已迁往 esim_download.go——那里下载是一个
+// 后台任务，事件要同时发给多个订阅者，不能再直接往某个 gin.Context 上写。
 
 func writeEsimDeleteSuccessJSON(c *gin.Context, result esim.DeleteProfileResult) {
 	c.JSON(http.StatusOK, esimDeleteSuccessBody(result))
-}
-
-func esimDownloadExec(run func(context.Context, string, string, string, string, string, esim.DownloadProgressFn) (esim.DownloadProfileResult, error), ctx context.Context, aidHex, smdp, matchingID, confirmationCode, imei string, progressFn esim.DownloadProgressFn) (esim.DownloadProfileResult, error) {
-	return run(ctx, aidHex, smdp, matchingID, confirmationCode, imei, progressFn)
 }
 
 var esimNotificationListExec = func(run func(string) ([]esim.NotificationItem, error), aidHex string) ([]esim.NotificationItem, error) {
@@ -2037,84 +1980,6 @@ func (s *Server) handleEsimGetOverview(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, overview)
-}
-
-// handleEsimDownloadProfile 下载 eSIM profile（SSE 流式进度推送）
-//
-// 请求方式：GET，通过 Query 参数传递下载参数：
-//
-//	smdp=<SM-DP+ 地址>（必填）
-//	matching_id=<Matching ID>（可选）
-//	confirmation_code=<确认码>（可选）
-//	aid_hex=<目标 AID hex>（可选）
-//	imei=<下载使用的 IMEI>（可选）
-//
-// 响应为 text/event-stream，每条事件 data 为 JSON：
-//
-//	{"step":"preflight","msg":"正在检查 eUICC 剩余空间...","pct":10}
-//	{"step":"auth_client","msg":"...","pct":30}
-//	{"step":"auth_server","msg":"...","pct":60}
-//	{"step":"install","msg":"...","pct":80}
-//	{"step":"notify","msg":"...","pct":90}
-//	{"step":"done","msg":"Profile 下载完成","pct":100}
-//	{"step":"error","msg":"<错误信息>","pct":-1}
-func (s *Server) handleEsimDownloadProfile(c *gin.Context) {
-	id := deviceIDParam(c)
-	worker := s.pool.GetWorker(id)
-	if worker == nil || worker.EsimMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备或esim管理器未找到"})
-		return
-	}
-
-	smdp := strings.TrimSpace(c.Query("smdp"))
-	if smdp == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "smdp 为必填项"})
-		return
-	}
-	matchingID := c.Query("matching_id")
-	confirmationCode := c.Query("confirmation_code")
-	aidHex := c.Query("aid_hex")
-	imei := strings.TrimSpace(c.Query("imei"))
-
-	// 设置 SSE 响应头
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
-	// 同 overview 流：开发期需允许前端直连，绕开会缓冲 SSE 的 Next dev 代理
-	s.setSSECORSHeaders(c)
-
-	flusher, ok := c.Writer.(http.Flusher)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "流式输出不支持"})
-		return
-	}
-
-	// sseWrite 向客户端推送一条 SSE 事件
-	sseWrite := func(step, msg string, pct int) {
-		fmt.Fprintf(c.Writer, "data: {\"step\":%q,\"msg\":%q,\"pct\":%d}\n\n", step, msg, pct)
-		flusher.Flush()
-	}
-	sseWriteRaw := func(payload string) {
-		fmt.Fprintf(c.Writer, "data: %s\n\n", payload)
-		flusher.Flush()
-	}
-
-	// 下载可能耗时较长，给 5 分钟超时
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)
-	defer cancel()
-
-	progressFn := func(event esim.DownloadProgressEvent) {
-		sseWrite(event.Step, event.Msg, event.Pct)
-	}
-
-	result, err := esimDownloadExec(worker.EsimMgr.DownloadProfile, ctx, aidHex, smdp, matchingID, confirmationCode, imei, progressFn)
-	if err != nil {
-		writeEsimDownloadErrorEvent(c, err)
-		return
-	}
-	_ = sseWriteRaw
-	writeEsimDownloadDoneEvent(c, result)
 }
 
 // handleEsimRenameProfile 修改 eSIM profile 名称

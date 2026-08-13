@@ -102,7 +102,7 @@
 /api/logs/stream
 /api/devices/:device_id/overview/stream
 /api/devices/:device_id/operator_selection/scan/stream
-/api/devices/:device_id/esim/actions/download
+/api/devices/:device_id/esim/actions/download/stream
 ```
 
 规则：
@@ -122,20 +122,29 @@
 | `GET /api/logs/stream?level=` | `connected`、`log` | `{message}` / LogEntry | 带 CORS 头 |
 | `GET /api/devices/:id/overview/stream` | `overview`、`traffic`、`ussd` | `{devices:[item]}` / 流量快照 / USSD 事件 | 10s ticker + VoWiFi 状态变更 + 实时流量 |
 | `GET /api/devices/:id/operator_selection/scan/stream` | `operator_scan` | 扫描结果 | 长耗时 |
-| `GET /api/devices/:id/esim/actions/download` | **无事件名**（默认 `message`） | `{step,msg,pct}` | 见下 |
+| `GET /api/devices/:id/esim/actions/download/stream?task_id=` | **无事件名**（默认 `message`） | `{step,msg,pct}` | 见下 |
 
 ### 3.3 eSIM 下载流（最特殊）
 
-`device_mgmt.go:2061`：
+`internal/api/esim_download.go`。**两步**，不是一个 GET：
 
-- **GET 请求**，参数走 query：`smdp`、`matching_id`、`confirmation_code`、`aid_hex`、`imei`
+1. `POST /api/devices/:id/esim/actions/download`，body `{smdp, matching_id?,
+   confirmation_code?, aid_hex?, imei?}` → `202 {status:"ok", task_id}`。
+   同一设备已有进行中的任务时返回 `409 {error, busy:true,
+   code:"ESIM_DOWNLOAD_IN_PROGRESS", task_id}`——**那个 task_id 可直接订阅**，
+   前端把它当正常结果处理（`startDownloadProfile` 已封装）。
+2. `GET /api/devices/:id/esim/actions/download/stream?task_id=...` 订阅进度。
+
+流的形状：
+
 - 手写 `data: {...}\n\n`，**不带 `event:` 行**——按 `event:"message"` 监听
 - 进度：`{step, msg, pct}`
 - 完成：`{step:"done", msg, pct:100, space_delta?, warning?, warning_code?}`
 - 失败：`{step:"error", msg, pct:-1, code?, details?}`
-- 服务端 **5 分钟**超时
+- 服务端 **5 分钟**超时；任务完成后再保留 **10 分钟**供断线重连取回结果
 
-> 激活码（`confirmation_code`）走 URL query，会进入访问日志与浏览器历史。见 §8。
+拆成两步有两个原因：激活参数不再进 URL（见 §8-4），以及下载不再与某一条连接
+绑定——订阅时会**补发已产生的全部事件**，断线重连后进度不会从中途开始。
 
 ---
 
@@ -207,7 +216,8 @@
 | `/api/devices/:id/esim` | GET | 总览 |
 | `/api/devices/:id/esim/profiles` | GET | Profile 列表 |
 | `/api/devices/:id/esim/profiles/:iccid` | PATCH / DELETE | 改名（`{name, aid_hex}`）/ 删除 |
-| `/api/devices/:id/esim/actions/download` | GET SSE | 下载（见 §3.3） |
+| `/api/devices/:id/esim/actions/download` | POST | 发起下载，返回 `task_id`（见 §3.3） |
+| `/api/devices/:id/esim/actions/download/stream` | GET SSE | 按 `task_id` 订阅下载进度 |
 | `/api/devices/:id/esim/actions/switch` | POST | 切换 |
 | `/api/devices/:id/esim/eids`、`/chip-info` | GET | EID / 芯片信息 |
 | `/api/devices/:id/esim/notifications` | GET | 通知列表 |
@@ -317,11 +327,11 @@ E911 websheet 本质是把运营商网页代理进本服务。前端按「新窗
 | 1 | `POST /api/system/uninstall` 完全无校验，任何能访问端口者可触发自毁 | ✅ **已修复**（2026-08-12）移入鉴权组 |
 | 2 | ~~`POST /api/rotateip` 无鉴权~~ | ❌ **判断有误**：handler 内有 `authorizeRotate` 双模式校验，非漏洞，未改动 |
 | 3 | SSE 端点无法用原生 EventSource | ✅ **已修复**：白名单 `?token=` 回退 + 访问日志脱敏 |
-| 4 | eSIM 激活码经 URL query 传输 | ⬜ 未处理。`confirmation_code` 走 GET query，会进浏览器历史。改为 POST body 需同时改前后端 |
+| 4 | eSIM 激活码经 URL query 传输 | ✅ **已修复**（2026-08-14）拆成 POST 建任务 + GET 按 `task_id` 订阅，激活参数只走请求体（见 §3.3） |
 | 5 | `/api/docs` 免鉴权但其 spec 需鉴权，页面必然空白 | ✅ **已修复**（2026-08-13）spec 移至免鉴权区 |
 | 6 | `/api/health` 需鉴权，与"外部监控用"注释矛盾 | ✅ **已澄清**：该端点返回逐设备明细（设备 ID/信号），理应鉴权；注释已更正，外部监控应改用免鉴权的 `/ping` |
 
-第 4–6 条不阻塞前端开工，建议后续单独处理。
+§8 已全部收口。
 
 ---
 
