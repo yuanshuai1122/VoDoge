@@ -17,6 +17,7 @@
 | [backend-db-decisions.md](./backend-db-decisions.md) | 数据库决策 |
 | [backend-db-progress.md](./backend-db-progress.md) | 数据库改造进度 |
 | [db-migrate-runbook.md](./db-migrate-runbook.md) | 旧 SQLite 数据导入 PostgreSQL 的运维手册 |
+| [backend-api-refactor-plan.md](./backend-api-refactor-plan.md) | `internal/api` 重构方案与验收记录（路由表 / 统一错误 / 分域拆文件） |
 
 ## 已确认方向
 

@@ -1,7 +1,7 @@
 # `internal/api` 重构方案
 
 日期：2026-08-14
-状态：执行中
+状态：**已完成**（三批均已合入，见文末验收记录）
 
 ## 0. 为什么要动
 
@@ -95,12 +95,13 @@ type route struct {
 
 ```go
 func fail(c *gin.Context, status int, code, message string)
-func failErr(c *gin.Context, status int, code string, err error)
+func failErr(c *gin.Context, status int, code string, err error, fallback string)
+func failWith(c *gin.Context, status int, code, message string, extra gin.H)
 ```
 
-统一输出 `{status:"error", code, message, request_id}`。48 处 `{error:"..."}`
-全部转换过来；`busy` / `retryAfterMs` / `task_id` 这类调用方依赖的附加字段
-保留在同一层级。
+统一输出 `{status:"error", code, message, request_id}`。243 处错误站点全部走它；
+`busy` / `retryAfterMs` / `task_id` 这类调用方依赖的附加字段用 `failWith`
+保留在同一层级（且不允许覆盖那四个固定字段）。
 
 **行为变化（前端需同步）：**
 
@@ -112,7 +113,10 @@ func failErr(c *gin.Context, status int, code string, err error)
 3. `retryAfterMs` 保留原名（前端与外部调用方都在读它），
    同时补一个 snake_case 的 `retry_after_ms`，新代码用后者。
 
-每个错误都必须带 `code`。这一步顺带把 48 处"只有一句中文"的错误变成可判别的。
+`code` **留空时按 HTTP 状态推导**（`bad_request` / `not_found` / `conflict` / …）。
+给两百多个站点各编一个专属码只会产出一堆没人分支的字符串；真正需要客户端据以
+决策的场景（`ESIM_BUSY`、`ESIM_DOWNLOAD_IN_PROGRESS`、`e911_*`、`websheet_*`）
+本来就带着自己的 code。
 
 ### 批次 3 — 按域拆文件
 
@@ -120,25 +124,28 @@ func failErr(c *gin.Context, status int, code string, err error)
 
 | 文件 | 内容 |
 |------|------|
-| `server.go` | Server 结构体、New、Run、Shutdown、SetRealtimeTraffic |
+| `server.go` | Server 结构体、New、Run、Shutdown、请求 ID |
 | `routes.go` | 路由表与 `newRouter()` |
 | `auth.go` | 登录、令牌、限流、`authMiddleware`、`requestSessionToken` |
 | `static.go` | SPA 静态文件回退 |
 | `sms.go` | 短信收发、会话、联系人 |
-| `logs.go` | 日志流与历史 |
-| `dashboard.go` | 设备列表、健康、统计、状态 |
+| `logs.go` | 日志流与历史、SSE 的 CORS 头 |
+| `dashboard.go` | 设备列表、健康、统计、状态、系统信息 |
+| `vowifi.go` | VoWiFi 启停与状态 |
+| `network.go` | 数据网络启停与换 IP |
 
 `device_mgmt.go` →
 
 | 文件 | 内容 |
 |------|------|
 | `device_mgmt.go` | 设备增删改查与配置 |
-| `device_actions.go` | 重启 / AT / USSD / 刷新 |
+| `device_actions.go` | AT / USSD / 重启 / 飞行模式 / USBNET / VoWiFi 重连 |
 | `device_esim.go` | eSIM（下载已在 `esim_download.go`） |
-| `device_vowifi.go` | VoWiFi 与网络开关 |
-| `device_overview.go` | 概览与概览流 |
+| `device_overview.go` | 概览的 DTO 与构建逻辑 |
+| `device_overview_stream.go` | 单设备概览 SSE 流 |
+| `device_discovery.go` | 硬件发现 |
 
-**行为变化：无。** 纯文件搬运，不改函数签名。
+**行为变化：无。** 纯文件搬运，声明逐字节复制，import 由 goimports 修正。
 
 ---
 
@@ -157,3 +164,41 @@ bash scripts/ci.sh          # hygiene encoding routes web vet-all test image
 
 路由表先做：它让第二、三批的移动有一张"哪条路由归哪个域"的依据。
 错误统一在拆文件之前做：拆完再改会让 diff 同时包含移动和修改，评审时分不清哪是哪。
+
+---
+
+## 5. 验收记录（2026-08-14）
+
+`bash scripts/ci.sh` 全绿：hygiene / encoding / routes / web / vet-all / test / image。
+14 个测试包 + `cmd/dbmigrate` 全部通过（真实 PostgreSQL）。
+
+另在 Docker 里起了一套完整实例（`vohive:latest` + `postgres:16-alpine`）实测：
+
+| 验证项 | 结果 |
+|--------|------|
+| `scripts/smoke-api.mjs` | 全部通过（登录、系统信息、设备列表、短信会话、代理概览、通知设置、SSE 日志流） |
+| 前端登录 → 仪表盘 → 日志页 | 正常，无控制台错误；日志页 SSE 显示"已连接" |
+| 错误形状 | `{"status":"error","code":"not_found","message":"...","request_id":"..."}`，eSIM 端点也一样 |
+| 401 | `{"status":"error","code":"unauthorized",...}` |
+| `OPTIONS /api/logs/stream` | 204 |
+| `?token=` 白名单：`/api/logs/stream` | 200（放行） |
+| `?token=` 白名单：`/api/devices` | **401**（非流式端点正确拒绝 query 凭证） |
+| `?token=` 白名单：`.../download/stream` | 404 任务不存在（即鉴权已通过——**这正是重构前失效的那条路径**） |
+| 访问日志脱敏 | `token=***` |
+
+### 文件行数变化
+
+| 文件 | 之前 | 之后 |
+|------|------|------|
+| `server.go` | 2281 | 190 |
+| `device_mgmt.go` | 2598 | 650 |
+| 单文件最大 | 2598 | 683（`device_overview.go`） |
+
+### 新增的结构性约束（写成测试，不是靠自觉）
+
+- `TestSSETokenWhitelistIsDerivedFromTheRouteTable` —— 白名单必须来自路由表
+- `TestOnlyStreamingRoutesAcceptQueryToken` —— 非流式端点不得开 `?token=`
+- `TestRoutesOutsideAuthMiddlewareAreDeliberate` —— 任何脱离鉴权中间件的路由
+  都必须在测试里连同理由一起登记，否则测试失败
+- `TestRouteTableHasNoDuplicateMethodPathPairs` —— 重复注册在测试期报错而非运行期 panic
+- `respond_test.go` —— 错误形状、`request_id`、code 推导、附加字段不得覆盖固定字段

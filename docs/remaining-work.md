@@ -1,6 +1,6 @@
 # VoHive 剩余工作
 
-> 更新：2026-08-13（P0 完成后）
+> 更新：2026-08-14（P3/P4 收口、`internal/api` 重构完成后）
 > 相关：[known-issues.md](./known-issues.md)、[frontend-api-matrix.md](./frontend-api-matrix.md)、
 > [frontend-react-progress.md](./frontend-react-progress.md)
 
@@ -46,7 +46,7 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 `qmi-proxy`，容器与 CI 都没有，改为条件跳过并注明原因——它测的是重绑定逻辑，
 却要经完整的 QMI 启动才能到达断言点。
 
-> **注意**：以上全部在本机 Docker 中验证。GitHub Actions 上的实际结果仍需推送后确认。
+> 以上全部在本机 Docker 中验证——本项目不使用 GitHub Actions，`bash scripts/ci.sh` 就是完整的验证入口。
 
 ---
 
@@ -60,8 +60,8 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | 设备发现与添加 | 发现列表字段、degraded（无 IMEI）判定、`started=false + warning` 的提示 |
 | 状态灯 | 9 个 `lifecycle_phase` × 8 个布尔位的组合展示是否可解释 |
 | 概览 SSE | `overview` / `traffic` / `ussd` 三种事件、断线重连、切页不泄漏连接 |
-| eSIM | Profile 列表、下载进度流、切换、改名、删除的 warning/space_delta |
-| **ESIM_BUSY 并发** | 真实 APDU 仲裁下 409 + `retryAfterMs` 的调度是否正确 |
+| eSIM | Profile 列表、**下载两步流程**（POST 建任务 → 按 `task_id` 订阅；断线重连补发）、切换、改名、删除的 warning/space_delta |
+| **ESIM_BUSY 并发** | 真实 APDU 仲裁下 409 + `retry_after_ms` 的调度是否正确 |
 | 短信 | 收发、游标分页翻页、换卡后按 ICCID 归属的行为 |
 | USSD | 多轮会话 send/continue/cancel 的 `session_id` 传递 |
 | 运营商选网 | SSE 流式扫描、锁定/恢复、forbidden 候选不可选 |
@@ -82,7 +82,7 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | 设备配置 Tab 可编辑 | ✅ 已做 | 核对结论：PUT 是**整体替换**（漏传即清空），且策略字段被后端用当前有效值覆盖，故表单只放硬件/身份字段 |
 | 代理实例新增/编辑 | ✅ 已做 | 核对结论：整体替换整个实例列表，故提交时带上全部实例；密码占位 `******` 后端会还原，可原样回传 |
 | 短信投递状态明细 UI | ✅ 已做 | 发送后按 `message_id` 轮询回执（`acks/parts_total`），确认完即停；AT 通道无 message_id，404 时静默不显示 |
-| weixin 通知渠道表单 | ⬜ | 其 QR 接口在 OpenAPI 中声明但**后端未实现** |
+| weixin 通知渠道表单 | ❌ 不做 | 后端从未实现其 QR 接口；OpenAPI 里那 3 条声明已连同 schema 一并删除 |
 | E911 websheet 入口 | ✅ 已做 | 定为**新窗口**：页面不受控，CSP/X-Frame-Options 可能拒绝内嵌，且跨源观察不到完成——完成信号改由新增的 `GET /websheets/:id/status` 轮询提供 |
 
 ---
@@ -95,7 +95,7 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | 2 | ~~`/api/docs` 拉不到 spec~~ | ✅ 已修复：spec 移至免鉴权区 |
 | 3 | ~~`/api/health` 注释与实现矛盾~~ | ✅ 已澄清：返回逐设备明细故需鉴权，监控改用 `/ping` |
 | 4 | ~~Next dev 代理缓冲 SSE~~ | ✅ 已缓解：4 个 SSE 端点均加 CORS（仅 Debug 放行 localhost），前端 dev 直连 :7575 |
-| 5 | OpenAPI 已显著滞后（缺 17 条、含 3 条不存在） | 见 api-matrix §7；不要据其生成类型 |
+| 5 | ~~OpenAPI 已显著滞后~~ | ✅ 已对齐，并由 `scripts/ci.sh routes` 持续校验（判据是 `routes.go` 的路由表本身） |
 
 ---
 
@@ -115,6 +115,9 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 ```
 P1 现场验证（需硬件）──► 发现的问题回流 P2
 ```
+
+P2–P4 与 `internal/api` 重构均已收口（重构见[backend-api-refactor-plan.md](./backend-api-refactor-plan.md)），
+只剩多架构构建与 P1 现场验证。
 
 P0 完成意味着「装得上、跑得起来、说明书没错」。
 P1 决定它是否真的可用——那部分只能在有模组的机器上做。
