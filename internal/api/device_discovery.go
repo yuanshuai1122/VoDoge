@@ -3,7 +3,6 @@ package api
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -102,7 +101,7 @@ func (s *Server) handleDeviceMgmtDiscovered(c *gin.Context) {
 
 	list, err := s.hw().CompatibleModemsFromQMI(discoveredQMI)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"devices": []discoveredDevice{}})
+		respondOK(c, []discoveredDevice{})
 		return
 	}
 
@@ -184,7 +183,7 @@ func (s *Server) handleDeviceMgmtDiscovered(c *gin.Context) {
 		out = append(out, buildDiscoveredDevice(hw, false, "", true))
 	}
 
-	c.JSON(http.StatusOK, gin.H{"devices": out})
+	respondOK(c, out)
 }
 
 func buildDiscoveredDevice(hw device.CompatibleModem, configured bool, configuredID string, degraded bool) discoveredDevice {

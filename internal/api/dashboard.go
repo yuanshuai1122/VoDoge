@@ -72,7 +72,7 @@ func (s *Server) handleListDevices(c *gin.Context) {
 		}
 		list = append(list, item)
 	}
-	c.JSON(http.StatusOK, list)
+	respondOK(c, list)
 }
 
 // handleDeviceRescan 手动触发设备重新扫描
@@ -87,10 +87,7 @@ func (s *Server) handleDeviceRescan(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "ok",
-		"message": "设备重新扫描完成",
-	})
+	respondOKWith(c, nil, gin.H{"message": "设备重新扫描完成"})
 }
 
 func (s *Server) handleDeviceDetail(c *gin.Context) {
@@ -101,7 +98,7 @@ func (s *Server) handleDeviceDetail(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, worker.GetStats())
+	respondOK(c, worker.GetStats())
 }
 
 func (s *Server) handleDeviceTraffic(c *gin.Context) {
@@ -170,7 +167,7 @@ func (s *Server) handleDeviceTraffic(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	respondOK(c, gin.H{
 		"device_id":       deviceID,
 		"iface":           ifaceObj,
 		"proxy_instances": insts,
@@ -218,11 +215,15 @@ func (s *Server) handleHealth(c *gin.Context) {
 		}
 	}
 
-	if allHealthy {
-		c.JSON(http.StatusOK, gin.H{"status": "healthy", "devices": status})
-	} else {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy", "devices": status})
-	}
+	// 恒返回 200，健康与否放在 data.healthy 里。
+	//
+	// 原先整体不健康时返回 503。那与信封的不变式冲突——非 2xx 应当带 error，
+	// 而"有设备不健康"并不是这次请求失败。且本端点需鉴权、返回逐设备明细，
+	// 面向的是人和面板，不是按状态码判活的探针；那个角色由免鉴权的 /ping 承担。
+	//
+	// 载荷里也不再出现 "status" 字段：它与信封的成功/失败语义重名，
+	// 表达的却是另一件事（集群健康度），放在一起只会让人读错。
+	respondOK(c, gin.H{"healthy": allHealthy, "devices": status})
 }
 
 func (s *Server) handleStats(c *gin.Context) {
@@ -267,7 +268,7 @@ func (s *Server) handleStats(c *gin.Context) {
 		totalReceived += d.RxBytes
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	respondOK(c, gin.H{
 		"total": gin.H{
 			"bytes_sent":         totalSent,
 			"bytes_received":     totalReceived,
@@ -315,7 +316,7 @@ func (s *Server) handleStatus(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{"devices": list})
+	respondOK(c, list)
 }
 
 // handleStatusDetail 返回单个设备的详细状态
@@ -392,11 +393,11 @@ func (s *Server) handleStatusDetail(c *gin.Context) {
 	}
 	response["vowifi"] = vowifi
 
-	c.JSON(http.StatusOK, response)
+	respondOK(c, response)
 }
 
 func (s *Server) handleSystemInfo(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
+	respondOK(c, gin.H{
 		"version":    global.Version,
 		"build_time": global.BuildTime,
 		"config":     viper.ConfigFileUsed(),

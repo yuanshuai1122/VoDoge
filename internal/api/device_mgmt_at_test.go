@@ -126,8 +126,11 @@ func TestHandleDeviceMgmtExecuteATUsesTransientSessionForMBIMBackend(t *testing.
 	if !fake.closed {
 		t.Fatal("manual AT session was not closed")
 	}
-	if !strings.Contains(rec.Body.String(), `"response":"OK\r\n"`) {
-		t.Fatalf("body=%s want AT response", rec.Body.String())
+	// AT 的原始回显就是这次请求的资源，直接是 data 本身
+	var atResponse string
+	decodeData(t, rec, &atResponse)
+	if atResponse != "OK\r\n" {
+		t.Fatalf("data=%q want AT response", atResponse)
 	}
 }
 

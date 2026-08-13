@@ -52,7 +52,7 @@ func TestUpstreamProxyCountriesAPIListsLoadedCountries(t *testing.T) {
 		t.Fatalf("GET status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var countries []map[string]any
-	if err := json.Unmarshal(rr.Body.Bytes(), &countries); err != nil {
+	if err := json.Unmarshal(decodeEnvelope(t, rr).Data, &countries); err != nil {
 		t.Fatalf("json.Unmarshal() error=%v", err)
 	}
 	if len(countries) != 2 || countries[0]["country_code"] != "DE" || countries[1]["country_code"] != "US" {
@@ -87,7 +87,7 @@ func TestUpstreamProxyCountryRulesAPIUpsertsAndListsUS(t *testing.T) {
 		t.Fatalf("GET status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var rules []map[string]any
-	if err := json.Unmarshal(rr.Body.Bytes(), &rules); err != nil {
+	if err := json.Unmarshal(decodeEnvelope(t, rr).Data, &rules); err != nil {
 		t.Fatalf("json.Unmarshal() error=%v body=%s", err, rr.Body.String())
 	}
 	if len(rules) != 1 || rules[0]["country_code"] != "US" || rules[0]["country_name"] != "United States" {

@@ -88,7 +88,7 @@ func (s *Server) handleDeviceMgmtExecuteAT(c *gin.Context) {
 			fail(c, http.StatusInternalServerError, "", err.Error())
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "response": resp})
+		respondOK(c, resp)
 		return
 	}
 
@@ -109,7 +109,7 @@ func (s *Server) handleDeviceMgmtExecuteAT(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "response": resp})
+	respondOK(c, resp)
 }
 
 func isTransientATBackend(mode string) bool {
@@ -144,7 +144,7 @@ func (s *Server) handleDeviceMgmtSetUSBNetMode(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "指令已发送，设备正在重启..."})
+	respondOKWith(c, nil, gin.H{"message": "指令已发送，设备正在重启..."})
 }
 
 type executeUSSDRequest struct {
@@ -193,7 +193,9 @@ func (s *Server) handleDeviceMgmtExecuteUSSD(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "result": resp, "channel": "vowifi"})
+		respondOKWith(c, resp, gin.H{
+			"channel": "vowifi",
+		})
 		return
 	}
 
@@ -211,7 +213,9 @@ func (s *Server) handleDeviceMgmtExecuteUSSD(c *gin.Context) {
 		return
 	}
 	markCSUSSDSession(resp)
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "result": resp, "channel": "cs"})
+	respondOKWith(c, resp, gin.H{
+		"channel": "cs",
+	})
 }
 
 type continueUSSDRequest struct {
@@ -262,7 +266,9 @@ func (s *Server) handleDeviceMgmtContinueUSSD(c *gin.Context) {
 			return
 		}
 		markCSUSSDSession(resp)
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "result": resp, "channel": "cs"})
+		respondOKWith(c, resp, gin.H{
+			"channel": "cs",
+		})
 		return
 	}
 
@@ -273,7 +279,9 @@ func (s *Server) handleDeviceMgmtContinueUSSD(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "result": resp, "channel": "vowifi"})
+	respondOKWith(c, resp, gin.H{
+		"channel": "vowifi",
+	})
 }
 
 type cancelUSSDRequest struct {
@@ -304,7 +312,10 @@ func (s *Server) handleDeviceMgmtCancelUSSD(c *gin.Context) {
 			fail(c, http.StatusInternalServerError, "", err.Error())
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "USSD 会话已取消", "channel": "cs"})
+		respondOKWith(c, nil, gin.H{
+			"message": "USSD 会话已取消",
+			"channel": "cs",
+		})
 		return
 	}
 
@@ -312,7 +323,7 @@ func (s *Server) handleDeviceMgmtCancelUSSD(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "USSD 会话已取消"})
+	respondOKWith(c, nil, gin.H{"message": "USSD 会话已取消"})
 }
 
 func markCSUSSDSession(resp *backend.USSDResult) {
@@ -423,11 +434,11 @@ func (s *Server) handleDeviceMgmtSetFlightMode(c *gin.Context) {
 		}
 	}(!flightModeEnabled)
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":         "ok",
-		"message":        flightModeSuccessMessage(flightModeEnabled),
+	respondOKWith(c, gin.H{
 		"operating_mode": operatingMode,
 		"flight_mode":    flightMode,
+	}, gin.H{
+		"message": flightModeSuccessMessage(flightModeEnabled),
 	})
 }
 
@@ -490,7 +501,7 @@ func (s *Server) handleDeviceMgmtReboot(c *gin.Context) {
 	s.pool.ScheduleModemRebootRecovery(id, "manual_reboot")
 
 	// 因为重启后设备会脱网并暂时下线，前端仅需知道命令已送达
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "response": "重启指令已发送"})
+	respondOKWith(c, nil, gin.H{"message": "重启指令已发送"})
 }
 
 func validateRebootWorkerIdentity(ctx context.Context, worker *device.Worker) error {
@@ -537,7 +548,7 @@ func (s *Server) handleDeviceMgmtReconnectVoWiFi(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "已触发 VoWiFi 重连"})
+	respondOKWith(c, nil, gin.H{"message": "已触发 VoWiFi 重连"})
 }
 
 // handleDeviceMgmtRefreshInfo 主动触发设备底层重新采集各种信息（SIM、信号等）
@@ -563,5 +574,5 @@ func (s *Server) handleDeviceMgmtRefreshInfo(c *gin.Context) {
 		s.pool.PersistIdentityState(worker)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "设备信息刷新完成"})
+	respondOKWith(c, nil, gin.H{"message": "设备信息刷新完成"})
 }

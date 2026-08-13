@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -211,11 +210,9 @@ func requestDiscoveredDevices(t *testing.T, srv *Server) discoveredDevicesRespon
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 	}
-	var resp discoveredDevicesResponse
-	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("response JSON error = %v body=%s", err, recorder.Body.String())
-	}
-	return resp
+	var devices []discoveredDevice
+	decodeData(t, recorder, &devices)
+	return discoveredDevicesResponse{Devices: devices}
 }
 
 func writeDeviceMgmtDiscoveryConfig(t *testing.T, content string) string {

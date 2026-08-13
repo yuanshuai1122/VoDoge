@@ -336,5 +336,5 @@ func (s *Server) handleDebugEmbed(c *gin.Context) {
 		}
 		f.Close()
 	}
-	c.JSON(http.StatusOK, results)
+	respondOK(c, results)
 }

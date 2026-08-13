@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -48,14 +47,10 @@ func TestListCardPoliciesReadsThroughTheStore(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	var body struct {
-		Policies []db.CardPolicy `json:"policies"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if len(body.Policies) != 2 || body.Policies[0].ICCID != "8986001" {
-		t.Fatalf("policies=%+v", body.Policies)
+	var policies []db.CardPolicy
+	decodeData(t, rec, &policies)
+	if len(policies) != 2 || policies[0].ICCID != "8986001" {
+		t.Fatalf("policies=%+v", policies)
 	}
 }
 
@@ -69,8 +64,8 @@ func TestListCardPoliciesReturnsEmptyArrayNotNull(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/cards/policies", nil)
 	s.handleListCardPolicies(c)
 
-	if !strings.Contains(rec.Body.String(), `"policies":[]`) {
-		t.Fatalf("body=%s want policies:[]", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `"data":[]`) {
+		t.Fatalf("body=%s want data:[]", rec.Body.String())
 	}
 }
 
@@ -90,9 +85,7 @@ func TestGetCardPolicyFallsBackToDefaultTemplate(t *testing.T) {
 		t.Fatalf("status=%d body=%s want 200", rec.Code, rec.Body.String())
 	}
 	var got db.CardPolicy
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
+	decodeData(t, rec, &got)
 	want := db.DefaultCardPolicy("nope")
 	if got.ICCID != want.ICCID || got.Source != want.Source || got.IPVersion != want.IPVersion {
 		t.Fatalf("got=%+v want 默认模板 %+v", got, want)
@@ -180,8 +173,9 @@ func TestDeleteSMSMessageReportsEmptiedThread(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "thread_empty") {
-		t.Fatalf("body=%s want thread_empty 字段", rec.Body.String())
+	// 会话是否已空是这次删除的副作用，属于 meta 而不是资源
+	if decodeEnvelope(t, rec).Meta["thread_empty"] != true {
+		t.Fatalf("body=%s want meta.thread_empty=true", rec.Body.String())
 	}
 }
 

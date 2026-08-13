@@ -22,10 +22,10 @@ func (s *Server) handleTrafficAnalysis(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "ok",
-		"range":   rng,
+	respondOKWith(c, gin.H{
 		"buckets": buckets,
 		"chart":   chartData,
+	}, gin.H{
+		"range": rng,
 	})
 }

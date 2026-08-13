@@ -211,7 +211,7 @@ func (s *Server) handleDeviceMgmtOverview(c *gin.Context) {
 		s.applyLifecycleToOverviewItem(&item, false, dc)
 		items = append(items, item)
 	}
-	c.JSON(http.StatusOK, gin.H{"devices": items})
+	respondOK(c, items)
 }
 
 type deviceMgmtOverviewLiteItem struct {
@@ -578,7 +578,7 @@ func (s *Server) handleDeviceMgmtOverviewLite(c *gin.Context) {
 				RxBytes:     rx,
 				TxBytes:     tx,
 			}, time.Now())
-			c.JSON(http.StatusOK, gin.H{"devices": []deviceMgmtOverviewLiteItem{item}})
+			respondOK(c, item)
 			return
 		}
 
@@ -606,11 +606,13 @@ func (s *Server) handleDeviceMgmtOverviewLite(c *gin.Context) {
 				Traffic:                nil,
 			}
 			s.applyLifecycleToOverviewLiteItem(&item, nil, *dc)
-			c.JSON(http.StatusOK, gin.H{"devices": []deviceMgmtOverviewLiteItem{item}})
+			respondOK(c, item)
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"devices": []deviceMgmtOverviewLiteItem{}})
+		// 既不在运行、也没有配置：这台设备不存在。
+		// 以前回空数组，逼得前端自己把"空"翻译成 404；语义归位到这里。
+		fail(c, http.StatusNotFound, "", "设备不存在")
 		return
 	}
 
@@ -670,7 +672,7 @@ func (s *Server) handleDeviceMgmtOverviewLite(c *gin.Context) {
 		s.applyLifecycleToOverviewLiteItem(&item, nil, dc)
 		items = append(items, item)
 	}
-	c.JSON(http.StatusOK, gin.H{"devices": items})
+	respondOK(c, items)
 }
 
 func overviewDetailLiveRefreshRequested(c *gin.Context) bool {

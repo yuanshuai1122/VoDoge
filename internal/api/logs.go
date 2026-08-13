@@ -151,10 +151,8 @@ func (s *Server) handleLogHistory(c *gin.Context) {
 		// 读不到日志文件不是错误——刚启动、或日志只往 stdout 走时就是这样。
 		// 这里以前回的是 200 + {status:"error"}，一个自相矛盾的形状：
 		// 前端按成功路径取 logs 拿到空数组，按错误路径又会抛。
-		c.JSON(http.StatusOK, gin.H{
-			"status": "ok",
-			"logs":   []logger.LogEntry{},
-			"note":   "日志文件不可读：" + err.Error(),
+		respondOKWith(c, []logger.LogEntry{}, gin.H{
+			"note": "日志文件不可读：" + err.Error(),
 		})
 		return
 	}
@@ -172,7 +170,7 @@ func (s *Server) handleLogHistory(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"logs": entries})
+	respondOK(c, entries)
 }
 
 func readLastLines(path string, maxLines int, maxBytes int64) ([]string, error) {

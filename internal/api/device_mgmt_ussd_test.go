@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -134,15 +133,11 @@ func TestHandleDeviceMgmtExecuteUSSDUsesBackendProvider(t *testing.T) {
 	if be.command != "*100#" || be.timeout != 7*time.Second {
 		t.Fatalf("provider got command=%q timeout=%s", be.command, be.timeout)
 	}
-	var body struct {
-		Status string             `json:"status"`
-		Result backend.USSDResult `json:"result"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("response JSON error=%v body=%s", err, rec.Body.String())
-	}
-	if body.Status != "ok" || body.Result.Text != "ok" {
-		t.Fatalf("response=%+v want ok result", body)
+	// USSD 结果就是这次请求的资源，直接是 data；走哪条通路（cs/vowifi）是 meta
+	var result backend.USSDResult
+	decodeData(t, rec, &result)
+	if result.Text != "ok" {
+		t.Fatalf("result=%+v want ok result", result)
 	}
 }
 

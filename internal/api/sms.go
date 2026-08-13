@@ -146,14 +146,14 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":         "ok",
-		"message":        "短信发送成功",
+	respondOKWith(c, gin.H{
 		"device":         deviceID,
 		"phone":          req.Phone,
 		"message_id":     messageID,
 		"parts_total":    partsTotal,
 		"delivery_state": deliveryState,
+	}, gin.H{
+		"message": "短信发送成功",
 	})
 }
 
@@ -176,7 +176,7 @@ func (s *Server) handleSMSDelivery(c *gin.Context) {
 		if err != nil {
 			continue
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "delivery": status})
+		respondOK(c, status)
 		return
 	}
 	fail(c, http.StatusNotFound, "", "未找到对应短信投递记录")
@@ -184,15 +184,21 @@ func (s *Server) handleSMSDelivery(c *gin.Context) {
 
 func (s *Server) handleVoWiFiSMSStatus(c *gin.Context) {
 	if s.pool == nil {
-		c.JSON(http.StatusOK, gin.H{"enabled": false, "status": "no_pool"})
+		respondOK(c, gin.H{
+			"enabled": false,
+			"status":  "no_pool",
+		})
 		return
 	}
 	svc := s.pool.GetVoWiFiApp()
 	if svc == nil {
-		c.JSON(http.StatusOK, gin.H{"enabled": false, "status": "not_running"})
+		respondOK(c, gin.H{
+			"enabled": false,
+			"status":  "not_running",
+		})
 		return
 	}
-	c.JSON(http.StatusOK, svc.Status())
+	respondOK(c, svc.Status())
 }
 
 func (s *Server) handleVoWiFiSendSMS(c *gin.Context) {
@@ -233,12 +239,12 @@ func (s *Server) handleVoWiFiSendSMS(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":         "ok",
-		"message":        "IMS 短信发送成功",
+	respondOKWith(c, gin.H{
 		"message_id":     strings.TrimSpace(outcome.MessageID),
 		"parts_total":    outcome.PartsTotal,
 		"delivery_state": strings.TrimSpace(outcome.DeliveryState),
+	}, gin.H{
+		"message": "IMS 短信发送成功",
 	})
 }
 
@@ -301,7 +307,7 @@ func (s *Server) handleGetSMSInbox(c *gin.Context) {
 			})
 		}
 
-		c.JSON(http.StatusOK, enrichedList)
+		respondOK(c, enrichedList)
 		return
 	}
 
@@ -338,7 +344,7 @@ func (s *Server) handleGetSMSInbox(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, enrichedList)
+	respondOK(c, enrichedList)
 }
 
 type SMSContactWithDevice struct {
@@ -479,7 +485,7 @@ func (s *Server) handleGetSMSContacts(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, enriched)
+	respondOK(c, enriched)
 }
 
 func (s *Server) handleGetSMSThread(c *gin.Context) {
@@ -556,7 +562,7 @@ func (s *Server) handleGetSMSThread(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, enriched)
+	respondOK(c, enriched)
 }
 
 func (s *Server) handleDeleteSMSMessage(c *gin.Context) {
@@ -576,11 +582,11 @@ func (s *Server) handleDeleteSMSMessage(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":       "ok",
+	respondOKWith(c, gin.H{
+		"imsi": imsi,
+		"peer": peer,
+	}, gin.H{
 		"thread_empty": threadEmpty,
-		"imsi":         imsi,
-		"peer":         peer,
 	})
 }
 
@@ -609,10 +615,10 @@ func (s *Server) handleDeleteSMSThread(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "ok",
+	respondOKWith(c, gin.H{
+		"iccid": resolved,
+		"peer":  peer,
+	}, gin.H{
 		"deleted": deleted,
-		"iccid":   resolved,
-		"peer":    peer,
 	})
 }

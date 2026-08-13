@@ -175,7 +175,7 @@ func (s *Server) handleGetNotificationSettings(c *gin.Context) {
 	resp.Pushplus.Topic = s.fullCfg.Pushplus.Topic
 	resp.Pushplus.Channel = s.fullCfg.Pushplus.Channel
 
-	c.JSON(http.StatusOK, resp)
+	respondOK(c, resp)
 }
 
 func (s *Server) handleUpdateNotificationSettings(c *gin.Context) {
@@ -336,8 +336,7 @@ func (s *Server) handleUpdateNotificationSettings(c *gin.Context) {
 	if s.notifyMgr != nil {
 		if err := s.notifyMgr.UpdateConfig(s.fullCfg); err != nil {
 			logger.Error("应用通知配置失败", "err", err)
-			c.JSON(http.StatusOK, gin.H{
-				"status":  "ok",
+			respondOKWith(c, nil, gin.H{
 				"applied": false,
 				"warning": "通知配置已写入，但运行时初始化失败: " + err.Error(),
 			})
@@ -345,5 +344,7 @@ func (s *Server) handleUpdateNotificationSettings(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "applied": true})
+	respondOKWith(c, nil, gin.H{
+		"applied": true,
+	})
 }

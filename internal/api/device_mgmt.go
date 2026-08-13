@@ -221,7 +221,9 @@ func (s *Server) handleDeviceMgmtList(c *gin.Context) {
 		items = append(items, item)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"devices": items, "device_limit": device.DefaultFreeDeviceLimit})
+	respondOKWith(c, items, gin.H{
+		"device_limit": device.DefaultFreeDeviceLimit,
+	})
 }
 
 func (s *Server) handleDeviceMgmtGetDeviceConfig(c *gin.Context) {
@@ -246,7 +248,7 @@ func (s *Server) handleDeviceMgmtGetDeviceConfig(c *gin.Context) {
 		cfgDTO.ATPort = worker.ResolvedATPort()
 		cfgDTO.USBPath = worker.Config.USBPath
 	}
-	c.JSON(http.StatusOK, gin.H{"config": cfgDTO})
+	respondOK(c, cfgDTO)
 }
 
 type updateDeviceRequest struct {
@@ -460,8 +462,7 @@ func (s *Server) handleDeviceMgmtUpdateDevice(c *gin.Context) {
 		logger.Info("配置保存触发 VoWiFi 启动", "device", id)
 		if err := s.pool.EnableVoWiFi(id); err != nil {
 			logger.Error("VoWiFi 启动失败", "device", id, "err", err)
-			c.JSON(http.StatusOK, gin.H{
-				"status":           "ok",
+			respondOKWith(c, nil, gin.H{
 				"requires_restart": requiresRestart,
 				"warning":          joinWarningMessages(warningMessage, "VoWiFi 启动失败: "+err.Error()),
 				"vowifi_error":     "VoWiFi 启动失败: " + err.Error(),
@@ -477,8 +478,7 @@ func (s *Server) handleDeviceMgmtUpdateDevice(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":           "ok",
+	respondOKWith(c, nil, gin.H{
 		"requires_restart": requiresRestart,
 		"warning":          warningMessage,
 	})
@@ -510,7 +510,7 @@ func (s *Server) handleDeviceMgmtDeleteDevice(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	respondOK(c, nil)
 }
 
 type addDeviceRequest struct {
@@ -595,8 +595,7 @@ func (s *Server) handleDeviceMgmtAddDevice(c *gin.Context) {
 
 	if _, err := s.pool.AddWorkerFromConfig(newCfg); err != nil {
 		logger.Warn("设备配置已添加，但启动运行时设备失败", "device_id", newCfg.ID, "err", err)
-		c.JSON(http.StatusOK, gin.H{
-			"status":           "ok",
+		respondOKWith(c, nil, gin.H{
 			"started":          false,
 			"requires_restart": true,
 			"warning":          "设备配置已添加，但运行时启动失败（可尝试重启服务或检查端口/权限）: " + err.Error(),
@@ -606,8 +605,7 @@ func (s *Server) handleDeviceMgmtAddDevice(c *gin.Context) {
 
 	warningMessage := forcedWarning
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":           "ok",
+	respondOKWith(c, nil, gin.H{
 		"started":          true,
 		"requires_restart": false,
 		"warning":          warningMessage,

@@ -73,14 +73,14 @@ func (s *Server) handleTestEmailNotification(c *gin.Context) {
 
 	sendErr := ch.SendWithContext(ctx)
 	if sendErr != nil {
-		c.JSON(http.StatusOK, gin.H{
+		respondOK(c, gin.H{
 			"ok":      false,
 			"message": "测试邮件发送失败: " + sendErr.Error(),
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	respondOK(c, gin.H{
 		"ok":      true,
 		"message": "测试邮件已发送",
 	})

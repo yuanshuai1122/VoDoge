@@ -77,7 +77,7 @@ func (s *Server) handleTestBarkNotification(c *gin.Context) {
 
 	result, sendErr := ch.SendWithContextDetailed(ctx)
 	if sendErr != nil {
-		c.JSON(http.StatusOK, testBarkResponse{
+		respondOK(c, testBarkResponse{
 			OK:         false,
 			Message:    "测试通知发送失败: " + sendErr.Error(),
 			FailedURLs: result.FailedURLs,
@@ -85,7 +85,7 @@ func (s *Server) handleTestBarkNotification(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, testBarkResponse{
+	respondOK(c, testBarkResponse{
 		OK:      true,
 		Message: "测试通知已发送",
 	})

@@ -58,7 +58,7 @@ func (s *Server) handleWebsheetStatus(c *gin.Context) {
 		respondWebsheetError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, session.Status())
+	respondOK(c, session.Status())
 }
 
 func (s *Server) handleWebsheetProxy(c *gin.Context) {
@@ -87,7 +87,7 @@ func (s *Server) handleWebsheetCallback(c *gin.Context) {
 	if isTerminalWebsheetCallback(callback) {
 		session.Done()
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	respondOK(c, nil)
 }
 
 func isTerminalWebsheetCallback(callback websheet.Callback) bool {
@@ -116,7 +116,7 @@ func (s *Server) handleWebsheetDone(c *gin.Context) {
 	// 这里刻意不销毁会话：前端要靠 /status 观察终态，而承载页在运营商域下，
 	// 跨源拿不到任何完成信号。会话按 TTL 统一回收（websheet.Broker.gcLocked）。
 	session.Done()
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	respondOK(c, nil)
 }
 
 func respondWebsheetError(c *gin.Context, err error) {

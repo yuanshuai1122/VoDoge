@@ -90,7 +90,7 @@ func (s *Server) handleTestWebhookNotification(c *gin.Context) {
 
 	result, sendErr := ch.SendWithContextDetailed(ctx)
 	if sendErr != nil {
-		c.JSON(http.StatusOK, testWebhookResponse{
+		respondOK(c, testWebhookResponse{
 			OK:         false,
 			Message:    "测试通知发送失败: " + sendErr.Error(),
 			FailedURLs: result.FailedURLs,
@@ -98,7 +98,7 @@ func (s *Server) handleTestWebhookNotification(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, testWebhookResponse{
+	respondOK(c, testWebhookResponse{
 		OK:      true,
 		Message: "测试通知已发送",
 	})

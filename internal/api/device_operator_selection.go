@@ -169,7 +169,7 @@ func (s *Server) handleDeviceMgmtGetOperatorSelection(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, sel)
+	respondOK(c, sel)
 }
 
 func (s *Server) handleDeviceMgmtSetOperatorSelection(c *gin.Context) {
@@ -198,5 +198,5 @@ func (s *Server) handleDeviceMgmtSetOperatorSelection(c *gin.Context) {
 		logger.Error("写入设备配置失败 (operator selection)", "device", deviceID, "err", err)
 	}
 
-	c.JSON(http.StatusOK, sel)
+	respondOK(c, sel)
 }

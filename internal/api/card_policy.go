@@ -39,14 +39,14 @@ func (s *Server) handleGetCardPolicy(c *gin.Context) {
 	pol, err := s.data().CardPolicy.Get(iccid)
 	if errors.Is(err, db.ErrCardPolicyNotFound) {
 		// 未建档则返回默认模板（不落库，读端点保持只读语义）
-		c.JSON(http.StatusOK, db.DefaultCardPolicy(iccid))
+		respondOK(c, db.DefaultCardPolicy(iccid))
 		return
 	}
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, pol)
+	respondOK(c, pol)
 }
 
 func (s *Server) handleListCardPolicies(c *gin.Context) {
@@ -59,7 +59,7 @@ func (s *Server) handleListCardPolicies(c *gin.Context) {
 		// 前端按数组消费，null 会让 .map 崩掉
 		out = []db.CardPolicy{}
 	}
-	c.JSON(http.StatusOK, gin.H{"policies": out})
+	respondOK(c, out)
 }
 
 func (s *Server) handlePutCardPolicy(c *gin.Context) {
@@ -100,5 +100,5 @@ func (s *Server) handlePutCardPolicy(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, pol)
+	respondOK(c, pol)
 }

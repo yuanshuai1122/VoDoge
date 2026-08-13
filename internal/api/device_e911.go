@@ -50,5 +50,5 @@ func (s *Server) handleDeviceE911Websheet(c *gin.Context) {
 		fail(c, e911ErrorStatus(err), e911ErrorCode(err), err.Error())
 		return
 	}
-	c.JSON(http.StatusCreated, info)
+	respond(c, http.StatusCreated, info, nil)
 }

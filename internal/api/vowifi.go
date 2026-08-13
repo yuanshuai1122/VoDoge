@@ -30,10 +30,10 @@ func (s *Server) handleVoWiFiEnable(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "ok",
+	respondOKWith(c, gin.H{
+		"device": deviceID,
+	}, gin.H{
 		"message": "VoWiFi 已启用，设备已进入飞行模式",
-		"device":  deviceID,
 	})
 }
 
@@ -53,10 +53,10 @@ func (s *Server) handleVoWiFiDisable(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "ok",
+	respondOKWith(c, gin.H{
+		"device": deviceID,
+	}, gin.H{
 		"message": "VoWiFi 已禁用",
-		"device":  deviceID,
 	})
 }
 
@@ -82,13 +82,13 @@ func (s *Server) handleSimulateCall(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, result)
+	respondOK(c, result)
 }
 
 // handleVoWiFiStatus 返回 VoWiFi 当前状态
 func (s *Server) handleVoWiFiStatus(c *gin.Context) {
 	if s.pool == nil {
-		c.JSON(http.StatusOK, gin.H{
+		respondOK(c, gin.H{
 			"enabled":   false,
 			"device_id": "",
 			"status":    "服务未就绪",
@@ -97,7 +97,7 @@ func (s *Server) handleVoWiFiStatus(c *gin.Context) {
 	}
 
 	enabled, deviceID, status := s.pool.GetVoWiFiStatus()
-	c.JSON(http.StatusOK, gin.H{
+	respondOK(c, gin.H{
 		"enabled":   enabled,
 		"device_id": deviceID,
 		"status":    status,

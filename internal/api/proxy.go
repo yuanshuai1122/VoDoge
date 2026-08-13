@@ -86,7 +86,7 @@ func (s *Server) handleProxyOverview(c *gin.Context) {
 		resp.Status = s.proxyMgr.ListStatus()
 	}
 
-	c.JSON(http.StatusOK, resp)
+	respondOK(c, resp)
 }
 
 func (s *Server) handleProxyInstanceGet(c *gin.Context) {
@@ -101,7 +101,7 @@ func (s *Server) handleProxyInstanceGet(c *gin.Context) {
 		fail(c, http.StatusNotFound, "", "实例不存在: "+id)
 		return
 	}
-	c.JSON(http.StatusOK, instanceToDTO(*inst, false))
+	respondOK(c, instanceToDTO(*inst, false))
 }
 
 // handleProxyUpdateConfig 更新代理配置
@@ -144,11 +144,16 @@ func (s *Server) handleProxyUpdateConfig(c *gin.Context) {
 	}
 
 	if err := s.SyncProxyConfigs(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "applied": false, "warning": err.Error()})
+		respondOKWith(c, nil, gin.H{
+			"applied": false,
+			"warning": err.Error(),
+		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "applied": true})
+	respondOKWith(c, nil, gin.H{
+		"applied": true,
+	})
 }
 
 func restoreProxySecrets(inst *config.ProxyInstance, oldInst config.ProxyInstance) {
@@ -220,7 +225,7 @@ func (s *Server) handleProxyInstanceStart(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	respondOK(c, nil)
 }
 
 // handleProxyInstanceStop 停止代理实例
@@ -236,7 +241,7 @@ func (s *Server) handleProxyInstanceStop(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	respondOK(c, nil)
 }
 
 // handleProxyInstanceRestart 重启代理实例
@@ -252,7 +257,7 @@ func (s *Server) handleProxyInstanceRestart(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	respondOK(c, nil)
 }
 
 // SyncProxyConfigs 同步代理配置到实例管理器

@@ -250,10 +250,9 @@ func (s *Server) handleEsimDownloadStart(c *gin.Context) {
 		t.publish(esimDownloadDoneEvent(result))
 	}(task, req)
 
-	c.JSON(http.StatusAccepted, gin.H{
-		"status":  "ok",
+	respond(c, http.StatusAccepted, gin.H{
 		"task_id": task.ID,
-	})
+	}, nil)
 }
 
 // handleEsimDownloadStream 按 task_id 订阅下载进度。

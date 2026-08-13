@@ -49,7 +49,7 @@ func (s *Server) handleEsimListProfiles(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, profiles)
+	respondOK(c, profiles)
 }
 
 // esimSwitchRequest 包含切换的目标 ICCID
@@ -98,32 +98,33 @@ func respondEsimBusy(c *gin.Context, reason string, err error) {
 	failWith(c, http.StatusConflict, "ESIM_BUSY", err.Error(), gin.H{
 		"busy":   true,
 		"reason": reason,
-		// retryAfterMs 是全局 snake_case 里唯一的 camelCase 字段。前端与外部
-		// 脚本都在读它，改名是破坏性的；两个一起给，新代码用 retry_after_ms。
-		"retryAfterMs":   esimBusyRetryAfterMs,
+		// camelCase 的 retryAfterMs 已随信封改造一并删除：它当初保留是为了不破坏
+		// 既有调用方，而这次本来就是破坏性变更，再留一个错误拼写没有意义。
 		"retry_after_ms": esimBusyRetryAfterMs,
 	})
 }
 
-func esimDeleteSuccessBody(result esim.DeleteProfileResult) gin.H {
-	body := gin.H{
-		"status":  "ok",
-		"message": "Profile 删除成功",
-	}
+// esimDeleteSuccessMeta 是删除成功时的元数据。
+//
+// 全部内容都在描述"这次删除"——提示语、通知未确认的告警、eUICC 空间变化，
+// 没有一项是被删掉的资源本身，所以整体归 meta 而不是 data。
+// 删除操作的 data 是 null。
+func esimDeleteSuccessMeta(result esim.DeleteProfileResult) gin.H {
+	meta := gin.H{"message": "Profile 删除成功"}
 	if warning := strings.TrimSpace(result.Warning); warning != "" {
-		body["warning"] = warning
+		meta["warning"] = warning
 	}
 	if warningCode := strings.TrimSpace(result.WarningCode); warningCode != "" {
-		body["warning_code"] = warningCode
+		meta["warning_code"] = warningCode
 	}
 	if result.SpaceDelta != nil {
-		body["space_delta"] = result.SpaceDelta
+		meta["space_delta"] = result.SpaceDelta
 	}
-	return body
+	return meta
 }
 
 func writeEsimDeleteSuccessJSON(c *gin.Context, result esim.DeleteProfileResult) {
-	c.JSON(http.StatusOK, esimDeleteSuccessBody(result))
+	respondOKWith(c, nil, esimDeleteSuccessMeta(result))
 }
 
 // esimNotificationSource 是 eSIM 通知的来源。
@@ -180,7 +181,7 @@ func (s *Server) handleEsimListNotifications(c *gin.Context) {
 		fail(c, esimNotificationHTTPStatus(err), "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
+	respondOK(c, items)
 }
 
 func (s *Server) handleEsimRetryNotification(c *gin.Context) {
@@ -204,7 +205,7 @@ func (s *Server) handleEsimRetryNotification(c *gin.Context) {
 		fail(c, esimNotificationHTTPStatus(err), "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "通知重试发送成功"})
+	respondOKWith(c, nil, gin.H{"message": "通知重试发送成功"})
 }
 
 // handleEsimSwitchProfile 切换 eSIM Profile
@@ -236,7 +237,7 @@ func (s *Server) handleEsimSwitchProfile(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, esimSwitchResponse{
+	respondOK(c, esimSwitchResponse{
 		Message:            "eSIM Profile 切换指令已提交，设备信息将异步刷新",
 		TargetICCID:        result.TargetICCID,
 		SwitchToken:        result.SwitchToken,
@@ -271,7 +272,7 @@ func (s *Server) handleEsimGetEID(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"eids": eids})
+	respondOK(c, eids)
 }
 
 // handleEsimGetChipInfo 获取 eUICC 芯片硬件信息（名称、序列号、固件版本、可用空间）
@@ -293,7 +294,7 @@ func (s *Server) handleEsimGetChipInfo(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, chipInfo)
+	respondOK(c, chipInfo)
 }
 
 // handleEsimGetOverview 获取 eSIM 总览（合并芯片信息和 profiles）
@@ -327,7 +328,7 @@ func (s *Server) handleEsimGetOverview(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, overview)
+	respondOK(c, overview)
 }
 
 // handleEsimRenameProfile 修改 eSIM profile 名称
@@ -358,7 +359,7 @@ func (s *Server) handleEsimRenameProfile(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "Profile 名称修改成功"})
+	respondOKWith(c, nil, gin.H{"message": "Profile 名称修改成功"})
 }
 
 // handleEsimDeleteProfile 删除 eSIM profile

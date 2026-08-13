@@ -185,7 +185,7 @@ func TestProxyOverviewReadsInstancesFromDatabaseAcrossServerInstances(t *testing
 			ListenPort int    `json:"listen_port"`
 		} `json:"instances"`
 	}
-	if err := json.Unmarshal(overviewRecorder.Body.Bytes(), &payload); err != nil {
+	if err := json.Unmarshal(decodeEnvelope(t, overviewRecorder).Data, &payload); err != nil {
 		t.Fatalf("unmarshal overview response failed: %v", err)
 	}
 	if len(payload.Instances) != 1 {

@@ -438,7 +438,7 @@ func TestHandleEsimGetOverviewRefreshPreservesResponseSemanticsWhenGetFailsAfter
 }
 
 func TestEsimDeleteSuccessBodyIncludesWarningFields(t *testing.T) {
-	body := esimDeleteSuccessBody(esim.DeleteProfileResult{
+	body := esimDeleteSuccessMeta(esim.DeleteProfileResult{
 		Warning:     "Profile 已删除，但删除通知发送未完全确认",
 		WarningCode: "delete_notification_not_observed",
 		SpaceDelta: &esim.SpaceDelta{
@@ -447,8 +447,12 @@ func TestEsimDeleteSuccessBodyIncludesWarningFields(t *testing.T) {
 		},
 	})
 
-	if body["status"] != "ok" || body["message"] != "Profile 删除成功" {
-		t.Fatalf("body=%v want ok delete success base fields", body)
+	// 全部内容都描述这次删除，因此整体是 meta；删除没有资源可返回，data 为 null
+	if body["message"] != "Profile 删除成功" {
+		t.Fatalf("meta=%v want delete success message", body)
+	}
+	if _, stale := body["status"]; stale {
+		t.Fatalf("meta 里不应再有 status：成功与否由 2xx 表达")
 	}
 	if body["warning"] != "Profile 已删除，但删除通知发送未完全确认" {
 		t.Fatalf("warning=%v want propagated warning", body["warning"])
@@ -463,7 +467,7 @@ func TestEsimDeleteSuccessBodyIncludesWarningFields(t *testing.T) {
 }
 
 func TestEsimDeleteSuccessBodyOmitsSpaceDeltaWhenUnavailable(t *testing.T) {
-	body := esimDeleteSuccessBody(esim.DeleteProfileResult{})
+	body := esimDeleteSuccessMeta(esim.DeleteProfileResult{})
 	if _, ok := body["space_delta"]; ok {
 		t.Fatalf("body=%v want space_delta omitted", body)
 	}
@@ -548,8 +552,14 @@ func TestWriteEsimDeleteSuccessJSONWritesWarningFields(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d want=%d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
-	if body := recorder.Body.String(); body == "" || !containsAll(body, `"status":"ok"`, `"message":"Profile 删除成功"`, `"warning":"Profile 已删除，但删除通知发送未完全确认"`, `"warning_code":"delete_notification_not_observed"`) {
-		t.Fatalf("body=%q want success-with-warning delete payload", body)
+	env := decodeEnvelope(t, recorder)
+	if string(env.Data) != "null" {
+		t.Fatalf("data=%s want null —— 删除没有资源可返回", string(env.Data))
+	}
+	if env.Meta["message"] != "Profile 删除成功" ||
+		env.Meta["warning"] != "Profile 已删除，但删除通知发送未完全确认" ||
+		env.Meta["warning_code"] != "delete_notification_not_observed" {
+		t.Fatalf("meta=%v want 告警字段落在 meta 里", env.Meta)
 	}
 }
 
@@ -617,8 +627,12 @@ func TestHandleEsimNotificationListUsesJSONContract(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d want=%d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
-	if body := recorder.Body.String(); body == "" || !containsAll(body, `"items"`, `"sequence_number":11`, `"event":"install"`, `"aid_hex":"A000"`, `"can_retry":true`) {
-		t.Fatalf("body=%q want notification list payload", body)
+	// 通知列表就是资源本身，直接是 data，不再包一层 items
+	var items []esim.NotificationItem
+	decodeData(t, recorder, &items)
+	if len(items) != 1 || items[0].SequenceNumber != 11 || items[0].Event != "install" ||
+		items[0].AIDHex != "A000" || !items[0].CanRetry {
+		t.Fatalf("items=%#v want notification list payload", items)
 	}
 }
 
@@ -661,7 +675,7 @@ func TestHandleEsimRetryNotificationMapsStatusCodes(t *testing.T) {
 		wantStatus int
 		wantParts  []string
 	}{
-		{name: "success", err: nil, wantStatus: http.StatusOK, wantParts: []string{`"status":"ok"`, `"message":"通知重试发送成功"`}},
+		{name: "success", err: nil, wantStatus: http.StatusOK, wantParts: []string{`"message":"通知重试发送成功"`}},
 		{name: "busy", err: esim.ErrOperationInProgress, wantStatus: http.StatusConflict, wantParts: []string{`"busy":true`, `"code":"ESIM_BUSY"`, `"reason":"retry_notification"`}},
 		{name: "invalid", err: esim.NewNotificationError(esim.NotificationErrorInvalidSequence, "bad seq", nil), wantStatus: http.StatusBadRequest, wantParts: []string{`bad seq`}},
 		{name: "not found", err: esim.NewNotificationError(esim.NotificationErrorNotFound, "missing", nil), wantStatus: http.StatusNotFound, wantParts: []string{`missing`}},

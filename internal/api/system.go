@@ -51,7 +51,7 @@ func (s *Server) handleCheckUpdate(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, info)
+	respondOK(c, info)
 }
 
 // handleApplyUpdate 应用系统更新
@@ -61,13 +61,17 @@ func (s *Server) handleApplyUpdate(c *gin.Context) {
 			logger.Error("应用更新失败", "err", err)
 		}
 	}()
-	c.JSON(http.StatusOK, gin.H{"message": "正在后台下载更新，系统稍后将自动重启..."})
+	respondOKWith(c, nil, gin.H{
+		"message": "正在后台下载更新，系统稍后将自动重启...",
+	})
 }
 
 // handleUninstall 自毁/卸载接口，用于用户拒绝免责声明时
 func (s *Server) handleUninstall(c *gin.Context) {
 	logger.Warn("用户拒绝了免责声明，正在触发自毁/卸载逻辑")
-	c.JSON(http.StatusOK, gin.H{"message": "正在卸载软件..."})
+	respondOKWith(c, nil, gin.H{
+		"message": "正在卸载软件...",
+	})
 
 	// 在后台异步执行自毁，以免请求无法返回
 	go func() {

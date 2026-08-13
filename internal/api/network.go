@@ -70,12 +70,12 @@ func (s *Server) handleRotate(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":   "ok",
+	respondOKWith(c, gin.H{
+		"device": deviceID,
+		"old_ip": oldIP,
+		"new_ip": newIP,
+	}, gin.H{
 		"message":  "IP 切换成功",
-		"device":   deviceID,
-		"old_ip":   oldIP,
-		"new_ip":   newIP,
 		"duration": duration.String(),
 	})
 }
@@ -101,15 +101,15 @@ func (s *Server) handleDeviceMgmtStartNetwork(c *gin.Context) {
 		return
 	}
 	go func() { _ = worker.RefreshRuntime(nil, "start_network") }()
-	c.JSON(http.StatusOK, gin.H{
-		"status":            "ok",
-		"message":           "数据网络已启动",
+	respondOKWith(c, gin.H{
 		"device":            deviceID,
 		"network_connected": worker.NetworkConnected(),
 		"private_ip":        nc.GetPrivateIP(),
 		"private_ipv6":      nc.GetPrivateIPv6(),
 		"public_ip":         worker.GetCachedIP(),
 		"public_ipv6":       worker.GetCachedIPv6(),
+	}, gin.H{
+		"message": "数据网络已启动",
 	})
 }
 
@@ -130,14 +130,14 @@ func (s *Server) handleDeviceMgmtStopNetwork(c *gin.Context) {
 		return
 	}
 	go func() { _ = worker.RefreshRuntime(nil, "stop_network") }()
-	c.JSON(http.StatusOK, gin.H{
-		"status":            "ok",
-		"message":           "数据网络已停止",
+	respondOKWith(c, gin.H{
 		"device":            deviceID,
 		"network_connected": worker.NetworkConnected(),
 		"private_ip":        "",
 		"private_ipv6":      "",
 		"public_ip":         "",
 		"public_ipv6":       "",
+	}, gin.H{
+		"message": "数据网络已停止",
 	})
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func decodeBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
+func rawBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -18,36 +18,99 @@ func decodeBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	return body
 }
 
-// request_id 是这次统一的主要收益：裸 {error:"..."} 那一支从来没带过它，
-// 用户报上来的错误信息在服务端日志里搜不到对应请求。
-func TestFailAlwaysCarriesRequestID(t *testing.T) {
+// data 与 error 互斥且必有其一——判别是结构性的，不再靠 status:"ok" 字符串。
+// 那个字符串曾经出现在 200 响应里表示失败，自相矛盾且无法防。
+func TestSuccessAndErrorEnvelopesAreDisjoint(t *testing.T) {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	respondOK(c, gin.H{"id": "dev1"})
+
+	body := rawBody(t, rec)
+	if _, hasErr := body["error"]; hasErr {
+		t.Fatalf("成功响应里出现了 error: %v", body)
+	}
+	if _, hasData := body["data"]; !hasData {
+		t.Fatalf("成功响应缺少 data: %v", body)
+	}
+
+	rec2 := httptest.NewRecorder()
+	c2, _ := gin.CreateTestContext(rec2)
+	fail(c2, http.StatusNotFound, "", "设备未找到")
+
+	body2 := rawBody(t, rec2)
+	if _, hasData := body2["data"]; hasData {
+		t.Fatalf("错误响应里出现了 data: %v", body2)
+	}
+	if _, hasErr := body2["error"]; !hasErr {
+		t.Fatalf("错误响应缺少 error: %v", body2)
+	}
+}
+
+// 无资源可返回时 data 必须显式为 null，而不是整个字段消失——
+// 调用方靠 "data" in body 判别成功，字段缺失会让判别失效。
+func TestSuccessEnvelopeKeepsNullData(t *testing.T) {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	respondOK(c, nil)
+
+	body := rawBody(t, rec)
+	v, ok := body["data"]
+	if !ok {
+		t.Fatalf("data 字段消失了: %s", rec.Body.String())
+	}
+	if v != nil {
+		t.Fatalf("data=%v want null", v)
+	}
+}
+
+func TestMetaIsOmittedWhenEmpty(t *testing.T) {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	respondOKWith(c, nil, gin.H{})
+
+	if _, ok := rawBody(t, rec)["meta"]; ok {
+		t.Fatalf("空 meta 不应出现: %s", rec.Body.String())
+	}
+}
+
+// meta 只放"关于这次操作"的信息，与载荷分开。以前它们平铺在一起，
+// 调用方分不清哪些是数据、哪些是关于数据的说明。
+func TestMetaStaysOutOfData(t *testing.T) {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	respondOKWith(c, []string{"a", "b"}, gin.H{"device_limit": 3})
+
+	body := rawBody(t, rec)
+	data, ok := body["data"].([]any)
+	if !ok || len(data) != 2 {
+		t.Fatalf("data=%v want 两个元素的数组", body["data"])
+	}
+	meta, ok := body["meta"].(map[string]any)
+	if !ok || meta["device_limit"] != float64(3) {
+		t.Fatalf("meta=%v want device_limit=3", body["meta"])
+	}
+}
+
+// request_id 是错误统一的主要收益：用户报上来的错误要能在服务端日志里搜到。
+func TestRequestIDPresentOnBothOutcomes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	s := &Server{}
 	router := gin.New()
 	router.Use(s.requestIDMiddleware())
-	router.GET("/boom", func(c *gin.Context) {
-		fail(c, http.StatusNotFound, "", "设备未找到")
-	})
+	router.GET("/ok", func(c *gin.Context) { respondOK(c, gin.H{"x": 1}) })
+	router.GET("/boom", func(c *gin.Context) { fail(c, http.StatusNotFound, "", "没了") })
 
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/boom", nil))
-
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status=%d want 404", rec.Code)
-	}
-	body := decodeBody(t, rec)
-	if body["status"] != "error" || body["message"] != "设备未找到" {
-		t.Fatalf("body=%v", body)
-	}
-	if id, _ := body["request_id"].(string); id == "" {
-		t.Fatalf("body=%v want a non-empty request_id", body)
+	for _, path := range []string{"/ok", "/boom"} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if id, _ := rawBody(t, rec)["request_id"].(string); id == "" {
+			t.Fatalf("%s 缺少 request_id: %s", path, rec.Body.String())
+		}
 	}
 }
 
 func TestFailDerivesCodeFromStatusWhenNotGiven(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	cases := []struct {
 		status int
 		want   string
@@ -63,8 +126,10 @@ func TestFailDerivesCodeFromStatusWhenNotGiven(t *testing.T) {
 		rec := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(rec)
 		fail(c, tc.status, "", "boom")
-		if got := decodeBody(t, rec)["code"]; got != tc.want {
-			t.Fatalf("status %d -> code=%v want %q", tc.status, got, tc.want)
+
+		env := decodeEnvelope(t, rec)
+		if env.Error == nil || env.Error.Code != tc.want {
+			t.Fatalf("status %d -> %+v want code %q", tc.status, env.Error, tc.want)
 		}
 	}
 }
@@ -74,13 +139,14 @@ func TestFailKeepsExplicitCode(t *testing.T) {
 	c, _ := gin.CreateTestContext(rec)
 	fail(c, http.StatusConflict, "ESIM_BUSY", "eSIM 操作正忙")
 
-	if got := decodeBody(t, rec)["code"]; got != "ESIM_BUSY" {
-		t.Fatalf("code=%v want ESIM_BUSY —— 专属码不能被通用码盖掉", got)
+	env := decodeEnvelope(t, rec)
+	if env.Error.Code != "ESIM_BUSY" {
+		t.Fatalf("code=%q want ESIM_BUSY —— 专属码不能被通用码盖掉", env.Error.Code)
 	}
 }
 
-// 附加字段平铺在同一层级，调用方的读法不变。
-func TestFailWithSurfacesExtraFieldsAtTopLevel(t *testing.T) {
+// 需要客户端据以决策的数据放 error.details，与给人读的 message 分开。
+func TestFailWithCarriesStructuredDetails(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	failWith(c, http.StatusConflict, "ESIM_DOWNLOAD_IN_PROGRESS", "已有进行中的下载", gin.H{
@@ -88,26 +154,21 @@ func TestFailWithSurfacesExtraFieldsAtTopLevel(t *testing.T) {
 		"task_id": "abc123",
 	})
 
-	body := decodeBody(t, rec)
-	if body["busy"] != true || body["task_id"] != "abc123" {
-		t.Fatalf("body=%v want busy/task_id 平铺在顶层", body)
+	env := decodeEnvelope(t, rec)
+	if env.Error.Details["busy"] != true || env.Error.Details["task_id"] != "abc123" {
+		t.Fatalf("details=%v", env.Error.Details)
 	}
 }
 
-// 固定字段是调用方判别的依据，形状必须稳定；extra 不能把它们顶掉。
-func TestFailWithCannotOverrideTheFixedFields(t *testing.T) {
+func TestFailWithOmitsEmptyDetails(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	failWith(c, http.StatusBadRequest, "real_code", "真实消息", gin.H{
-		"status":     "ok",
-		"code":       "hijacked",
-		"message":    "被顶掉的消息",
-		"request_id": "伪造的",
-	})
+	failWith(c, http.StatusBadRequest, "", "参数错误", gin.H{})
 
-	body := decodeBody(t, rec)
-	if body["status"] != "error" || body["code"] != "real_code" || body["message"] != "真实消息" {
-		t.Fatalf("body=%v want extra 无法覆盖固定字段", body)
+	body := rawBody(t, rec)
+	errObj := body["error"].(map[string]any)
+	if _, ok := errObj["details"]; ok {
+		t.Fatalf("空 details 不应出现: %s", rec.Body.String())
 	}
 }
 
@@ -116,14 +177,14 @@ func TestFailErrFallsBackWhenErrorIsNil(t *testing.T) {
 	c, _ := gin.CreateTestContext(rec)
 	failErr(c, http.StatusInternalServerError, "", nil, "操作失败")
 
-	if got := decodeBody(t, rec)["message"]; got != "操作失败" {
-		t.Fatalf("message=%v want 兜底文案而不是 <nil>", got)
+	if got := decodeEnvelope(t, rec).Error.Message; got != "操作失败" {
+		t.Fatalf("message=%q want 兜底文案而不是 <nil>", got)
 	}
 }
 
-// eSIM 并发冲突是唯一带 camelCase 字段的响应。改名是破坏性的，
-// 所以两个名字一起给；这里盯住两者都在。
-func TestEsimBusyResponseCarriesBothRetryAfterSpellings(t *testing.T) {
+// eSIM 并发冲突要告诉客户端等多久。retryAfterMs 这个 camelCase 遗留拼写
+// 随本次破坏性变更一并删除，只保留 snake_case。
+func TestEsimBusyResponseCarriesRetryHint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -134,12 +195,16 @@ func TestEsimBusyResponseCarriesBothRetryAfterSpellings(t *testing.T) {
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status=%d want 409", rec.Code)
 	}
-	body := decodeBody(t, rec)
-	if body["code"] != "ESIM_BUSY" || body["busy"] != true || body["reason"] != "switch_profile" {
-		t.Fatalf("body=%v", body)
+	env := decodeEnvelope(t, rec)
+	if env.Error.Code != "ESIM_BUSY" {
+		t.Fatalf("code=%q", env.Error.Code)
 	}
-	if body["retryAfterMs"] == nil || body["retry_after_ms"] == nil {
-		t.Fatalf("body=%v want 新旧两种拼写同时存在", body)
+	d := env.Error.Details
+	if d["busy"] != true || d["reason"] != "switch_profile" || d["retry_after_ms"] == nil {
+		t.Fatalf("details=%v", d)
+	}
+	if _, stale := d["retryAfterMs"]; stale {
+		t.Fatal("camelCase 的 retryAfterMs 应已删除")
 	}
 	if rec.Header().Get("Retry-After") == "" {
 		t.Fatal("缺少 Retry-After 头")

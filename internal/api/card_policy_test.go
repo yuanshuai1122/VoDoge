@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -52,9 +51,7 @@ func TestGetCardPolicyEndpoint(t *testing.T) {
 		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
 	}
 	var got db.CardPolicy
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
+	decodeData(t, w, &got)
 	if !got.NetworkEnabled {
 		t.Fatalf("payload 错: %+v", got)
 	}

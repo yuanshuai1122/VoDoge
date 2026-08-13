@@ -49,7 +49,7 @@ func (s *Server) handleListUpstreamProxies(c *gin.Context) {
 	for i := range proxies {
 		proxies[i].Password = maskSecret(proxies[i].Password)
 	}
-	c.JSON(http.StatusOK, proxies)
+	respondOK(c, proxies)
 }
 
 // handleCreateUpstreamProxy 创建前置代理实例
@@ -79,10 +79,8 @@ func (s *Server) handleCreateUpstreamProxy(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "ok",
+	respondOKWith(c, result, gin.H{
 		"message": "前置代理已保存，并已通过探测",
-		"result":  result,
 	})
 }
 
@@ -120,10 +118,8 @@ func (s *Server) handleUpdateUpstreamProxy(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "ok",
+	respondOKWith(c, result, gin.H{
 		"message": "前置代理已更新，并已通过探测",
-		"result":  result,
 	})
 }
 
@@ -134,7 +130,7 @@ func (s *Server) handleDeleteUpstreamProxy(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "前置代理已删除"})
+	respondOKWith(c, nil, gin.H{"message": "前置代理已删除"})
 }
 
 // handleProbeUpstreamProxy 探测前置代理是否支持标准 Socks5 + UDP Associate。
@@ -163,10 +159,8 @@ func (s *Server) handleProbeUpstreamProxy(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "ok",
+	respondOKWith(c, result, gin.H{
 		"message": "前置代理探测成功",
-		"result":  result,
 	})
 }
 
@@ -196,7 +190,7 @@ func (s *Server) handleListUpstreamProxyCountries(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "", "mcc_mnc_table_unavailable")
 		return
 	}
-	c.JSON(http.StatusOK, upstreamproxy.ListCountryDisplays())
+	respondOK(c, upstreamproxy.ListCountryDisplays())
 }
 
 func (s *Server) handleListUpstreamProxyCountryRules(c *gin.Context) {
@@ -209,7 +203,7 @@ func (s *Server) handleListUpstreamProxyCountryRules(c *gin.Context) {
 	for _, rule := range rules {
 		out = append(out, buildUpstreamProxyCountryRuleResponse(rule))
 	}
-	c.JSON(http.StatusOK, out)
+	respondOK(c, out)
 }
 
 func (s *Server) handleUpsertUpstreamProxyCountryRule(c *gin.Context) {
@@ -250,7 +244,7 @@ func (s *Server) handleUpsertUpstreamProxyCountryRule(c *gin.Context) {
 	}
 	rule.UpstreamProxyID = proxy.ID
 	rule.CountryCode = countryCode
-	c.JSON(http.StatusOK, buildUpstreamProxyCountryRuleResponse(rule))
+	respondOK(c, buildUpstreamProxyCountryRuleResponse(rule))
 }
 
 func (s *Server) handleDeleteUpstreamProxyCountryRule(c *gin.Context) {
@@ -259,7 +253,7 @@ func (s *Server) handleDeleteUpstreamProxyCountryRule(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	respondOK(c, nil)
 }
 
 // maskSecret 将密码脱敏为 **** 格式

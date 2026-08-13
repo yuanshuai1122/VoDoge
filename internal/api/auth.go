@@ -101,8 +101,7 @@ func (s *Server) handleLogin(c *gin.Context) {
 		}
 		logger.Info("登录成功", "ip", clientIP, "username", req.Username)
 
-		c.JSON(http.StatusOK, gin.H{
-			"status":     "ok",
+		respondOK(c, gin.H{
 			"token":      token,
 			"expires_at": exp.Format(time.RFC3339),
 		})
@@ -162,10 +161,7 @@ func (s *Server) handleChangePassword(c *gin.Context) {
 	s.auth.Password = hashedPassword
 
 	logger.Info("密码已更新", "username", s.auth.Username, "ip", c.ClientIP())
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "ok",
-		"message": "密码已更新",
-	})
+	respondOKWith(c, nil, gin.H{"message": "密码已更新"})
 }
 
 func (s *Server) authorizeRotate(c *gin.Context, username string, password string, now time.Time) bool {
