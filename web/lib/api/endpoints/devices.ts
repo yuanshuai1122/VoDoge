@@ -81,12 +81,40 @@ export async function addDeviceWithConfig(
 }
 
 /** GET /api/devices/:id/config -> {config} */
-export async function getDeviceConfig(id: string): Promise<unknown> {
-  return pick(await api.get(`/devices/${encodeURIComponent(id)}/config`), "config");
+export async function getDeviceConfig(id: string): Promise<DeviceConfigDTO> {
+  return pick<DeviceConfigDTO>(
+    await api.get(`/devices/${encodeURIComponent(id)}/config`),
+    "config",
+  );
 }
 
-export async function updateDevice(id: string, input: unknown): Promise<void> {
-  ok(await api.put(`/devices/${encodeURIComponent(id)}`, input));
+export interface UpdateDeviceResult {
+  status: string;
+  requires_restart?: boolean;
+  warning?: string;
+  vowifi_error?: string;
+}
+
+/**
+ * PUT /api/devices/:id —— 请求体是 {config: {...}}。
+ *
+ * **整体替换，不是增量合并**：除 QMI 的三个指针字段会从现有配置继承外，
+ * 其余字段一律采信请求体，漏传即被清空。因此必须基于 getDeviceConfig 的
+ * 完整结果修改后整体提交。
+ *
+ * 策略字段（network_enabled / vowifi_enabled / apn / ip_version）是例外：
+ * 后端会用「当前有效策略」覆盖请求体中的值，因为 GET config 并不投影它们
+ * （恒为零值），直接采信会把卡策略清空。策略请改用 PUT /cards/:iccid/policy。
+ */
+export async function updateDevice(
+  id: string,
+  config: DeviceConfigDTO,
+): Promise<UpdateDeviceResult> {
+  return api.put<UpdateDeviceResult>(
+    `/devices/${encodeURIComponent(id)}`,
+    { config },
+    { timeoutMs: 60_000 },
+  );
 }
 
 export async function deleteDevice(id: string): Promise<void> {
