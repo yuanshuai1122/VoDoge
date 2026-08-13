@@ -589,39 +589,18 @@ func TestEsimNotificationsHTTPStatusMapsStructuredErrors(t *testing.T) {
 	}
 }
 
-func TestEsimNotificationExecHelpersPropagateResults(t *testing.T) {
-	items, err := esimNotificationListExec(func(string) ([]esim.NotificationItem, error) {
-		return []esim.NotificationItem{{SequenceNumber: 11, Event: "install", ICCID: "8986001234567890123", Address: "install.example.com", AIDHex: "A000", CanRetry: true}}, nil
-	}, "A000")
-	if err != nil {
-		t.Fatalf("esimNotificationListExec() error=%v", err)
-	}
-	if len(items) != 1 || items[0].SequenceNumber != 11 || items[0].Event != "install" {
-		t.Fatalf("items=%#v want passthrough notification item", items)
-	}
-	if err := esimNotificationRetryExec(func(sequence int64, aidHex string) error {
-		if sequence != 11 || aidHex != "A000" {
-			t.Fatalf("sequence=%d aidHex=%q want 11/A000", sequence, aidHex)
-		}
-		return nil
-	}, 11, "A000"); err != nil {
-		t.Fatalf("esimNotificationRetryExec() error=%v", err)
-	}
-}
-
 func TestHandleEsimNotificationListUsesJSONContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	oldExec := esimNotificationListExec
-	defer func() { esimNotificationListExec = oldExec }()
 
 	mgr := newTestEsimManager()
 	p := device.NewPool(&config.Config{})
 	setNestedPrivateField(t, p, []string{"workers"}, map[string]*device.Worker{
 		"dev-esim": {ID: "dev-esim", EsimMgr: mgr},
 	})
-	server := &Server{pool: p}
+	notifications := &fakeEsimNotifications{}
+	server := &Server{pool: p, esimNotificationsFor: notifications.forWorker}
 
-	esimNotificationListExec = func(_ func(string) ([]esim.NotificationItem, error), aidHex string) ([]esim.NotificationItem, error) {
+	notifications.listFn = func(aidHex string) ([]esim.NotificationItem, error) {
 		if aidHex != "A000" {
 			t.Fatalf("aidHex=%q want A000", aidHex)
 		}
@@ -645,17 +624,16 @@ func TestHandleEsimNotificationListUsesJSONContract(t *testing.T) {
 
 func TestHandleEsimNotificationListPassesEmptyAidForCurrentCardDefault(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	oldExec := esimNotificationListExec
-	defer func() { esimNotificationListExec = oldExec }()
 
 	mgr := newTestEsimManager()
 	p := device.NewPool(&config.Config{})
 	setNestedPrivateField(t, p, []string{"workers"}, map[string]*device.Worker{
 		"dev-esim": {ID: "dev-esim", EsimMgr: mgr},
 	})
-	server := &Server{pool: p}
+	notifications := &fakeEsimNotifications{}
+	server := &Server{pool: p, esimNotificationsFor: notifications.forWorker}
 
-	esimNotificationListExec = func(_ func(string) ([]esim.NotificationItem, error), aidHex string) ([]esim.NotificationItem, error) {
+	notifications.listFn = func(aidHex string) ([]esim.NotificationItem, error) {
 		if aidHex != "" {
 			t.Fatalf("aidHex=%q want empty current-card default", aidHex)
 		}
@@ -676,8 +654,6 @@ func TestHandleEsimNotificationListPassesEmptyAidForCurrentCardDefault(t *testin
 
 func TestHandleEsimRetryNotificationMapsStatusCodes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	oldExec := esimNotificationRetryExec
-	defer func() { esimNotificationRetryExec = oldExec }()
 
 	cases := []struct {
 		name       string
@@ -699,8 +675,9 @@ func TestHandleEsimRetryNotificationMapsStatusCodes(t *testing.T) {
 			setNestedPrivateField(t, p, []string{"workers"}, map[string]*device.Worker{
 				"dev-esim": {ID: "dev-esim", EsimMgr: mgr},
 			})
-			server := &Server{pool: p}
-			esimNotificationRetryExec = func(_ func(int64, string) error, sequence int64, aidHex string) error {
+			notifications := &fakeEsimNotifications{}
+			server := &Server{pool: p, esimNotificationsFor: notifications.forWorker}
+			notifications.retryFn = func(sequence int64, aidHex string) error {
 				if sequence != 11 || aidHex != "A000" {
 					t.Fatalf("sequence=%d aidHex=%q want 11/A000", sequence, aidHex)
 				}
@@ -728,3 +705,30 @@ func TestHandleEsimRetryNotificationMapsStatusCodes(t *testing.T) {
 		})
 	}
 }
+
+// fakeEsimNotifications 替代此前的 esimNotificationListExec / RetryExec 两个包级变量。
+//
+// 真实来源是设备的 *esim.Manager，要跟 eUICC 走 APDU；用例各持一份 fake，
+// 不再需要保存-还原全局，也不会互相污染。
+type fakeEsimNotifications struct {
+	listFn  func(aidHex string) ([]esim.NotificationItem, error)
+	retryFn func(sequence int64, aidHex string) error
+}
+
+func (f *fakeEsimNotifications) forWorker(*device.Worker) esimNotificationSource { return f }
+
+func (f *fakeEsimNotifications) ListNotifications(aidHex string) ([]esim.NotificationItem, error) {
+	if f.listFn != nil {
+		return f.listFn(aidHex)
+	}
+	return nil, nil
+}
+
+func (f *fakeEsimNotifications) RetryNotification(sequence int64, aidHex string) error {
+	if f.retryFn != nil {
+		return f.retryFn(sequence, aidHex)
+	}
+	return nil
+}
+
+var _ esimNotificationSource = (*fakeEsimNotifications)(nil)

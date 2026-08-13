@@ -33,15 +33,54 @@ type discoveredDevice struct {
 	Degraded       bool     `json:"degraded,omitempty"` // 探不到 IMEI,无法确立身份,不可直接添加
 }
 
-var discoverQMIForMgmtFn = device.DiscoverQMIDevices
+// hardwareProbe 是硬件枚举与探测的边界。
+//
+// 这几件事都要真的去摸 /dev 下的 QMI/MBIM 控制设备，本机与 CI 都没有，
+// 因此必须可替换。此前的做法是五个包级 `var xxxFn = device.Xxx`，测试直接赋值
+// 再在 defer 里还原——那是全局可变状态：包内测试不能并行，忘了还原就会污染
+// 后面的用例，而且从 Server 的定义里完全看不出它依赖硬件。
+//
+// 现在依赖挂在 Server 上，显式且各测试互不影响。
+type hardwareProbe interface {
+	DiscoverQMI() ([]device.QMIDevice, error)
+	CompatibleModemsFromQMI(qmiList []device.QMIDevice) ([]device.CompatibleModem, error)
+	EnrichCompatibleModem(dev device.CompatibleModem, opts device.CompatibleModemEnrichOptions) (device.CompatibleModem, string)
+	// ProbeIMEIViaQMI / ViaMBIM 是两条独立通路：QMI 探不到时回退 MBIM，
+	// 两者都失败才判定为 degraded（无法确立身份，不可直接添加）。
+	ProbeIMEIViaQMI(controlPath string) (string, error)
+	ProbeIMEIViaMBIM(controlPath string) (string, error)
+}
 
-var discoverCompatibleModemsFromQMIFn = device.DiscoverCompatibleModemsFromQMI
+// realHardwareProbe 直连 internal/device 的实现。
+type realHardwareProbe struct{}
 
-var enrichDiscoveredCompatibleModemFn = device.EnrichDiscoveredCompatibleModem
+func (realHardwareProbe) DiscoverQMI() ([]device.QMIDevice, error) {
+	return device.DiscoverQMIDevices()
+}
 
-var probeIMEIForAddFn = device.ProbeIMEIViaQMI
+func (realHardwareProbe) CompatibleModemsFromQMI(qmiList []device.QMIDevice) ([]device.CompatibleModem, error) {
+	return device.DiscoverCompatibleModemsFromQMI(qmiList)
+}
 
-var probeIMEIViaMBIMForMgmtFn = device.ProbeIMEIViaMBIM
+func (realHardwareProbe) EnrichCompatibleModem(dev device.CompatibleModem, opts device.CompatibleModemEnrichOptions) (device.CompatibleModem, string) {
+	return device.EnrichDiscoveredCompatibleModem(dev, opts)
+}
+
+func (realHardwareProbe) ProbeIMEIViaQMI(controlPath string) (string, error) {
+	return device.ProbeIMEIViaQMI(controlPath)
+}
+
+func (realHardwareProbe) ProbeIMEIViaMBIM(controlPath string) (string, error) {
+	return device.ProbeIMEIViaMBIM(controlPath)
+}
+
+// hw 返回本次请求使用的硬件探测实现；未注入时用真实实现。
+func (s *Server) hw() hardwareProbe {
+	if s.hardware != nil {
+		return s.hardware
+	}
+	return realHardwareProbe{}
+}
 
 func ensureAddDeviceIMEI(cfg config.DeviceConfig, probe func(string) (string, error)) (config.DeviceConfig, error) {
 	if strings.TrimSpace(cfg.ControlDevice) == "" || config.NormalizeIMEI(cfg.ModemIMEI) != "" {
@@ -56,12 +95,12 @@ func ensureAddDeviceIMEI(cfg config.DeviceConfig, probe func(string) (string, er
 }
 
 func (s *Server) handleDeviceMgmtDiscovered(c *gin.Context) {
-	discoveredQMI, err := discoverQMIForMgmtFn()
+	discoveredQMI, err := s.hw().DiscoverQMI()
 	if err != nil {
 		discoveredQMI = nil
 	}
 
-	list, err := discoverCompatibleModemsFromQMIFn(discoveredQMI)
+	list, err := s.hw().CompatibleModemsFromQMI(discoveredQMI)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"devices": []discoveredDevice{}})
 		return
@@ -94,7 +133,7 @@ func (s *Server) handleDeviceMgmtDiscovered(c *gin.Context) {
 						imei = managedMatch.IMEI
 					}
 				} else {
-					probed, discoveredIMEI := enrichDiscoveredCompatibleModemFn(dev, device.CompatibleModemEnrichOptions{
+					probed, discoveredIMEI := s.hw().EnrichCompatibleModem(dev, device.CompatibleModemEnrichOptions{
 						EnableATProbe:      true,
 						ATProbeTimeout:     900 * time.Millisecond,
 						EnableQMIIMEIProbe: strings.TrimSpace(dev.ControlPath) != "" && dev.Mode != "mbim",
@@ -108,7 +147,7 @@ func (s *Server) handleDeviceMgmtDiscovered(c *gin.Context) {
 					}
 					// MBIM 设备没有 AT 端口也不支持 QMI，使用 MBIM DeviceCaps 探测 IMEI
 					if imei == "" && dev.Mode == "mbim" && strings.TrimSpace(dev.ControlPath) != "" {
-						if mbimIMEI, err := probeIMEIViaMBIMForMgmtFn(dev.ControlPath); err == nil && mbimIMEI != "" {
+						if mbimIMEI, err := s.hw().ProbeIMEIViaMBIM(dev.ControlPath); err == nil && mbimIMEI != "" {
 							imei = mbimIMEI
 						}
 					}

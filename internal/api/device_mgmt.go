@@ -579,7 +579,7 @@ func (s *Server) handleDeviceMgmtAddDevice(c *gin.Context) {
 			}
 		}
 	} else {
-		enrichedCfg, imeiErr := ensureAddDeviceIMEI(newCfg, probeIMEIForAddFn)
+		enrichedCfg, imeiErr := ensureAddDeviceIMEI(newCfg, s.hw().ProbeIMEIViaQMI)
 		if imeiErr != nil {
 			fail(c, http.StatusBadRequest, "", imeiErr.Error())
 			return

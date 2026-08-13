@@ -41,12 +41,18 @@ type Server struct {
 	trafficRT  realtimeTrafficSubscriber
 	// store 是本层唯一的持久化入口。handler 不再直接调 internal/db，
 	// 因此可以注入假实现来测试，不必连真库（见 internal/data/repo）。
-	store       *repo.Store
-	proxyRepo   repo.ProxyInstanceRepository
-	proxySyncMu sync.Mutex
-	voiceGW     *voicehost.Gateway
-	notifyMgr   *notify.Manager
-	websheets   *vwebsheet.Broker
+	store *repo.Store
+	// hardware 是硬件枚举/探测的边界（见 device_discovery.go）。
+	// nil 时用真实实现；测试注入假实现，无需 /dev 下真有 QMI 设备。
+	hardware hardwareProbe
+	// esimNotificationsFor 决定某设备的 eSIM 通知从哪儿来（见 device_esim.go）。
+	// nil 时用设备自己的 *esim.Manager，它要走 APDU 摸真卡。
+	esimNotificationsFor func(*device.Worker) esimNotificationSource
+	proxyRepo            repo.ProxyInstanceRepository
+	proxySyncMu          sync.Mutex
+	voiceGW              *voicehost.Gateway
+	notifyMgr            *notify.Manager
+	websheets            *vwebsheet.Broker
 
 	httpSrvMu sync.Mutex
 	httpSrv   *http.Server

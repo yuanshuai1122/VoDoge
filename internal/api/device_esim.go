@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/yuanshuai1122/vohive/internal/apduarbiter"
+	"github.com/yuanshuai1122/vohive/internal/device"
 	"github.com/yuanshuai1122/vohive/internal/esim"
 
 	"github.com/gin-gonic/gin"
@@ -125,12 +126,25 @@ func writeEsimDeleteSuccessJSON(c *gin.Context, result esim.DeleteProfileResult)
 	c.JSON(http.StatusOK, esimDeleteSuccessBody(result))
 }
 
-var esimNotificationListExec = func(run func(string) ([]esim.NotificationItem, error), aidHex string) ([]esim.NotificationItem, error) {
-	return run(aidHex)
+// esimNotificationSource 是 eSIM 通知的来源。
+//
+// 真实实现就是设备的 *esim.Manager，它要跟 eUICC 走 APDU；本机与 CI 都没有硬件，
+// 所以必须可替换。此前的做法是两个包级 `var xxxExec = func(run, args)`，
+// 把真实方法当参数传进去再由测试整个换掉——全局可变，而且那层间接本身
+// 不表达任何东西（它只是 `return run(args)`）。
+//
+// 现在的边界表达的是"通知从哪儿来"，不是"把这次调用包一层"。
+type esimNotificationSource interface {
+	ListNotifications(aidHex string) ([]esim.NotificationItem, error)
+	RetryNotification(sequence int64, aidHex string) error
 }
 
-var esimNotificationRetryExec = func(run func(int64, string) error, sequence int64, aidHex string) error {
-	return run(sequence, aidHex)
+// esimNotifications 返回该设备的通知来源；未注入时用设备自己的 eSIM 管理器。
+func (s *Server) esimNotifications(worker *device.Worker) esimNotificationSource {
+	if s.esimNotificationsFor != nil {
+		return s.esimNotificationsFor(worker)
+	}
+	return worker.EsimMgr
 }
 
 func esimDeleteExec(run func(string, string) (esim.DeleteProfileResult, error), iccid, aidHex string) (esim.DeleteProfileResult, error) {
@@ -157,7 +171,7 @@ func (s *Server) handleEsimListNotifications(c *gin.Context) {
 		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
-	items, err := esimNotificationListExec(worker.EsimMgr.ListNotifications, strings.TrimSpace(c.Query("aid_hex")))
+	items, err := s.esimNotifications(worker).ListNotifications(strings.TrimSpace(c.Query("aid_hex")))
 	if err != nil {
 		if esimNotificationHTTPStatus(err) == http.StatusConflict {
 			respondEsimBusy(c, "list_notifications", err)
@@ -181,7 +195,7 @@ func (s *Server) handleEsimRetryNotification(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "", "无效的通知序号")
 		return
 	}
-	err = esimNotificationRetryExec(worker.EsimMgr.RetryNotification, sequence, strings.TrimSpace(c.Query("aid_hex")))
+	err = s.esimNotifications(worker).RetryNotification(sequence, strings.TrimSpace(c.Query("aid_hex")))
 	if err != nil {
 		if esimNotificationHTTPStatus(err) == http.StatusConflict {
 			respondEsimBusy(c, "retry_notification", err)
