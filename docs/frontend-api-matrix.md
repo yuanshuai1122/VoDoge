@@ -119,7 +119,7 @@
 
 | 端点 | 事件名 | Payload | 备注 |
 |------|--------|---------|------|
-| `GET /api/logs/stream?level=` | `connected`、`log` | `{message}` / LogEntry | **唯一带 CORS 头的端点** |
+| `GET /api/logs/stream?level=` | `connected`、`log` | `{message}` / LogEntry | 带 CORS 头 |
 | `GET /api/devices/:id/overview/stream` | `overview`、`traffic`、`ussd` | `{devices:[item]}` / 流量快照 / USSD 事件 | 10s ticker + VoWiFi 状态变更 + 实时流量 |
 | `GET /api/devices/:id/operator_selection/scan/stream` | `operator_scan` | 扫描结果 | 长耗时 |
 | `GET /api/devices/:id/esim/actions/download` | **无事件名**（默认 `message`） | `{step,msg,pct}` | 见下 |

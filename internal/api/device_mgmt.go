@@ -2081,6 +2081,8 @@ func (s *Server) handleEsimDownloadProfile(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
+	// 同 overview 流：开发期需允许前端直连，绕开会缓冲 SSE 的 Next dev 代理
+	s.setSSECORSHeaders(c)
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -2532,6 +2534,9 @@ func (s *Server) handleDeviceMgmtOverviewStreamSingle(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
+	// 开发期前端需直连本端口订阅：Next dev 的 rewrite 代理会缓冲 SSE，
+	// 经代理时一个字节都收不到。仅在 Debug 模式下放行 localhost，见 isAllowedSSEOrigin。
+	s.setSSECORSHeaders(c)
 
 	deviceID := deviceIDParam(c)
 	if deviceID == "" {

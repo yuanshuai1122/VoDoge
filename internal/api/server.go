@@ -513,7 +513,7 @@ func (s *Server) handleLogStream(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
-	s.setLogStreamCORSHeaders(c)
+	s.setSSECORSHeaders(c)
 
 	// 订阅日志流
 	logChan := logger.GlobalBroadcaster.Subscribe()
@@ -557,17 +557,17 @@ func (s *Server) handleLogStream(c *gin.Context) {
 }
 
 func (s *Server) handleLogStreamOptions(c *gin.Context) {
-	s.setLogStreamCORSHeaders(c)
+	s.setSSECORSHeaders(c)
 	c.Status(http.StatusNoContent)
 }
 
-func (s *Server) setLogStreamCORSHeaders(c *gin.Context) {
+func (s *Server) setSSECORSHeaders(c *gin.Context) {
 	origin := strings.TrimSpace(c.GetHeader("Origin"))
 	if origin == "" {
 		return
 	}
 
-	if s.isAllowedLogStreamOrigin(origin, c.Request.Host) {
+	if s.isAllowedSSEOrigin(origin, c.Request.Host) {
 		c.Header("Access-Control-Allow-Origin", origin)
 		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Allow-Methods", "GET, OPTIONS")
@@ -577,7 +577,7 @@ func (s *Server) setLogStreamCORSHeaders(c *gin.Context) {
 	}
 }
 
-func (s *Server) isAllowedLogStreamOrigin(origin, host string) bool {
+func (s *Server) isAllowedSSEOrigin(origin, host string) bool {
 	if origin == "" {
 		return false
 	}

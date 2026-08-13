@@ -18,6 +18,18 @@ import { useEffect, useRef, useState } from "react";
 import { API_BASE } from "../api/client";
 import { getToken } from "../auth/token";
 
+/**
+ * SSE 专用的 base，与普通请求不同。
+ *
+ * 生产同源，走 API_BASE（通常为空）即可。
+ * 开发期必须**绕开 Next dev 的 rewrite 代理**：它会缓冲 SSE 响应体，
+ * 经代理订阅时 status 200、content-type 正确，但一个字节都收不到。
+ * 直连后端需要 CORS，后端仅在 `server.debug: true` 时放行 localhost。
+ */
+const SSE_BASE =
+  process.env.NEXT_PUBLIC_SSE_BASE ??
+  (process.env.NODE_ENV === "development" ? "http://127.0.0.1:7575" : API_BASE);
+
 export type SSEStatus = "connecting" | "open" | "closed" | "error";
 
 /** 连续失败多少次后放弃重连（浏览器默认约 3s 一次）。 */
@@ -71,7 +83,7 @@ export function useEventSource(
     }
     sp.append("token", token);
 
-    const es = new EventSource(`${API_BASE}/api${path}?${sp.toString()}`);
+    const es = new EventSource(`${SSE_BASE}/api${path}?${sp.toString()}`);
     let failures = 0;
     let disposed = false;
 
