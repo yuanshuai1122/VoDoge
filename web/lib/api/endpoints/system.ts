@@ -1,5 +1,6 @@
 import { api } from "../client";
-import { ok } from "../unwrap";
+import { ok, pick } from "../unwrap";
+import type { LogEntry } from "../../../types/log";
 
 export interface SystemInfo {
   [key: string]: unknown;
@@ -47,8 +48,15 @@ export async function applyUpdate(): Promise<void> {
   ok(await api.post("/system/update/apply", undefined, { timeoutMs: 120_000 }));
 }
 
+/**
+ * GET /api/logs/history -> {logs}
+ * 实测确认是包装形状，不是裸数组。
+ */
 export async function getLogHistory(params?: {
   level?: string;
-}): Promise<unknown> {
-  return api.get("/logs/history", { query: { level: params?.level } });
+}): Promise<LogEntry[]> {
+  return pick<LogEntry[]>(
+    await api.get("/logs/history", { query: { level: params?.level } }),
+    "logs",
+  );
 }

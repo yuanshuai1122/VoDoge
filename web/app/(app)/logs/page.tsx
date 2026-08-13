@@ -13,18 +13,7 @@ import {
 } from "@/components/ui/select";
 import { useEventSource, type SSEStatus } from "@/lib/sse/use-event-source";
 import { cn } from "@/lib/utils";
-
-/** 对齐 pkg/logger.LogEntry */
-interface LogEntry {
-  time: string;
-  level: string;
-  caller: string;
-  message: string;
-  fields?: string;
-}
-
-/** 后端按等级阈值过滤（entry >= filter），非精确匹配。 */
-const LEVELS = ["debug", "info", "warn", "error"] as const;
+import { LOG_LEVELS, type LogEntry } from "@/types/log";
 
 /** 只保留最近 N 条，避免长时间挂着把内存吃满。 */
 const MAX_ENTRIES = 2000;
@@ -49,7 +38,7 @@ export default function LogsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {LEVELS.map((l) => (
+                {LOG_LEVELS.map((l) => (
                   <SelectItem key={l} value={l}>
                     {l}
                   </SelectItem>
