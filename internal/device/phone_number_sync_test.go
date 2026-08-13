@@ -124,7 +124,7 @@ func TestPersistIdentityStateStoresATMSISDNAsModemPhoneNumber(t *testing.T) {
 	w.state.Identity.IMEI = "imei-at-1"
 	w.state.Identity.IMSI = "imsi-at-1"
 	w.state.Identity.ICCID = "8986000000000000002"
-	w.state.Runtime.Operator = "中国联�?
+	w.state.Runtime.Operator = "中国联通"
 
 	p.PersistIdentityState(w)
 

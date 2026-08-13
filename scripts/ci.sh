@@ -77,6 +77,34 @@ dependency_hygiene() {
 	printf '\n==> dependency hygiene ok\n'
 }
 
+# Go 要求源文件是合法 UTF-8，任一文件损坏都会让整个包无法编译，
+# 即使损坏只出现在注释里。仓库曾因此连续多次构建失败（见 docs/known-issues.md KI-001）。
+# 注意：iconv -f UTF-8 -t UTF-8 会误报数百个文件，不能用来做这项检查。
+encoding_check() {
+	if ! command -v node >/dev/null 2>&1; then
+		printf '\n==> encoding check skipped (node not found)\n'
+		return 0
+	fi
+
+	local bad
+	bad="$(node -e '
+const fs=require("fs"),{execSync}=require("child_process");
+const out=[];
+for(const f of execSync("git ls-files \"*.go\"",{encoding:"utf8"}).trim().split("\n")){
+  try{ new TextDecoder("utf-8",{fatal:true}).decode(fs.readFileSync(f)); }
+  catch{ out.push(f); }
+}
+process.stdout.write(out.join("\n"));
+')"
+
+	if [[ -n "$bad" ]]; then
+		printf 'Go 源文件存在非法 UTF-8，会导致整个包无法编译:\n%s\n' "$bad" >&2
+		return 1
+	fi
+
+	printf '\n==> encoding check ok\n'
+}
+
 release_hygiene() {
 	local workflow
 	workflow=".github/workflows/binary-release.yml"
@@ -223,9 +251,9 @@ go_build() {
 
 usage() {
 	cat <<'USAGE'
-Usage: scripts/ci.sh [all|workflow-lint|hygiene|release-hygiene|container-hygiene|web|tidy|test|build ...]
+Usage: scripts/ci.sh [all|workflow-lint|hygiene|encoding|release-hygiene|container-hygiene|web|tidy|test|build ...]
 
-Default all runs workflow-lint, hygiene, release-hygiene, container-hygiene, web, tidy, test, and build.
+Default all runs workflow-lint, hygiene, encoding, release-hygiene, container-hygiene, web, tidy, test, and build.
 
 Environment:
   GO_BIN               path to go binary
@@ -241,7 +269,7 @@ USAGE
 GO_BIN="$(find_go)"
 
 if [[ $# -eq 0 || "${1:-}" == "all" ]]; then
-	tasks=(workflow-lint hygiene release-hygiene container-hygiene web tidy test build)
+	tasks=(workflow-lint hygiene encoding release-hygiene container-hygiene web tidy test build)
 else
 	tasks=("$@")
 fi
@@ -253,6 +281,7 @@ for task in "${tasks[@]}"; do
 	case "$task" in
 		workflow-lint | actionlint) workflow_lint ;;
 		hygiene | dependency-hygiene) dependency_hygiene ;;
+		encoding | encoding-check) encoding_check ;;
 		release-hygiene | release) release_hygiene ;;
 		container-hygiene | container | docker-hygiene) container_hygiene ;;
 		web | frontend) web_build ;;

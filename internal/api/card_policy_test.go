@@ -16,8 +16,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// injectWorker 通过 unsafe 反射�?worker 注入�?pool 的内�?workers map�?
-// 用于无需完整启动流程的测试场景�?
+// injectWorker 通过 unsafe 反射将 worker 注入到 pool 的内部 workers map，
+// 用于无需完整启动流程的测试场景。
 func injectWorker(p *device.Pool, w *device.Worker) {
 	pv := reflect.ValueOf(p).Elem().FieldByName("workers")
 	m := reflect.NewAt(pv.Type(), unsafe.Pointer(pv.UnsafeAddr())).Elem()
@@ -57,7 +57,7 @@ func TestGetCardPolicyEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !got.NetworkEnabled {
-		t.Fatalf("payload �? %+v", got)
+		t.Fatalf("payload 错: %+v", got)
 	}
 }
 
@@ -81,11 +81,11 @@ func TestPutCardPolicyEndpoint(t *testing.T) {
 	}
 	got, _ := db.GetCardPolicy("8986005")
 	if !got.NetworkEnabled || !got.VoWiFiEnabled || got.IPVersion != "v4v6" || got.APN != "ims" {
-		t.Fatalf("未成功更�? %+v", got)
+		t.Fatalf("未成功更新: %+v", got)
 	}
 }
 
-// TestPatchCardPolicyForDevice 验证 patchCardPolicyForDevice helper 正确解析 ICCID 并落库�?
+// TestPatchCardPolicyForDevice 验证 patchCardPolicyForDevice helper 正确解析 ICCID 并落库。
 func TestPatchCardPolicyForDevice(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	openTestDB(t)
@@ -123,14 +123,14 @@ func TestPatchCardPolicyForDevice(t *testing.T) {
 	}
 }
 
-// TestPatchCardPolicyForDeviceNoICCID 验证设备�?ICCID �?applied=false 且不报错�?
+// TestPatchCardPolicyForDeviceNoICCID 验证设备无 ICCID 时 applied=false 且不报错。
 func TestPatchCardPolicyForDeviceNoICCID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	openTestDB(t)
 
 	p := device.NewPool(&config.Config{})
 	w := &device.Worker{ID: "wwan-nocard"}
-	// 不设�?ICCID，模拟无卡状�?
+	// 不设置 ICCID，模拟无卡状态
 	injectWorker(p, w)
 
 	s := &Server{pool: p}
@@ -149,8 +149,8 @@ func TestPatchCardPolicyForDeviceNoICCID(t *testing.T) {
 	}
 }
 
-// TestPatchCardPolicyVoWiFiKeepsAirplaneIntent 验证开 VoWiFi 不再强制 airplane=true�?
-// airplane 反映用户的纯飞行意图，独立于 vowifi�?
+// TestPatchCardPolicyVoWiFiKeepsAirplaneIntent 验证开 VoWiFi 不再强制 airplane=true，
+// airplane 反映用户的纯飞行意图，独立于 vowifi。
 func TestPatchCardPolicyVoWiFiKeepsAirplaneIntent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	openTestDB(t)
@@ -161,7 +161,7 @@ func TestPatchCardPolicyVoWiFiKeepsAirplaneIntent(t *testing.T) {
 	injectWorker(p, w)
 
 	s := &Server{pool: p}
-	// 从在线开 VoWiFi（飞行意图为 false）：airplane 应保�?false，不被强制为 true�?
+	// 从在线开 VoWiFi（飞行意图为 false）：airplane 应保持 false，不被强制为 true。
 	_, _, err := s.patchCardPolicyForDevice("wwan-vowifi", vowifiEnablePolicyMutation)
 	if err != nil {
 		t.Fatalf("error=%v", err)
@@ -172,8 +172,8 @@ func TestPatchCardPolicyVoWiFiKeepsAirplaneIntent(t *testing.T) {
 	}
 }
 
-// TestVoWiFiToggleCyclePreservesAirplaneIntent 复现并锁�?bug 修复�?
-// 先开飞行 �?开 VoWiFi �?�?VoWiFi，应回退到飞行（airplane 意图被保留）�?
+// TestVoWiFiToggleCyclePreservesAirplaneIntent 复现并锁定 bug 修复，
+// 先开飞行 → 开 VoWiFi → 关 VoWiFi，应回退到飞行（airplane 意图被保留）。
 func TestVoWiFiToggleCyclePreservesAirplaneIntent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	openTestDB(t)
@@ -193,27 +193,27 @@ func TestVoWiFiToggleCyclePreservesAirplaneIntent(t *testing.T) {
 		t.Fatalf("开飞行 error=%v", err)
 	}
 
-	// 2) 开 VoWiFi（落库副作用：只�?vowifi�?
+	// 2) 开 VoWiFi（落库副作用：只置 vowifi）
 	if _, _, err := s.patchCardPolicyForDevice("wwan-cycle", vowifiEnablePolicyMutation); err != nil {
 		t.Fatalf("开 vowifi error=%v", err)
 	}
 	mid, _ := db.GetCardPolicy("8986cycle001")
 	if !mid.VoWiFiEnabled || !mid.AirplaneEnabled {
-		t.Fatalf("开 VoWiFi 期间飞行意图应保�? %+v", mid)
+		t.Fatalf("开 VoWiFi 期间飞行意图应保留: %+v", mid)
 	}
 
-	// 3) �?VoWiFi（落库副作用：只�?vowifi），应回退到飞�?
+	// 3) 关 VoWiFi（落库副作用：只清 vowifi），应回退到飞行
 	if _, _, err := s.patchCardPolicyForDevice("wwan-cycle", vowifiDisablePolicyMutation); err != nil {
-		t.Fatalf("�?vowifi error=%v", err)
+		t.Fatalf("关 vowifi error=%v", err)
 	}
 	got, _ := db.GetCardPolicy("8986cycle001")
 	if got.VoWiFiEnabled || !got.AirplaneEnabled {
-		t.Fatalf("�?VoWiFi 后应回退到飞行模�? vowifi=%v airplane=%v", got.VoWiFiEnabled, got.AirplaneEnabled)
+		t.Fatalf("关 VoWiFi 后应回退到飞行模式: vowifi=%v airplane=%v", got.VoWiFiEnabled, got.AirplaneEnabled)
 	}
 }
 
-// TestPatchCardPolicyAirplaneMutualExclusion 验证“开飞行模式”落库时�?network/vowifi 互斥
-// （等价于 handleDeviceMgmtSetFlightMode 开飞行时的落库副作用）�?
+// TestPatchCardPolicyAirplaneMutualExclusion 验证“开飞行模式”落库时与 network/vowifi 互斥
+// （等价于 handleDeviceMgmtSetFlightMode 开飞行时的落库副作用）。
 func TestPatchCardPolicyAirplaneMutualExclusion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	openTestDB(t)
@@ -227,7 +227,7 @@ func TestPatchCardPolicyAirplaneMutualExclusion(t *testing.T) {
 	injectWorker(p, w)
 
 	s := &Server{pool: p}
-	// 开飞行：airplane=on，且互斥�?network/vowifi
+	// 开飞行：airplane=on，且互斥关 network/vowifi
 	_, applied, err := s.patchCardPolicyForDevice("wwan-air", func(pol *db.CardPolicy) {
 		pol.AirplaneEnabled = true
 		pol.VoWiFiEnabled = false
