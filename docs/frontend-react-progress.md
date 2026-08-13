@@ -41,6 +41,47 @@
 
 ---
 
+### 2026-08-13 — 部署到 Docker，发现并修复 3 个阻塞问题
+
+- **状态**：部署成功。`docker compose -f docker-compose.windows.yml` 起 postgres + vohive，
+  日志确认 `数据库已初始化 {"driver": "postgres"}`。**这是该仓库第一次真正以 PostgreSQL 运行**。
+- **冒烟**：`scripts/smoke-api.mjs` **全部通过**，含 `日志流 SSE — 已建立事件流`。
+
+**① 镜像自 `0868b32` 起就构建不了（KI-001）**
+
+5 个 `_test.go` 存在 UTF-8 损坏，`go build` 加载包时即失败。详见
+[`known-issues.md`](./known-issues.md)。已在 `.dockerignore` 排除测试文件让镜像可构建；
+**损坏本身未修**，需要原作者确认 65 处被吞掉的文案。
+
+**② PostgreSQL 迁移不彻底，服务起不来（已修）**
+
+```
+初始化数据库失败: iccid rekey migration:
+ERROR: function pragma_table_info(unknown) does not exist (SQLSTATE 42883)
+```
+
+`internal/db/iccid_rekey_migration.go` 仍在用 SQLite 专有的 `pragma_table_info()`，
+导致容器无限重启。已改为 `tx.Migrator().HasColumn()`（方言中立）。
+这一项 `backend-db-progress.md` 曾标记为「已完成」，实际有遗漏。
+
+**③ Go 静态托管与 Next 静态导出不兼容，生产页面白屏（已修）**
+
+Next 静态导出为每个路由同时产出 `login.html` 和一个同名目录 `login/`（内含框架文件）。
+原 `handleStatic` 按请求路径打开 `/login` 会命中**目录**，进而回退到 `index.html`——
+浏览器拿到根路由的 HTML 而地址栏是 `/login`，页面白屏。
+现在会先尝试 `<route>.html`，未命中才做 SPA 回退。已补 `static_route_test.go`。
+
+**④ Next dev 的 rewrite 代理会缓冲 SSE（未修，属开发期限制）**
+
+`next dev` 下经 `/api` 代理访问 `/logs/stream`，`fetch` 与 `EventSource` 都收不到任何数据
+（status 200、content-type 正确，但 body 始终为空）；直连后端则正常收到
+`event:connected` 与 `event:log`。
+
+**不影响生产**：生产是静态导出 + Go 同源托管，不经过该代理。
+开发期需要调试 SSE 时，直连后端并临时放开 CORS。
+
+---
+
 ### 2026-08-13 — 首次真实后端联调（部分）
 
 - **状态**：进行中

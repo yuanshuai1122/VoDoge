@@ -2175,16 +2175,41 @@ func (s *Server) handleStatic(c *gin.Context) {
 		filePath = "index.html"
 	}
 
-	// 尝试打开文件
-	f, err := s.fs.Open(filePath)
-	if err != nil {
-		// 文件不存在，回退到 index.html (SPA 模式)
+	// 打开候选文件；若命中目录则视为未找到，交给下面的 .html 兜底。
+	//
+	// Next 静态导出会为每个路由同时生成 `<route>.html` 与一个同名目录
+	// （目录里只放框架内部文件）。直接按请求路径打开 `/login` 会命中那个目录，
+	// 若此时就回退到 index.html，浏览器拿到的是根路由的 HTML，
+	// 与当前 URL 不匹配，页面会白屏。因此必须先试 `<route>.html`。
+	open := func(name string) (http.File, bool) {
+		file, oerr := s.fs.Open(name)
+		if oerr != nil {
+			return nil, false
+		}
+		if st, serr := file.Stat(); serr != nil || st.IsDir() {
+			file.Close()
+			return nil, false
+		}
+		return file, true
+	}
+
+	f, ok := open(filePath)
+	if !ok {
+		if candidate := filePath + ".html"; !strings.HasSuffix(filePath, ".html") {
+			if file, found := open(candidate); found {
+				f, ok, filePath = file, true, candidate
+			}
+		}
+	}
+	if !ok {
+		// 仍未命中：按 SPA 回退到 index.html，交由客户端路由处理
 		filePath = "index.html"
-		f, err = s.fs.Open(filePath)
-		if err != nil {
+		file, found := open(filePath)
+		if !found {
 			c.String(http.StatusNotFound, "Not Found")
 			return
 		}
+		f = file
 	}
 	defer f.Close()
 
@@ -2192,18 +2217,6 @@ func (s *Server) handleStatic(c *gin.Context) {
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Internal Server Error")
 		return
-	}
-
-	// 如果是目录，回退到 index.html
-	if stat.IsDir() {
-		f.Close()
-		filePath = "index.html"
-		f, err = s.fs.Open(filePath)
-		if err != nil {
-			c.String(http.StatusNotFound, "Not Found")
-			return
-		}
-		stat, _ = f.Stat()
 	}
 
 	// 设置缓存头

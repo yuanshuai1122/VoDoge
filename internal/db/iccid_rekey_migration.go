@@ -58,18 +58,13 @@ func backfillICCIDColumn(tx *gorm.DB, table string) error {
 		return nil
 	}
 	// 防御：无 imsi 列的表无法按 IMSI 回填，跳过。
-	var hasIMSI int64
-	if err := tx.Raw("SELECT count(*) FROM pragma_table_info(?) WHERE name = 'imsi'", table).Scan(&hasIMSI).Error; err != nil {
-		return err
-	}
-	if hasIMSI == 0 {
+	//
+	// 列探测走 GORM Migrator 而非 pragma_table_info：后者是 SQLite 专有函数，
+	// 在 PostgreSQL 上会直接报 42883（function does not exist），导致启动即失败。
+	if !tx.Migrator().HasColumn(table, "imsi") {
 		return nil
 	}
-	var hasCol int64
-	if err := tx.Raw("SELECT count(*) FROM pragma_table_info(?) WHERE name = 'iccid'", table).Scan(&hasCol).Error; err != nil {
-		return err
-	}
-	if hasCol == 0 {
+	if !tx.Migrator().HasColumn(table, "iccid") {
 		if err := tx.Exec("ALTER TABLE " + table + " ADD COLUMN iccid TEXT NOT NULL DEFAULT ''").Error; err != nil {
 			return err
 		}

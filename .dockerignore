@@ -19,4 +19,8 @@ web/dist
 
 internal/web/dist
 
+# 生产镜像不需要测试代码；同时避开 5 个 _test.go 中既有的 UTF-8 损坏
+# （见 docs/known-issues.md KI-001），否则 go build 加载包时会直接失败。
+**/*_test.go
+
 **/.DS_Store

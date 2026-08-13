@@ -18,7 +18,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { login } from "@/lib/api/endpoints/auth";
 import { ApiError } from "@/lib/api/errors";
-import { getToken } from "@/lib/auth/token";
+import { useToken, useHydrated } from "@/hooks/use-token";
 
 const schema = z.object({
   username: z.string().min(1, "请输入用户名"),
@@ -29,6 +29,8 @@ type FormValues = z.infer<typeof schema>;
 
 export default function LoginPage() {
   const router = useRouter();
+  const hydrated = useHydrated();
+  const token = useToken();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const {
@@ -40,10 +42,11 @@ export default function LoginPage() {
     defaultValues: { username: "", password: "" },
   });
 
-  // 已登录直接进主界面
+  // 已登录直接进主界面。
+  // 同 AuthGuard：必须等 hydration 完成，否则会与守卫来回重定向。
   useEffect(() => {
-    if (getToken()) router.replace("/");
-  }, [router]);
+    if (hydrated && token) router.replace("/");
+  }, [hydrated, token, router]);
 
   async function onSubmit(values: FormValues) {
     setSubmitError(null);
