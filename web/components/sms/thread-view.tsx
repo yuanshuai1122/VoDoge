@@ -21,10 +21,13 @@ import { ApiError } from "@/lib/api/errors";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ContactKey } from "./contact-list";
+import { DeliveryStatus } from "./delivery-status";
 
 export function ThreadView({ contact }: { contact: ContactKey }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
+  // 仅 VoWiFi 通道会返回 message_id，用它追踪刚发出那条的回执
+  const [trackedMessageId, setTrackedMessageId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const threadKey = ["sms", "thread", contact.imsi, contact.peer] as const;
@@ -57,6 +60,7 @@ export function ThreadView({ contact }: { contact: ContactKey }) {
       const parts =
         result?.parts_total > 1 ? `（拆分为 ${result.parts_total} 条）` : "";
       toast.success(`短信已发送${parts}`);
+      setTrackedMessageId(result?.message_id || null);
       queryClient.invalidateQueries({ queryKey: threadKey });
       queryClient.invalidateQueries({ queryKey: ["sms", "contacts"] });
     },
@@ -154,6 +158,15 @@ export function ThreadView({ contact }: { contact: ContactKey }) {
       </div>
 
       <div className="shrink-0 border-t p-3">
+        {trackedMessageId && (
+          <div className="mb-2">
+            <DeliveryStatus
+              key={trackedMessageId}
+              messageId={trackedMessageId}
+              onDismiss={() => setTrackedMessageId(null)}
+            />
+          </div>
+        )}
         <div className="flex items-end gap-2">
           <Textarea
             value={draft}
