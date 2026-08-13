@@ -27,11 +27,13 @@ import {
   deleteUpstreamProxy,
   probeUpstreamProxy,
   type ProxyInstanceStatus,
+  type ProxyInstance,
   type UpstreamProxy,
 } from "@/lib/api/endpoints/proxy";
 import { ApiError } from "@/lib/api/errors";
 import { UpstreamDialog } from "@/components/proxy/upstream-dialog";
 import { CountryRules } from "@/components/proxy/country-rules";
+import { InstanceDialog } from "@/components/proxy/instance-dialog";
 
 export default function ProxyPage() {
   return (
@@ -63,6 +65,17 @@ export default function ProxyPage() {
 
 function InstancesPanel() {
   const queryClient = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<ProxyInstance | null>(null);
+
+  const openCreate = () => {
+    setEditing(null);
+    setDialogOpen(true);
+  };
+  const openEdit = (i: ProxyInstance) => {
+    setEditing(i);
+    setDialogOpen(true);
+  };
 
   const query = useQuery({
     queryKey: ["proxy", "overview"],
@@ -113,15 +126,38 @@ function InstancesPanel() {
 
   if (instances.length === 0) {
     return (
-      <EmptyState
-        title="暂无代理实例"
-        description="代理实例在配置文件或设备绑定中定义，添加后会出现在这里。"
-      />
+      <>
+        <EmptyState
+          title="暂无代理实例"
+          description="每个实例绑定一台设备，出站流量走该设备的网卡。"
+          action={
+            <Button size="sm" disabled={devices.length === 0} onClick={openCreate}>
+              <Plus className="size-4" />
+              新增实例
+            </Button>
+          }
+        />
+        <InstanceDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          editing={editing}
+          allInstances={instances}
+          devices={devices}
+        />
+      </>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border">
+    <div className="flex flex-col gap-3">
+      <div className="flex justify-end">
+        <Button size="sm" disabled={devices.length === 0} onClick={openCreate}>
+          <Plus className="size-4" />
+          新增实例
+        </Button>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -217,6 +253,14 @@ function InstancesPanel() {
                     >
                       <RotateCw className="size-4" />
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="编辑"
+                      onClick={() => openEdit(inst)}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -224,6 +268,15 @@ function InstancesPanel() {
           })}
         </TableBody>
       </Table>
+      </div>
+
+      <InstanceDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editing={editing}
+        allInstances={instances}
+        devices={devices}
+      />
     </div>
   );
 }
