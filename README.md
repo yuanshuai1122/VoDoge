@@ -31,7 +31,7 @@ VoHive 把模组热插拔管理、SOCKS5/HTTP 代理编排、短信收发、VoWi
 - **Backend**: Go 1.26+（Gin、GORM、Viper 等）
 - **Frontend**: Next.js 16 + React 19 + Tailwind（迁移中，见 `docs/`）
 - **Database**: **PostgreSQL only**（配置 `database.dsn` 或环境变量 `VOHIVE_DB_DSN` / `DATABASE_URL`）
-- **CI/CD**: GitHub Actions
+- **构建**: 全部在本机完成，不依赖任何 CI 服务（`bash scripts/ci.sh`）
 
 ## 快速开始
 
@@ -61,6 +61,25 @@ npm install --prefix web && npm run dev --prefix web
 
 ```bash
 node scripts/smoke-api.mjs
+```
+
+## 本地流水线
+
+本项目不使用 CI 服务，构建与验证都在本机跑：
+
+```bash
+bash scripts/ci.sh
+```
+
+可单独执行某一环节，例如 `bash scripts/ci.sh routes`。
+完整任务列表见 `bash scripts/ci.sh --help`。
+
+测试用一次性数据库，**不要**把 `TEST_DATABASE_URL` 指向正在服务的实例——
+测试会清空目标库所有表（见 [docs/known-issues.md](docs/known-issues.md) KI-002）：
+
+```bash
+bash scripts/testdb.sh ensure   # 起一个独立测试库
+bash scripts/testdb.sh stop     # 用完删掉
 ```
 
 ### 备份

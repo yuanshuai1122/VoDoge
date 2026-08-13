@@ -1,4 +1,4 @@
-# VoHive
+# VoHive 部署
 
 面向高通 4G/LTE/5G 模组（Quectel EC20/EC25/EC21/EG25/EM20 等）的综合管理与代理服务平台。
 
@@ -55,7 +55,7 @@ services:
       retries: 10
 
   vohive:
-    image: ghcr.io/yuanshuai1122/vohive:latest
+    image: vohive:latest
     container_name: vohive
     restart: unless-stopped
     network_mode: host
@@ -92,13 +92,19 @@ docker compose up -d
 
 浏览器打开 `http://YOUR_IP:7575`，默认账号 `admin` / `admin123`。
 
-## 📦 镜像标签
+## 📦 构建镜像
 
-| 标签 | 说明 |
-|------|------|
-| `latest` | 最新稳定版 |
-| `vX.X.X` | 指定版本号 |
-| `main` | 开发版（可能不稳定） |
+本项目**不发布预构建镜像**，也不使用 CI 服务，镜像在本机构建：
+
+```bash
+docker build -t vohive:latest .
+```
+
+完整的本地流水线（编码检查、路由校验、前端构建、编译、测试、镜像）：
+
+```bash
+bash scripts/ci.sh
+```
 
 ## 🔧 环境变量
 

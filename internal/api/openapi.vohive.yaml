@@ -489,72 +489,6 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorMessage'
 
-  /settings/notifications/weixin/qr/start:
-    post:
-      tags: [settings]
-      summary: 开始微信二维码登录会话
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StartWeixinQRRequest'
-      responses:
-        '200':
-          description: 二维码会话已创建
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WeixinQRStartResponse'
-        '400':
-          $ref: '#/components/responses/ErrorMessage'
-        '502':
-          $ref: '#/components/responses/ErrorMessage'
-
-  /settings/notifications/weixin/qr/status:
-    get:
-      tags: [settings]
-      summary: 查询微信二维码会话状态
-      parameters:
-        - in: query
-          name: session_id
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: 二维码状态
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WeixinQRStatusResponse'
-        '400':
-          $ref: '#/components/responses/ErrorMessage'
-        '404':
-          $ref: '#/components/responses/ErrorMessage'
-
-  /settings/notifications/weixin/qr/cancel:
-    post:
-      tags: [settings]
-      summary: 取消微信二维码会话
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CancelWeixinQRRequest'
-      responses:
-        '200':
-          description: 已取消
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '400':
-          $ref: '#/components/responses/ErrorMessage'
-        '404':
-          $ref: '#/components/responses/ErrorMessage'
-
   /settings/password:
     post:
       tags: [settings]
@@ -1599,6 +1533,362 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /cards/policies:
+    get:
+      tags: [devices]
+      summary: 列出全部卡策略
+      description: 策略以 ICCID 为主键，与设备解耦；换卡后策略跟随卡片。
+      responses:
+        '200':
+          description: 卡策略列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CardPolicy'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /cards/{iccid}/policy:
+    parameters:
+      - in: path
+        name: iccid
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [devices]
+      summary: 读取指定卡的策略
+      description: 策略不存在时返回默认策略而非 404。响应为裸对象，无包装。
+      responses:
+        '200':
+          description: 卡策略
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardPolicy'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [devices]
+      summary: 保存指定卡的策略
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardPolicy'
+      responses:
+        '200':
+          description: 保存后的策略
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardPolicy'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /devices/{device_id}/overview/stream:
+    parameters:
+      - in: path
+        name: device_id
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: token
+        required: false
+        description: |
+          浏览器原生 EventSource 无法设置请求头，故本端点额外接受 query 传参。
+          Authorization 头优先；仅在无该头时才读取此参数。
+        schema:
+          type: string
+    get:
+      tags: [devices]
+      summary: 设备概览实时流 (SSE)
+      description: |
+        `text/event-stream`。事件名与载荷：
+        - `overview` → `{devices: [DeviceMgmtOverviewLiteItem]}`（单元素数组）
+        - `traffic` → 实时流量快照
+        - `ussd` → USSD 会话事件
+        10 秒心跳，另在 VoWiFi 状态变化时立即推送。
+      responses:
+        '200':
+          description: 事件流
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /devices/{device_id}/actions/ussd/continue:
+    parameters:
+      - in: path
+        name: device_id
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [devices]
+      summary: USSD 多轮会话续轮
+      description: session_id 取自上一轮响应的 result.session_id。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContinueUSSDRequest'
+      responses:
+        '200':
+          description: 本轮结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteUSSDResponse'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /devices/{device_id}/actions/ussd/cancel:
+    parameters:
+      - in: path
+        name: device_id
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [devices]
+      summary: 取消 USSD 会话
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelUSSDRequest'
+      responses:
+        '200':
+          description: 已取消
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /devices/{device_id}/operator_selection:
+    parameters:
+      - in: path
+        name: device_id
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [devices]
+      summary: 读取当前选网配置
+      responses:
+        '200':
+          description: 当前选网
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorSelection'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+    post:
+      tags: [devices]
+      summary: 锁定运营商或恢复自动选网
+      description: 锁网会触发重新搜网，可能耗时较长。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetOperatorSelectionRequest'
+      responses:
+        '200':
+          description: 设置后的选网
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorSelection'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /devices/{device_id}/operator_selection/scan:
+    parameters:
+      - in: path
+        name: device_id
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [devices]
+      summary: 扫描可用运营商（一次性返回）
+      description: 扫描期间模组会脱网，可能持续 1–2 分钟。需要边扫边看请用 /scan/stream。
+      responses:
+        '200':
+          description: 扫描结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorScanResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /devices/{device_id}/operator_selection/scan/stream:
+    parameters:
+      - in: path
+        name: device_id
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: token
+        required: false
+        description: 同 overview/stream，供 EventSource 使用。
+        schema:
+          type: string
+    get:
+      tags: [devices]
+      summary: 扫描可用运营商 (SSE)
+      description: |
+        `text/event-stream`，事件名 `operator_scan`，载荷为 OperatorScanResponse，
+        随扫描推进多次推送，直至 complete 为 true。
+      responses:
+        '200':
+          description: 事件流
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /devices/{device_id}/vowifi/e911/websheet:
+    parameters:
+      - in: path
+        name: device_id
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [devices]
+      summary: 创建 E911 设置 websheet 会话
+      description: |
+        返回一个由本服务反向代理运营商页面的会话地址，供浏览器打开完成 E911 地址登记。
+        代理路径 `/websheets/{id}/...` 属内部通道，不在本文档描述范围内。
+      responses:
+        '200':
+          description: 会话已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/E911WebsheetResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /settings/notifications/bark/test:
+    post:
+      tags: [settings]
+      summary: 发送 Bark 测试通知
+      responses:
+        '200':
+          description: 已发送
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /settings/notifications/email/test:
+    post:
+      tags: [settings]
+      summary: 发送邮件测试通知
+      responses:
+        '200':
+          description: 已发送
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /system/update/check:
+    get:
+      tags: [settings]
+      summary: 检查是否有新版本
+      responses:
+        '200':
+          description: 检查结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateCheckResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /system/update/apply:
+    post:
+      tags: [settings]
+      summary: 应用更新
+      description: 会替换程序并重启服务，当前连接将中断。
+      responses:
+        '200':
+          description: 已触发更新
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /system/uninstall:
+    post:
+      tags: [settings]
+      summary: 卸载并自毁
+      description: |
+        **破坏性且不可撤销**：停止服务、删除数据目录与配置文件。
+        需要鉴权（早期版本曾无校验，见 docs/known-issues.md）。
+      responses:
+        '200':
+          description: 已开始卸载
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageOnlyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -2384,60 +2674,6 @@ components:
           items:
             type: string
 
-    StartWeixinQRRequest:
-      type: object
-      properties:
-        base_url:
-          type: string
-
-    CancelWeixinQRRequest:
-      type: object
-      required: [session_id]
-      properties:
-        session_id:
-          type: string
-
-    WeixinQRStartResponse:
-      type: object
-      properties:
-        session_id:
-          type: string
-        qr_token:
-          type: string
-        qr_url:
-          type: string
-        expires_at:
-          type: string
-          format: date-time
-        status:
-          type: string
-          enum: [wait, scaned, confirmed, expired, error]
-
-    WeixinQRStatusResponse:
-      type: object
-      properties:
-        session_id:
-          type: string
-        status:
-          type: string
-          enum: [wait, scaned, confirmed, expired, error]
-        qr_url:
-          type: string
-        expires_at:
-          type: string
-          format: date-time
-        applied:
-          type: boolean
-        apply_warning:
-          type: string
-        error:
-          type: string
-        bot_account_id:
-          type: string
-        bot_user_id:
-          type: string
-        base_url:
-          type: string
 
     ChangePasswordRequest:
       type: object
@@ -3176,4 +3412,170 @@ components:
           items:
             $ref: '#/components/schemas/LogEntry'
         error:
+          type: string
+
+    CardPolicy:
+      type: object
+      description: 以 ICCID 为主键的卡级策略，与设备解耦。
+      properties:
+        iccid:
+          type: string
+        network_enabled:
+          type: boolean
+        vowifi_enabled:
+          type: boolean
+        airplane_enabled:
+          type: boolean
+        ip_version:
+          type: string
+          description: 空串表示使用默认；其余取值经 ResolveIPFamily 校验。
+        apn:
+          type: string
+          description: 下次建立数据连接时生效。
+        source:
+          type: string
+          enum: [auto, user]
+          description: auto 为系统推导，user 为显式设置。
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ContinueUSSDRequest:
+      type: object
+      required: [session_id, input]
+      properties:
+        session_id:
+          type: string
+          description: 取自上一轮响应的 result.session_id。
+        input:
+          type: string
+        timeout_ms:
+          type: integer
+
+    CancelUSSDRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          description: 可选；留空则取消该设备当前会话。
+
+    OperatorSelection:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [automatic, manual]
+        plmn:
+          type: string
+        mcc:
+          type: string
+        mnc:
+          type: string
+        mnc_length:
+          type: integer
+        includes_pcs_digit:
+          type: boolean
+        rat:
+          type: string
+        operator_name:
+          type: string
+
+    SetOperatorSelectionRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [automatic, manual]
+        plmn:
+          type: string
+        mcc:
+          type: string
+        mnc:
+          type: string
+        mnc_length:
+          type: integer
+        includes_pcs_digit:
+          type: boolean
+        rat:
+          type: string
+
+    OperatorCandidate:
+      type: object
+      properties:
+        plmn:
+          type: string
+        mcc:
+          type: string
+        mnc:
+          type: string
+        mnc_length:
+          type: integer
+        includes_pcs_digit:
+          type: boolean
+        operator_name:
+          type: string
+        short_name:
+          type: string
+        status:
+          type: string
+          description: 模组返回的可用性，如 available / current / forbidden。
+        rats:
+          type: array
+          items:
+            type: string
+
+    OperatorScanResponse:
+      type: object
+      properties:
+        scan_id:
+          type: string
+        status:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        complete:
+          type: boolean
+        retryable:
+          type: boolean
+        message:
+          type: string
+        error:
+          type: string
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperatorCandidate'
+
+    E911WebsheetResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        id:
+          type: string
+          description: websheet 会话 id，对应内部代理路径 /websheets/{id}。
+        url:
+          type: string
+          description: 供浏览器打开的地址。
+
+    UpdateCheckResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        current_version:
+          type: string
+        latest_version:
+          type: string
+        has_update:
+          type: boolean
+        release_notes:
           type: string
