@@ -1,6 +1,8 @@
 # 构建产物
 /vo-hive
+/vohive
 /mbimprobe
+/dbmigrate
 *.exe
 *.dll
 *.so
