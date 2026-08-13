@@ -213,7 +213,8 @@
 | `/api/devices/:id/actions/refresh`、`/reboot` | POST | 刷新缓存 / 重启模组 |
 | `/api/devices/:id/actions/at` | POST | AT 命令 → `{status:"ok", response}` |
 | `/api/devices/:id/actions/ussd`、`/ussd/continue`、`/ussd/cancel` | POST | **USSD 是多轮会话**，需维护会话态 |
-| `/api/devices/:id/usbnet-mode`、`/flight-mode`、`/network` | PATCH | 模式开关（`network` 需 `{enabled}`，可带 `ip_version`/`apn`） |
+| `/api/devices/:id/usbnet-mode` | PATCH | `{mode:int}`。仅 Quectel（下发 `AT+QCFG="usbnet",N`）且需 AT 端口，纯 QMI 设备返回 400。**下发后模组立即重启**（`AT+CFUN=1,1`），控制节点与网卡名会变——UI 必须二次确认，且不做乐观更新 |
+| `/api/devices/:id/flight-mode`、`/network` | PATCH | 模式开关（`network` 需 `{enabled}`，可带 `ip_version`/`apn`） |
 | `/api/devices/:id/operator_selection` | GET / POST | 选网配置 / 锁定运营商 |
 | `/api/devices/:id/operator_selection/scan`、`/scan/stream` | GET | 扫描（同步 / SSE） |
 

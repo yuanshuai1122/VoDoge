@@ -212,6 +212,30 @@ export async function setVoWiFi(id: string, enabled: boolean): Promise<void> {
 }
 
 /**
+ * USBNET 模式。决定模组以哪种网络设备形态挂到主机上（RMNET/ECM/MBIM/RNDIS/NCM）。
+ *
+ * 三点要注意：
+ *  - 仅 Quectel 模组支持（后端下发 `AT+QCFG="usbnet",N`），且需要 AT 端口；
+ *    纯 QMI 接管的设备会返回 400。
+ *  - **改完模组会立即重启**（`AT+CFUN=1,1`），随后由不同的内核驱动接管，
+ *    控制节点与网卡名都会变——设备会先掉线再以新形态出现。
+ *  - 因此这是一次性动作，不属于「保存配置」，UI 上必须单独确认。
+ */
+export const USBNET_MODES = [
+  { value: 0, label: "RMNET / QMI", hint: "Qualcomm 私有，配合 qmi_wwan 驱动" },
+  { value: 1, label: "ECM", hint: "标准 CDC-ECM，通用性好" },
+  { value: 2, label: "MBIM", hint: "标准 CDC-MBIM" },
+  { value: 3, label: "RNDIS", hint: "主要面向 Windows" },
+  { value: 5, label: "NCM", hint: "CDC-NCM，部分型号支持" },
+] as const;
+
+export async function setUSBNetMode(id: string, mode: number): Promise<void> {
+  ok(
+    await api.patch(`/devices/${encodeURIComponent(id)}/usbnet-mode`, { mode }),
+  );
+}
+
+/**
  * POST /api/devices/:id/vowifi/actions/reconnect
  * 重新发起 IMS 注册。注册过程可能持续数十秒，超时放宽。
  */
