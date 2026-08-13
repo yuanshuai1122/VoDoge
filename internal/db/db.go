@@ -162,7 +162,14 @@ func Open(opts Options) error {
 		opts.ConnMaxLifetime = 30 * time.Minute
 	}
 
-	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+	gdb, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: dsn,
+		// 启动流程会执行 AutoMigrate 与若干自定义迁移（ALTER TABLE 加列等）。
+		// 若沿用隐式 prepared statement 缓存，DDL 之后此前缓存的执行计划
+		// 结果类型不再匹配，PostgreSQL 会报
+		// "cached plan must not change result type"(SQLSTATE 0A000)。
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
@@ -898,7 +905,9 @@ func upsertSMSContactFromSMS(tx *gorm.DB, sms *SMS) error {
 			"last_timestamp": sms.Timestamp,
 			"last_content":   sms.Content,
 			"last_type":      sms.Type,
-			"unread_count":   gorm.Expr("unread_count + 1"),
+			// 必须限定表名：PostgreSQL 的 ON CONFLICT DO UPDATE 中，
+			// 裸 unread_count 会与 EXCLUDED 的同名列产生歧义（SQLSTATE 42702）。
+			"unread_count":   gorm.Expr("sms_contacts.unread_count + 1"),
 			"updated_at":     time.Now(),
 		})
 	}

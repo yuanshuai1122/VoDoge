@@ -85,11 +85,11 @@ func TestRunICCIDReKeyMigrationIdempotent(t *testing.T) {
 	if iccid != "ICCB" {
 		t.Fatalf("幂等回填错: %q", iccid)
 	}
-	// 所有目标表都应已具备 iccid 列
+	// 所有目标表都应已具备 iccid 列。
+	// 用 Migrator 而非 pragma_table_info：后者是 SQLite 专有函数，
+	// 在 PostgreSQL 上查询会失败，计数恒为 0，断言就永远不成立。
 	for _, table := range iccidReKeyTables {
-		var has int64
-		DB.Raw("SELECT count(*) FROM pragma_table_info(?) WHERE name = 'iccid'", table).Scan(&has)
-		if has == 0 {
+		if !DB.Migrator().HasColumn(table, "iccid") {
 			t.Fatalf("%s 表缺 iccid 列", table)
 		}
 	}
