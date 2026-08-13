@@ -79,3 +79,32 @@ for(const f of execSync('git ls-files \"*.go\"',{encoding:'utf8'}).trim().split(
 
 `.dockerignore` 中的 `**/*_test.go` 排除**保留**——生产镜像本就不需要测试代码，
 且能减小构建上下文。它不再是绕过损坏的手段。
+
+---
+
+## KI-002：`OpenTestDB` 会清空目标库的全部表 —— 切勿指向生产库
+
+**状态**：设计如此，此处记录以免误用
+
+`internal/db.OpenTestDB` 每次调用都会 `TRUNCATE` 当前 schema 下的**所有**表。
+自 2026-08-13 起表名改为从 `pg_tables` 动态获取，覆盖面比以前的硬编码清单更全，
+因此误用的破坏力也更大。
+
+所以 `TEST_DATABASE_URL` 必须指向**专用测试库**：
+
+- CI 用 workflow 里的 `postgres` service，天然独立，无风险
+- 本地图省事指向正在运行的实例，**测试会把业务数据清光**。
+  本轮验证时就发生过：测试数据混进了部署库，事后手工清理
+
+本地建议单独起一个：
+
+```bash
+docker run -d --name vohive-testdb \
+  -e POSTGRES_USER=vohive -e POSTGRES_PASSWORD=vohive -e POSTGRES_DB=vohive_test \
+  -p 5433:5432 postgres:16-alpine
+```
+
+```bash
+export TEST_DATABASE_URL="host=127.0.0.1 port=5433 user=vohive password=vohive dbname=vohive_test sslmode=disable TimeZone=UTC"
+```
+

@@ -92,9 +92,9 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | # | 问题 | 影响 |
 |---|------|------|
 | 1 | eSIM 激活码经 **GET query** 传输 | `confirmation_code` 进浏览器历史与 Referer；改 POST body 需前后端同步改 |
-| 2 | `/api/docs` 免鉴权，但它要拉的 `/api/openapi.yaml` 需鉴权 | Swagger UI 页面必然空白 |
-| 3 | `/api/health` 需鉴权，注释却写「外部监控用」 | 监控接不上 |
-| 4 | Next dev 的 rewrite 代理**缓冲 SSE** | 仅开发期：`next dev` 下流式端点收不到数据；生产同源无此问题。若要修，需为其余 3 个 SSE 端点也放开 CORS |
+| 2 | ~~`/api/docs` 拉不到 spec~~ | ✅ 已修复：spec 移至免鉴权区 |
+| 3 | ~~`/api/health` 注释与实现矛盾~~ | ✅ 已澄清：返回逐设备明细故需鉴权，监控改用 `/ping` |
+| 4 | ~~Next dev 代理缓冲 SSE~~ | ✅ 已缓解：4 个 SSE 端点均加 CORS（仅 Debug 放行 localhost），前端 dev 直连 :7575 |
 | 5 | OpenAPI 已显著滞后（缺 17 条、含 3 条不存在） | 见 api-matrix §7；不要据其生成类型 |
 
 ---
