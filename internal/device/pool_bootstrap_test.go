@@ -1,6 +1,8 @@
 package device
 
 import (
+	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -8,7 +10,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// requireQMIProxy 在缺少 libqmi 的 qmi-proxy 时跳过用例。
+//
+// 相关用例虽然只关心「按 IMEI 重绑定」的发现逻辑，但走的是完整的
+// AddWorkerFromConfig，其中包含启动 QMI Core——那一步需要系统上真实存在
+// qmi-proxy。CI 与容器环境通常都没有，此时用例根本到不了它要断言的地方，
+// 失败信息也只会指向 QMI 连接而非被测逻辑，因此跳过比报错更诚实。
+func requireQMIProxy(t *testing.T) {
+	t.Helper()
+	if _, err := os.Stat("/usr/libexec/qmi-proxy"); err == nil {
+		return
+	}
+	if _, err := exec.LookPath("qmi-proxy"); err == nil {
+		return
+	}
+	t.Skip("需要 libqmi 的 qmi-proxy，当前环境不可用")
+}
+
 func TestAddWorkerQMIManagedRebindsByIMEIWhenControlDeviceGone(t *testing.T) {
+	requireQMIProxy(t)
+
 	// QMI 托管设备:配置 control_device 指向不存在节点,但配置了正确 IMEI;
 	// 注入一块带该 IMEI 的新路径 QMI 硬件。bootstrap 应按 IMEI 取回新路径并采纳。
 

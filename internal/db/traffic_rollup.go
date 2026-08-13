@@ -104,7 +104,9 @@ func UpsertTrafficMinute(points []TrafficPoint) error {
 	onConflict := clause.OnConflict{
 		Columns: []clause.Column{{Name: "period_start"}, {Name: "resource"}, {Name: "tag"}, {Name: "direction"}},
 		DoUpdates: clause.Assignments(map[string]any{
-			"traffic_bytes": gorm.Expr("traffic_bytes + excluded.traffic_bytes"),
+			// 与 sms_contacts.unread_count 同理：ON CONFLICT DO UPDATE 中
+			// 裸列名会与 excluded 的同名列产生歧义（SQLSTATE 42702），必须限定表名。
+			"traffic_bytes": gorm.Expr("traffic_minute.traffic_bytes + excluded.traffic_bytes"),
 			"updated_at":    now,
 		}),
 	}
