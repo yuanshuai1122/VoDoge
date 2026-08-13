@@ -118,6 +118,9 @@ web_build() {
 	run npm ci --prefix web
 	run npm run typecheck --prefix web
 	run npm run lint --prefix web
+	# tsc 查不出契约问题：后端响应体在类型系统里是 unknown，
+	# 归一化层（unwrap/errors/client）解析错了只会在运行时才显形。
+	run npm run test --prefix web
 	run npm run build --prefix web
 	rm -rf internal/web/dist
 	mkdir -p internal/web
@@ -179,7 +182,7 @@ Tasks:
   hygiene   forbidden dependency / local replace directives
   encoding  every tracked .go file must be valid UTF-8
   routes    openapi.vohive.yaml must match the routes server.go registers
-  web       npm ci + typecheck + lint + build, then embed into internal/web/dist
+  web       npm ci + typecheck + lint + test + build, then embed into internal/web/dist
   tidy      go mod tidy -diff            (needs Go on the host)
   vet-all   compile everything incl. _test.go, in a container
   test      run the test suite against a throwaway PostgreSQL

@@ -1,6 +1,6 @@
 # VoHive 剩余工作
 
-> 更新：2026-08-14（P3/P4 收口、`internal/api` 重构完成后）
+> 更新：2026-08-14（B1/B5/C1/D1 完成后）
 > 相关：[known-issues.md](./known-issues.md)、[frontend-api-matrix.md](./frontend-api-matrix.md)、
 > [frontend-react-progress.md](./frontend-react-progress.md)
 
@@ -83,6 +83,7 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | 代理实例新增/编辑 | ✅ 已做 | 核对结论：整体替换整个实例列表，故提交时带上全部实例；密码占位 `******` 后端会还原，可原样回传 |
 | 短信投递状态明细 UI | ✅ 已做 | 发送后按 `message_id` 轮询回执（`acks/parts_total`），确认完即停；AT 通道无 message_id，404 时静默不显示 |
 | weixin 通知渠道表单 | ❌ 不做 | 后端从未实现其 QR 接口；OpenAPI 里那 3 条声明已连同 schema 一并删除 |
+| USBNET 模式入口 | ✅ 已做 | 设备配置页，独立于「保存配置」；切换会重启模组并换驱动，故要求二次确认 |
 | E911 websheet 入口 | ✅ 已做 | 定为**新窗口**：页面不受控，CSP/X-Frame-Options 可能拒绝内嵌，且跨源观察不到完成——完成信号改由新增的 `GET /websheets/:id/status` 轮询提供 |
 
 ---
@@ -106,6 +107,7 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | 备份说明改 `pg_dump` | ✅ 已做 | README 与 DEPLOY.md 均已更新 |
 | 构建与验证入口 | ✅ 已做 | `scripts/ci.sh`。**本项目不使用 GitHub Actions**，构建全部在本机完成 |
 | `cmd/dbmigrate` | ✅ 已做 | PG 计划阶段 D。见 [db-migrate-runbook.md](./db-migrate-runbook.md) |
+| 前端测试 | ✅ 已做 | vitest + testing-library，67 例；已接入 `scripts/ci.sh web` |
 | 多架构构建 | ⬜ | arm64/armv7 未验证；本机编译路径确定后再处理 |
 
 ---

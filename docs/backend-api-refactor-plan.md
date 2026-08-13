@@ -202,3 +202,74 @@ bash scripts/ci.sh          # hygiene encoding routes web vet-all test image
   都必须在测试里连同理由一起登记，否则测试失败
 - `TestRouteTableHasNoDuplicateMethodPathPairs` —— 重复注册在测试期报错而非运行期 panic
 - `respond_test.go` —— 错误形状、`request_id`、code 推导、附加字段不得覆盖固定字段
+
+---
+
+## 6. 第二轮（2026-08-14 晚）
+
+上一轮把 `internal/api` 的**内部结构**理顺了，但它与外部的两条依赖仍是隐式的：
+数据库靠包级全局，硬件靠包级函数指针。这一轮处理这两条。
+
+### 6.1 持久化边界（B1）
+
+`db.DB` 是包级全局，11 个 API 文件直接调 `db.XxxFunc()`。代价是具体的：
+
+- handler 与表结构直接耦合；
+- **任何碰持久化的 handler 测试都得连真 PostgreSQL**——起容器、清空全库、十几秒；
+- 各包共用一个测试库，所以整个 Go 测试套件被钉死在 `-p 1` 串行；
+- `OpenTestDB` 会 TRUNCATE 目标 schema 的所有表，DSN 指错就是一次事故（KI-002）。
+
+新增 `internal/data/repo`：按域定义接口（CardPolicy / SIM / SMS / Traffic /
+UpstreamProxy / ProxyInstance），`Server` 持有 `*repo.Store`。API 层非测试文件里
+**已无任何查库调用**，剩下的 `db.` 引用全是类型、哨兵错误与纯函数。
+
+**刻意只做接口与转发**：实现直接委托给 `internal/db` 里已有的函数，不重写查询。
+那些函数有真库测试覆盖，重写等于把风险从"没有边界"换成"边界后面是新代码"。
+全局 `db.DB` 因此仍在，只是 API 层够不着——把 `*gorm.DB` 一路下推、彻底干掉全局
+要连 device / notify / proxy 三层一起改，属于硬件路径，等现场验证之后再动。
+
+收益已经兑现：11 个 handler 测试跑在 **0.012 秒**、不连数据库。两个原本要往
+`devices` 和 `card_policies` 各插一行、只为验证一段取值优先级的测试，现在注入
+假实现即可。反过来，若有人把 handler 改回直接调 `internal/db`，这些测试会因
+`DB` 为 nil 而失败——边界有了守卫。
+
+`device_mgmt_cardpolicy_writethrough_test.go` **保留真库**：它验的是跨层写穿
+不变式，用假实现等于自己断言自己。
+
+### 6.2 测试缝改为注入（B5）
+
+7 个包级 `var xxxFn = ...` 全部去掉，换成 `Server` 上的两个字段：
+
+| 字段 | 边界 |
+|------|------|
+| `hardware hardwareProbe` | QMI/MBIM 枚举与 IMEI 探测 |
+| `esimNotificationsFor func(*device.Worker) esimNotificationSource` | eSIM 通知来源 |
+
+留 nil 时回落真实实现，生产行为不变。
+
+eSIM 那对顺带改好了形状：`esimNotificationListExec(run, args)` 把真实方法当参数
+传进来再调用，那层间接不表达任何东西，纯粹为了可替换而存在。现在接口描述的是
+依赖本身，handler 读起来是"问这台设备要它的通知"而不是"执行别人递给我的函数"。
+`TestEsimNotificationExecHelpersPropagateResults` 随之删除——它断言的是
+`return run(args)` 会返回 `run` 的返回值。
+
+**`internal/device` 的 8 处保持不动**：它们在启动与恢复路径上，去全局化要把依赖
+穿过 `Pool` 的构造。那正是明天要在真实模组上跑的代码——万一台架上出问题，
+不该让人先怀疑是不是这次重构。
+
+### 6.3 前端测试（D1）
+
+此前前端**零测试**：8 个页面、20+ 组件、整个 API 归一化层全靠人工点。
+
+引入 vitest + testing-library，**67 例**，接进 `scripts/ci.sh web`。优先覆盖
+归一化层，因为那里 tsc 帮不上忙——后端响应体在类型系统里是 `unknown`，解析
+错了只会在运行时以"错误提示变成『请求失败』"的形式出现。
+
+| 文件 | 盯住什么 |
+|------|---------|
+| `lib/api/errors.test.ts` | 统一错误形状、`request_id` 不丢、`retry_after_ms` 新旧拼写都认、busy 分支优先级 |
+| `lib/api/unwrap.test.ts` | 该抛的时候要抛；`{devices:[单元素]}` 必须取 `[0]` |
+| `lib/api/client.test.ts` | 鉴权头、401 登出（登录页除外）、超时与断网的区分、非 JSON 响应不崩 |
+| `lib/api/endpoints/esim.test.ts` | **激活码不得出现在 URL 里**；409 带 `task_id` 当正常结果 |
+| `lib/device-status.test.ts` | 9 phase × 8 布尔位的判定顺序与信号分级边界 |
+| `components/devices/e911-card.test.tsx` | 弹窗必须先于 await 打开（否则被静默拦截）；完成态靠轮询 |
