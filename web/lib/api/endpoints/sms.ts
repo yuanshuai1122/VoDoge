@@ -1,5 +1,5 @@
 import { api } from "../client";
-import { ok, rawArray } from "../unwrap";
+import { ok, pick, rawArray } from "../unwrap";
 import type { SMSContact, SMSMessage } from "../../../types/sms";
 
 /**
@@ -82,18 +82,59 @@ export function nextThreadCursor(
   return { before_ts: last.timestamp, before_id: last.id };
 }
 
+export interface SendSMSResult {
+  status: string;
+  message: string;
+  device: string;
+  phone: string;
+  /** 仅 VoWiFi 通道会生成；AT 通道为空 */
+  message_id: string;
+  /** 长短信被拆成的分片数 */
+  parts_total: number;
+  delivery_state: string;
+}
+
 export async function sendSMS(input: {
   phone: string;
   message: string;
   device_id?: string;
   imsi?: string;
   encoding?: string;
-}): Promise<void> {
-  ok(await api.post("/sms/send", input, { timeoutMs: 60_000 }));
+}): Promise<SendSMSResult> {
+  return api.post<SendSMSResult>("/sms/send", input, { timeoutMs: 60_000 });
 }
 
-export async function getDeliveryStatus(messageId: string): Promise<unknown> {
-  return api.get(`/sms/delivery/${encodeURIComponent(messageId)}`);
+/** 对齐 internal/db.SMSDelivery */
+export interface SMSDelivery {
+  message_id: string;
+  imsi: string;
+  iccid: string;
+  device_id: string;
+  peer: string;
+  content: string;
+  /** 长短信分片总数 */
+  parts_total: number;
+  /** 已收到确认的分片数 */
+  acks: number;
+  state: string;
+  last_error: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * GET /api/sms/delivery/:message_id -> {status:"ok", delivery}
+ *
+ * 只有 VoWiFi 通道发出的短信才有投递记录（后端遍历 VoWiFi app 查询），
+ * AT 通道发送不会产生 message_id，因此查不到属正常，会返回 404。
+ */
+export async function getDeliveryStatus(
+  messageId: string,
+): Promise<SMSDelivery> {
+  return pick<SMSDelivery>(
+    await api.get(`/sms/delivery/${encodeURIComponent(messageId)}`),
+    "delivery",
+  );
 }
 
 export async function deleteMessage(id: number): Promise<void> {

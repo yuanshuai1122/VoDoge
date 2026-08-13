@@ -2,7 +2,6 @@ package device
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/yuanshuai1122/vohive/internal/backend"

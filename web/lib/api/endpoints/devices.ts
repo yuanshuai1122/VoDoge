@@ -182,3 +182,17 @@ export async function setFlightMode(id: string, enabled: boolean): Promise<void>
 export async function setVoWiFi(id: string, enabled: boolean): Promise<void> {
   ok(await api.patch(`/devices/${encodeURIComponent(id)}/vowifi`, { enabled }));
 }
+
+/**
+ * POST /api/devices/:id/vowifi/actions/reconnect
+ * 重新发起 IMS 注册。注册过程可能持续数十秒，超时放宽。
+ */
+export async function reconnectVoWiFi(id: string): Promise<void> {
+  ok(
+    await api.post(
+      `/devices/${encodeURIComponent(id)}/vowifi/actions/reconnect`,
+      undefined,
+      { timeoutMs: 90_000 },
+    ),
+  );
+}

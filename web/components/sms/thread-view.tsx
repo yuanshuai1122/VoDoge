@@ -51,9 +51,12 @@ export function ThreadView({ contact }: { contact: ContactKey }) {
         device_id: contact.device_id || undefined,
         imsi: contact.imsi || undefined,
       }),
-    onSuccess: () => {
+    onSuccess: (result) => {
       setDraft("");
-      toast.success("短信已发送");
+      // 长短信会被拆成多条分片，按条计费，值得告知
+      const parts =
+        result?.parts_total > 1 ? `（拆分为 ${result.parts_total} 条）` : "";
+      toast.success(`短信已发送${parts}`);
       queryClient.invalidateQueries({ queryKey: threadKey });
       queryClient.invalidateQueries({ queryKey: ["sms", "contacts"] });
     },

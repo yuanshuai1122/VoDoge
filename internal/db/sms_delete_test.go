@@ -2,7 +2,6 @@ package db
 
 import (
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 )

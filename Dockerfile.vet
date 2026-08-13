@@ -1,0 +1,33 @@
+# 仅用于验证：编译包括 _test.go 在内的全部源码。
+#
+# 生产镜像不含测试代码（见 .dockerignore），而 UTF-8 损坏这类问题恰恰只在
+# 加载测试文件时才暴露，普通构建覆盖不到。
+#
+# 前置层刻意与 Dockerfile 的 backend-builder 逐条保持一致，
+# 以便复用其 `go mod download` 的缓存层——否则每次验证都要重新联网拉依赖。
+#
+# 用法（需临时放开 .dockerignore 中的 **/*_test.go 排除）：
+#   docker build -f Dockerfile.vet -t vohive-vet .
+FROM golang:1.26-alpine AS backend-builder
+WORKDIR /app
+
+ENV GOTOOLCHAIN=auto
+ENV GOWORK=off
+ENV GOPROXY=https://goproxy.cn,https://proxy.golang.org,direct
+ENV GOSUMDB=sum.golang.google.cn
+
+RUN apk add --no-cache git ca-certificates
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY cmd ./cmd
+COPY internal ./internal
+COPY pkg ./pkg
+COPY engine ./engine
+
+# embed 指令要求该目录存在
+RUN mkdir -p internal/web/dist && touch internal/web/dist/.gitkeep
+
+# vet 会加载并类型检查测试文件，这正是要验证的部分
+RUN CGO_ENABLED=0 go vet ./internal/... ./pkg/... ./cmd/... && echo "VET OK"

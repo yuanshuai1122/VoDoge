@@ -1,7 +1,6 @@
 package api
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/yuanshuai1122/vohive/internal/db"

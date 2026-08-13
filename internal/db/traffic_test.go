@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"

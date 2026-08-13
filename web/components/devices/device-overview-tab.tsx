@@ -3,8 +3,11 @@
 import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,6 +21,7 @@ import {
   setDeviceNetwork,
   setVoWiFi,
   setFlightMode,
+  reconnectVoWiFi,
 } from "@/lib/api/endpoints/devices";
 import { useEventSource } from "@/lib/sse/use-event-source";
 import { ApiError } from "@/lib/api/errors";
@@ -74,6 +78,15 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
     mutationFn: (enabled: boolean) => setFlightMode(deviceId, enabled),
     onSuccess: () => {
       toast.success("已提交飞行模式切换");
+      invalidate();
+    },
+    onError,
+  });
+
+  const reconnect = useMutation({
+    mutationFn: () => reconnectVoWiFi(deviceId),
+    onSuccess: () => {
+      toast.success("已发起 IMS 重新注册");
       invalidate();
     },
     onError,
@@ -165,6 +178,25 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
             checked={device.vowifi_enabled}
             disabled={vowifi.isPending}
             onChange={(v) => vowifi.mutate(v)}
+            action={
+              // 仅在已启用时才有重连的意义；注册可能耗时数十秒
+              device.vowifi_enabled ? (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  disabled={reconnect.isPending || vowifi.isPending}
+                  onClick={() => reconnect.mutate()}
+                >
+                  <RefreshCw
+                    className={cn(
+                      "size-3.5",
+                      reconnect.isPending && "animate-spin",
+                    )}
+                  />
+                  {reconnect.isPending ? "注册中…" : "重新注册"}
+                </Button>
+              ) : null
+            }
           />
           <Toggle
             id="flight"
@@ -222,6 +254,7 @@ function Toggle({
   checked,
   disabled,
   onChange,
+  action,
 }: {
   id: string;
   label: string;
@@ -229,6 +262,8 @@ function Toggle({
   checked: boolean;
   disabled?: boolean;
   onChange: (v: boolean) => void;
+  /** 开关旁的附加操作，如 VoWiFi 的「重新注册」 */
+  action?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-4">
@@ -236,12 +271,15 @@ function Toggle({
         <Label htmlFor={id}>{label}</Label>
         <p className="text-xs text-muted-foreground">{description}</p>
       </div>
-      <Switch
-        id={id}
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={onChange}
-      />
+      <div className="flex items-center gap-2">
+        {action}
+        <Switch
+          id={id}
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={onChange}
+        />
+      </div>
     </div>
   );
 }

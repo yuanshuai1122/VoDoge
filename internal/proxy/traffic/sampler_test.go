@@ -3,7 +3,6 @@ package traffic
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
