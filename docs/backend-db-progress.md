@@ -45,3 +45,28 @@
 ```text
 host=127.0.0.1 user=vohive password=vohive dbname=vohive port=5432 sslmode=disable TimeZone=UTC
 ```
+
+## 2026-08-14 — 阶段 D（数据迁移工具）完成
+
+`cmd/dbmigrate` 已实现，对应计划里的 D1–D4。
+
+- [x] D1：`--sqlite path --postgres dsn`，支持 `--dry-run`
+- [x] D2：按 `tableOrder` 复制 + `--batch` 分批（默认 500）
+- [x] D3：逐表行数校验；任一表少行即以非零码退出
+- [x] D4：`docs/db-migrate-runbook.md`
+
+几个实现上值得记下来的点：
+
+- **列按名取交集**，不硬编码。源表多出来的列忽略（如 `sim_cards` 上早已删掉的
+  `phone_number` 系列），目标表新增的列留默认值。这样旧库是哪个版本都能导。
+- **按目标列类型做值转换**。SQLite 没有真正的类型：布尔存 0/1，时间可能是
+  RFC3339 文本、空格分隔文本，也可能是 Unix 秒。直接塞给 PG 会因类型不匹配失败。
+- **必须校正自增序列**。迁移带着原始 id 写入，序列仍从 1 发号，
+  不 `setval` 的话迁移后第一条新短信就撞主键——上线当天才会发现的那种问题。
+  测试 `TestMigrateAdvancesSequencesPastImportedIDs` 专门盯这一条。
+- **目标库非空时默认拒绝**，要 `--allow-nonempty`（追加）或 `--truncate`（清空）显式表态。
+  插入带 `ON CONFLICT DO NOTHING`，重跑安全。
+- **旧库以 `mode=ro` 打开**，迁移失败时它仍是可回退的那一份。
+
+依赖：`modernc.org/sqlite`（纯 Go，无需 CGO），**只被 `cmd/dbmigrate` 导入**。
+`go list -deps ./cmd/vohive | grep -i sqlite` 输出为空，生产二进制不含 SQLite 代码。

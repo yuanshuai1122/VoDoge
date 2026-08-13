@@ -16,6 +16,7 @@
 | [backend-sqlite-to-postgres-plan.md](./backend-sqlite-to-postgres-plan.md) | SQLite → PostgreSQL 计划 |
 | [backend-db-decisions.md](./backend-db-decisions.md) | 数据库决策 |
 | [backend-db-progress.md](./backend-db-progress.md) | 数据库改造进度 |
+| [db-migrate-runbook.md](./db-migrate-runbook.md) | 旧 SQLite 数据导入 PostgreSQL 的运维手册 |
 
 ## 已确认方向
 

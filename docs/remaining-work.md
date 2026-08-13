@@ -103,19 +103,17 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| 备份说明改 `pg_dump` | ✅ 已做 | README 与 DOCKERHUB 均已更新 |
-| GitHub Actions 实际转绿 | ⬜ **下一步** | 本机已全绿，需推送后在 Actions 上确认 |
-| GHCR 镜像发布 | ⬜ | `docker-publish.yml` 存在但未验证；依赖 CI 先绿 |
-| 多架构构建 | ⬜ | `Dockerfile.github` 的 arm64/armv7 路径未验证 |
-| `cmd/dbmigrate` | ⬜ | PG 计划阶段 D，从未实现。仅在有存量 SQLite 数据要迁移时才必要 |
+| 备份说明改 `pg_dump` | ✅ 已做 | README 与 DEPLOY.md 均已更新 |
+| 构建与验证入口 | ✅ 已做 | `scripts/ci.sh`。**本项目不使用 GitHub Actions**，构建全部在本机完成 |
+| `cmd/dbmigrate` | ✅ 已做 | PG 计划阶段 D。见 [db-migrate-runbook.md](./db-migrate-runbook.md) |
+| 多架构构建 | ⬜ | arm64/armv7 未验证；本机编译路径确定后再处理 |
 
 ---
 
 ## 下一步
 
 ```
-P4 确认 Actions 转绿 ──► GHCR 发布 ──► 多架构验证
-P1 现场验证（需硬件，完全并行）──► 发现的问题回流 P2
+P1 现场验证（需硬件）──► 发现的问题回流 P2
 ```
 
 P0 完成意味着「装得上、跑得起来、说明书没错」。

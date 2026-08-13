@@ -148,7 +148,7 @@ vet_all() {
 go_tests() {
 	need_docker
 	local pkgs
-	pkgs="${CI_GO_TEST_PACKAGES:-./internal/... ./pkg/...}"
+	pkgs="${CI_GO_TEST_PACKAGES:-./internal/... ./pkg/... ./cmd/...}"
 	run bash scripts/testdb.sh ensure
 	run docker run --rm --network "${TEST_DB_NETWORK:-vohive-test-net}" \
 		-e TEST_DATABASE_URL="${TEST_DATABASE_URL:-host=vohive-testdb user=vohive password=vohive dbname=vohive_test port=5432 sslmode=disable TimeZone=UTC}" \
