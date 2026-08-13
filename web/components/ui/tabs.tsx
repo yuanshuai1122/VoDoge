@@ -73,7 +73,15 @@ function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
   return (
     <TabsPrimitive.Panel
       data-slot="tabs-content"
-      className={cn("flex-1 text-sm outline-none", className)}
+      className={cn(
+        "flex-1 text-sm outline-none",
+        // Base UI 在离场时给 panel 打上 data-ending-style，并等待 CSS 过渡结束
+        // 才卸载它。我们没有为 panel 定义任何过渡，transitionend 永远不会触发，
+        // 于是旧面板会一直留在页面上与新面板同时可见（只是被 inert 掉了）。
+        // 显式隐藏离场面板即可，无需为此引入动画。
+        "data-[ending-style]:hidden",
+        className
+      )}
       {...props}
     />
   )

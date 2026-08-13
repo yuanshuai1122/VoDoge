@@ -1,5 +1,5 @@
 import { api } from "../client";
-import { ok, pick, pickOr, pickFirstDevice } from "../unwrap";
+import { ok, pick, pickOr, pickFirstDevice, rawArray } from "../unwrap";
 import type { DeviceOverview, DeviceListResult } from "../../../types/device";
 import type {
   DeviceConfigDTO,
@@ -15,9 +15,32 @@ export async function listDevices(): Promise<DeviceListResult> {
   };
 }
 
-/** GET /api/dashboard/devices -> {devices} */
-export async function listDashboardDevices(): Promise<DeviceOverview[]> {
-  return pick<DeviceOverview[]>(await api.get("/dashboard/devices"), "devices");
+/**
+ * GET /api/dashboard/devices —— **裸数组**，且元素类型与 /devices 不同。
+ *
+ * 后端这里走的是缓存快照（handleListDevices，注释写明「0 IPC」），字段是精简过的：
+ * **没有** lifecycle_phase、data_connected、physical_present、modem 等。
+ * 需要生命周期状态或模组明细时必须用 listDevices()，否则统计会恒为 0。
+ */
+export interface DashboardDevice {
+  id: string;
+  name: string;
+  interface: string;
+  proxy_port: number;
+  public_ip: string;
+  public_ipv6?: string;
+  healthy: boolean;
+  operator: string;
+  signal_dbm: number;
+  network_mode: string;
+  network_duplex: string;
+  vowifi_active: boolean;
+  traffic?: Record<string, string>;
+  network_connected: boolean;
+}
+
+export async function listDashboardDevices(): Promise<DashboardDevice[]> {
+  return rawArray<DashboardDevice>(await api.get("/dashboard/devices"));
 }
 
 /**

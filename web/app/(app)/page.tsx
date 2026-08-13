@@ -7,14 +7,17 @@ import { PageHeader } from "@/components/layout/page-header";
 import { ErrorState } from "@/components/common/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { listDashboardDevices } from "@/lib/api/endpoints/devices";
+import { listDevices } from "@/lib/api/endpoints/devices";
 import { TrafficChart } from "@/components/traffic/traffic-chart";
 import type { DeviceOverview } from "@/types/device";
 
 export default function DashboardPage() {
+  // 刻意用 /devices 而非 /dashboard/devices：后者是精简快照，
+  // 缺 lifecycle_phase 与 data_connected，下面的统计会恒为 0。
+  // 复用设备页的 queryKey，两处共享同一份缓存。
   const devicesQuery = useQuery({
-    queryKey: ["dashboard", "devices"],
-    queryFn: listDashboardDevices,
+    queryKey: ["devices", "list"],
+    queryFn: listDevices,
     refetchInterval: 15_000,
   });
 
@@ -34,7 +37,7 @@ export default function DashboardPage() {
           ))}
         </div>
       ) : (
-        <Summary devices={devicesQuery.data} />
+        <Summary devices={devicesQuery.data.devices} />
       )}
 
       <div className="mt-6">
