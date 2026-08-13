@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/websheet"
 	"github.com/gin-gonic/gin"
+	"github.com/yuanshuai1122/vohive/internal/websheet"
 )
 
 // registerWebsheetRoutes 只在测试里单独用；正常启动时路由由 newRouter 统一注册。
@@ -80,7 +80,7 @@ func (s *Server) handleWebsheetCallback(c *gin.Context) {
 	}
 	var callback websheet.Callback
 	if err := c.ShouldBindJSON(&callback); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "code": "websheet_callback_invalid", "message": err.Error()})
+		fail(c, http.StatusBadRequest, "websheet_callback_invalid", err.Error())
 		return
 	}
 	session.Callback(callback)
@@ -122,14 +122,14 @@ func (s *Server) handleWebsheetDone(c *gin.Context) {
 func respondWebsheetError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, websheet.ErrNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "code": "websheet_not_found", "message": err.Error()})
+		fail(c, http.StatusNotFound, "websheet_not_found", err.Error())
 	case errors.Is(err, websheet.ErrExpired):
-		c.JSON(http.StatusGone, gin.H{"status": "error", "code": "websheet_expired", "message": err.Error()})
+		fail(c, http.StatusGone, "websheet_expired", err.Error())
 	case errors.Is(err, websheet.ErrUnsafeURL):
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "code": "websheet_unsafe_url", "message": err.Error()})
+		fail(c, http.StatusBadRequest, "websheet_unsafe_url", err.Error())
 	case errors.Is(err, websheet.ErrUnauthorized):
-		c.JSON(http.StatusUnauthorized, gin.H{"status": "error", "code": "websheet_unauthorized", "message": err.Error()})
+		fail(c, http.StatusUnauthorized, "websheet_unauthorized", err.Error())
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "code": "websheet_proxy_failed", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "websheet_proxy_failed", err.Error())
 	}
 }

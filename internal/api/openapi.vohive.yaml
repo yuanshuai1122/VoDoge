@@ -2041,25 +2041,49 @@ components:
   schemas:
     ErrorResponse:
       type: object
+      description: |
+        所有错误响应的**唯一**形状。此前另有裸 `{error:"..."}` 一支（eSIM、
+        卡策略、选网），它丢掉了 `request_id`——用户报上来的错误信息在服务端
+        日志里搜不到对应请求。已于 2026-08-14 统一。
+
+        个别端点会在同一层级附加决策所需的字段，见各自的响应说明
+        （如 eSIM 并发冲突的 `busy` / `retry_after_ms`）。
+      required: [status, code, message]
       properties:
         status:
           type: string
-          example: error
+          enum: [error]
         code:
           type: string
+          description: |
+            供程序判别的稳定标识。多数端点用按 HTTP 状态推导的通用码
+            （`bad_request` / `not_found` / `conflict` / `internal_error` …）；
+            需要客户端据以分支的场景有专属码，如 `ESIM_BUSY`、
+            `ESIM_DOWNLOAD_IN_PROGRESS`、`e911_not_supported`、`websheet_expired`。
         message:
           type: string
+          description: 给人读的说明，不要用于程序分支。
         request_id:
           type: string
-        error:
-          type: string
-        warning:
-          type: string
-        result:
-          type: object
-          additionalProperties: true
+          description: 与服务端访问日志对应，排查时用它定位。
         busy:
           type: boolean
+          description: 仅 eSIM 并发冲突（409 `ESIM_BUSY`）。
+        reason:
+          type: string
+          description: 仅 eSIM 并发冲突，占用原因（如 `rename_profile`）。
+        retry_after_ms:
+          type: integer
+          description: 仅 eSIM 并发冲突，建议的重试等待毫秒数。
+        retryAfterMs:
+          type: integer
+          deprecated: true
+          description: |
+            同 `retry_after_ms`。全局 snake_case 中唯一的 camelCase 字段，
+            为兼容既有调用方保留，新代码请用 `retry_after_ms`。
+        task_id:
+          type: string
+          description: 仅 eSIM 下载冲突（409 `ESIM_DOWNLOAD_IN_PROGRESS`），可直接订阅该任务。
 
     StatusResponse:
       type: object

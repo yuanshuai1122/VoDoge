@@ -20,7 +20,7 @@ func (s *Server) handleTrafficAnalysis(c *gin.Context) {
 
 	buckets, chartData, err := db.GetTrafficAnalysisWithChart(rng, deviceID, now)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusBadRequest, "", err.Error())
 		return
 	}
 

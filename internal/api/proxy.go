@@ -58,7 +58,7 @@ func (s *Server) handleProxyOverview(c *gin.Context) {
 
 	instances, err := s.proxyRepo.List(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "加载实例失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "加载实例失败: "+err.Error())
 		return
 	}
 	resp.Instances = make([]proxyInstanceDTO, 0, len(instances))
@@ -94,11 +94,11 @@ func (s *Server) handleProxyInstanceGet(c *gin.Context) {
 	id := proxyInstanceIDParam(c)
 	inst, err := s.proxyRepo.Get(ctx, id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "加载实例失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "加载实例失败: "+err.Error())
 		return
 	}
 	if inst == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "实例不存在: " + id})
+		fail(c, http.StatusNotFound, "", "实例不存在: "+id)
 		return
 	}
 	c.JSON(http.StatusOK, instanceToDTO(*inst, false))
@@ -109,14 +109,14 @@ func (s *Server) handleProxyUpdateConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req proxyConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误: " + err.Error()})
+		fail(c, http.StatusBadRequest, "", "参数错误: "+err.Error())
 		return
 	}
 
 	oldInstMap := make(map[string]config.ProxyInstance)
 	oldInstances, err := s.proxyRepo.List(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "读取旧配置失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "读取旧配置失败: "+err.Error())
 		return
 	}
 	for _, oldInst := range oldInstances {
@@ -132,14 +132,14 @@ func (s *Server) handleProxyUpdateConfig(c *gin.Context) {
 		}
 		normalized, err := normalizeProxyInstanceForSave(inst, oldInst)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+			fail(c, http.StatusBadRequest, "", err.Error())
 			return
 		}
 		normalizedInstances = append(normalizedInstances, normalized)
 	}
 
 	if err := s.proxyRepo.ReplaceAll(ctx, normalizedInstances); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "写入数据库失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "写入数据库失败: "+err.Error())
 		return
 	}
 
@@ -211,13 +211,13 @@ func normalizeProxyMode(mode string) (string, error) {
 func (s *Server) handleProxyInstanceStart(c *gin.Context) {
 	id := proxyInstanceIDParam(c)
 	if s.proxyMgr == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "代理管理未启用"})
+		fail(c, http.StatusBadRequest, "", "代理管理未启用")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.proxyMgr.Start(ctx, id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -227,13 +227,13 @@ func (s *Server) handleProxyInstanceStart(c *gin.Context) {
 func (s *Server) handleProxyInstanceStop(c *gin.Context) {
 	id := proxyInstanceIDParam(c)
 	if s.proxyMgr == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "代理管理未启用"})
+		fail(c, http.StatusBadRequest, "", "代理管理未启用")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.proxyMgr.Stop(ctx, id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -243,13 +243,13 @@ func (s *Server) handleProxyInstanceStop(c *gin.Context) {
 func (s *Server) handleProxyInstanceRestart(c *gin.Context) {
 	id := proxyInstanceIDParam(c)
 	if s.proxyMgr == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "代理管理未启用"})
+		fail(c, http.StatusBadRequest, "", "代理管理未启用")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := s.proxyMgr.Restart(ctx, id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})

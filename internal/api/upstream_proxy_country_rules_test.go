@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yuanshuai1122/vohive/internal/db"
 	"github.com/yuanshuai1122/vohive/internal/upstreamproxy"
-	"github.com/gin-gonic/gin"
 )
 
 func loadAPICountryTableFixture(t *testing.T) {

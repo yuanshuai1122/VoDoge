@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/boa-z/vowifi-go/runtimehost"
 	"github.com/yuanshuai1122/vohive/internal/apduarbiter"
 	"github.com/yuanshuai1122/vohive/internal/backend"
 	"github.com/yuanshuai1122/vohive/internal/config"
@@ -20,7 +21,6 @@ import (
 	"github.com/yuanshuai1122/vohive/internal/modem"
 	proxytraffic "github.com/yuanshuai1122/vohive/internal/proxy/traffic"
 	"github.com/yuanshuai1122/vohive/pkg/logger"
-	"github.com/boa-z/vowifi-go/runtimehost"
 
 	"github.com/gin-gonic/gin"
 )
@@ -786,7 +786,7 @@ func (s *Server) handleDeviceMgmtRefreshInfo(c *gin.Context) {
 	id := deviceIDParam(c)
 	worker := s.pool.GetWorker(id)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到或未运行"})
+		fail(c, http.StatusNotFound, "", "设备未找到或未运行")
 		return
 	}
 
@@ -962,16 +962,16 @@ func overviewDetailLiveRefreshRequested(c *gin.Context) bool {
 func (s *Server) handleDeviceMgmtGetDeviceConfig(c *gin.Context) {
 	id := deviceIDParam(c)
 	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误"})
+		fail(c, http.StatusBadRequest, "", "参数错误")
 		return
 	}
 	md, err := config.GetDeviceByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "读取设备配置失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "读取设备配置失败: "+err.Error())
 		return
 	}
 	if md == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+		fail(c, http.StatusNotFound, "", "设备未找到")
 		return
 	}
 	cfgDTO := deviceConfigToDTO(*md)
@@ -1309,21 +1309,21 @@ func (s *Server) handleDeviceMgmtUpdateDevice(c *gin.Context) {
 	id := deviceIDParam(c)
 	var req updateDeviceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误"})
+		fail(c, http.StatusBadRequest, "", "参数错误")
 		return
 	}
 	if strings.TrimSpace(req.Config.ID) != "" && strings.TrimSpace(req.Config.ID) != id {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "不支持修改设备 ID"})
+		fail(c, http.StatusBadRequest, "", "不支持修改设备 ID")
 		return
 	}
 
 	oldMD, err := config.GetDeviceByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "读取设备配置失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "读取设备配置失败: "+err.Error())
 		return
 	}
 	if oldMD == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+		fail(c, http.StatusNotFound, "", "设备未找到")
 		return
 	}
 
@@ -1331,14 +1331,12 @@ func (s *Server) handleDeviceMgmtUpdateDevice(c *gin.Context) {
 	newCfg := deviceConfigFromDTOWithBase(req.Config, oldMD)
 	newCfg, forcedWarning := normalizeManagedDeviceConfig(newCfg)
 	if err := validateManagedNetworkConfig(newCfg); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusBadRequest, "", err.Error())
 		return
 	}
 	if conflict := detectDeviceBindingConflict(newCfg, id); conflict != nil {
-		c.JSON(http.StatusConflict, gin.H{
-			"status":  "error",
-			"message": fmt.Sprintf("设备资源冲突：%s=%s 已被设备 %s 使用", conflict.Field, conflict.Value, conflict.OtherID),
-		})
+		fail(c, http.StatusConflict, "",
+			fmt.Sprintf("设备资源冲突：%s=%s 已被设备 %s 使用", conflict.Field, conflict.Value, conflict.OtherID))
 		return
 	}
 
@@ -1360,7 +1358,7 @@ func (s *Server) handleDeviceMgmtUpdateDevice(c *gin.Context) {
 	requiresRestart := deviceConfigRequiresRestart(oldCfg, newCfg)
 	if err := config.UpdateDeviceInFile(s.configPath, newCfg.ID, newCfg); err != nil {
 		logger.Error("写入设备配置失败", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "写入配置失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "写入配置失败: "+err.Error())
 		return
 	}
 
@@ -1428,24 +1426,24 @@ func (s *Server) handleDeviceMgmtDeleteDevice(c *gin.Context) {
 
 	existing, err := config.GetDeviceByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "读取设备配置失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "读取设备配置失败: "+err.Error())
 		return
 	}
 	if existing == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到: " + id})
+		fail(c, http.StatusNotFound, "", "设备未找到: "+id)
 		return
 	}
 
 	if err := s.pool.RemoveWorker(id); err != nil {
 		logger.Warn("删除设备配置前停止运行时设备失败", "device_id", id, "err", err)
 		if !strings.Contains(err.Error(), "设备未找到") {
-			c.JSON(http.StatusConflict, gin.H{"status": "error", "message": "设备正在停止，请稍后重试: " + err.Error()})
+			fail(c, http.StatusConflict, "", "设备正在停止，请稍后重试: "+err.Error())
 			return
 		}
 	}
 
 	if err := config.DeleteDeviceInFile(s.configPath, id); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusNotFound, "", err.Error())
 		return
 	}
 
@@ -1482,34 +1480,32 @@ func validateFreeDeviceConfigLimit(devices []config.DeviceConfig) error {
 func (s *Server) handleDeviceMgmtAddDevice(c *gin.Context) {
 	var req addDeviceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误"})
+		fail(c, http.StatusBadRequest, "", "参数错误")
 		return
 	}
 	newCfg := deviceConfigFromDTO(req.Config)
 	newCfg = deviceConfigForAdd(newCfg)
 	newCfg, forcedWarning := normalizeManagedDeviceConfig(newCfg)
 	if strings.TrimSpace(newCfg.ID) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "必须填写 id"})
+		fail(c, http.StatusBadRequest, "", "必须填写 id")
 		return
 	}
 	if err := validateManagedNetworkConfig(newCfg); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusBadRequest, "", err.Error())
 		return
 	}
 
 	if existing, err := config.GetDeviceByID(newCfg.ID); err == nil && existing != nil {
-		c.JSON(http.StatusConflict, gin.H{"status": "error", "message": "设备 ID 已存在"})
+		fail(c, http.StatusConflict, "", "设备 ID 已存在")
 		return
 	}
 	if conflict := detectDeviceBindingConflict(newCfg, ""); conflict != nil {
-		c.JSON(http.StatusConflict, gin.H{
-			"status":  "error",
-			"message": fmt.Sprintf("设备资源冲突：%s=%s 已被设备 %s 使用", conflict.Field, conflict.Value, conflict.OtherID),
-		})
+		fail(c, http.StatusConflict, "",
+			fmt.Sprintf("设备资源冲突：%s=%s 已被设备 %s 使用", conflict.Field, conflict.Value, conflict.OtherID))
 		return
 	}
 	if err := validateFreeDeviceConfigLimit(config.ListDevices()); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusConflict, "", err.Error())
 		return
 	}
 	// MBIM 设备使用 MBIM DeviceCaps 探测 IMEI，非 MBIM 设备使用 QMI 探测
@@ -1522,7 +1518,7 @@ func (s *Server) handleDeviceMgmtAddDevice(c *gin.Context) {
 	} else {
 		enrichedCfg, imeiErr := ensureAddDeviceIMEI(newCfg, probeIMEIForAddFn)
 		if imeiErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": imeiErr.Error()})
+			fail(c, http.StatusBadRequest, "", imeiErr.Error())
 			return
 		}
 		newCfg = enrichedCfg
@@ -1530,7 +1526,7 @@ func (s *Server) handleDeviceMgmtAddDevice(c *gin.Context) {
 
 	if err := config.AddDeviceInFile(s.configPath, newCfg); err != nil {
 		logger.Error("写入新设备配置失败", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "写入配置失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "写入配置失败: "+err.Error())
 		return
 	}
 
@@ -1590,22 +1586,22 @@ func (s *Server) handleDeviceMgmtExecuteAT(c *gin.Context) {
 	id := deviceIDParam(c)
 	var req executeATRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误"})
+		fail(c, http.StatusBadRequest, "", "参数错误")
 		return
 	}
 	cmd := strings.TrimSpace(req.Cmd)
 	if cmd == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "cmd 不能为空"})
+		fail(c, http.StatusBadRequest, "", "cmd 不能为空")
 		return
 	}
 	if len(cmd) > 512 {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "cmd 过长"})
+		fail(c, http.StatusBadRequest, "", "cmd 过长")
 		return
 	}
 
 	worker := s.pool.GetWorker(id)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到或未运行"})
+		fail(c, http.StatusNotFound, "", "设备未找到或未运行")
 		return
 	}
 
@@ -1620,7 +1616,7 @@ func (s *Server) handleDeviceMgmtExecuteAT(c *gin.Context) {
 	if worker.Backend != nil && isTransientATBackend(worker.Backend.Mode()) {
 		resp, err := executeManualATOnPort(manualATPortForWorker(worker), cmd, timeout)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+			fail(c, http.StatusInternalServerError, "", err.Error())
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "response": resp})
@@ -1628,20 +1624,20 @@ func (s *Server) handleDeviceMgmtExecuteAT(c *gin.Context) {
 	}
 
 	if worker.Modem == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "当前设备没有可用 AT 管理器"})
+		fail(c, http.StatusBadRequest, "", "当前设备没有可用 AT 管理器")
 		return
 	}
 	if !worker.Modem.HasATPort() {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "当前设备没有可用 AT 端口"})
+		fail(c, http.StatusBadRequest, "", "当前设备没有可用 AT 端口")
 		return
 	}
 	if !worker.Modem.CanExecuteAT() {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "AT 管理器未启动或不可用"})
+		fail(c, http.StatusBadRequest, "", "AT 管理器未启动或不可用")
 		return
 	}
 	resp, err := worker.Modem.ExecuteAT(cmd, timeout)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "response": resp})
@@ -1659,23 +1655,23 @@ func (s *Server) handleDeviceMgmtSetUSBNetMode(c *gin.Context) {
 	id := deviceIDParam(c)
 	var req setUSBNetModeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误"})
+		fail(c, http.StatusBadRequest, "", "参数错误")
 		return
 	}
 
 	worker := s.pool.GetWorker(id)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到或未运行"})
+		fail(c, http.StatusNotFound, "", "设备未找到或未运行")
 		return
 	}
 
 	if worker.Modem == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "当前设备为纯 QMI 模式，不支持 USBNET 模式设置"})
+		fail(c, http.StatusBadRequest, "", "当前设备为纯 QMI 模式，不支持 USBNET 模式设置")
 		return
 	}
 	if err := worker.Modem.SetUSBNetMode(req.Mode); err != nil {
 		logger.Error("设置 USBNET 模式失败", "device", id, "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "设置模式失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "设置模式失败: "+err.Error())
 		return
 	}
 
@@ -1687,7 +1683,7 @@ func (s *Server) handleEsimListProfiles(c *gin.Context) {
 	id := deviceIDParam(c)
 	worker := s.pool.GetWorker(id)
 	if worker == nil || worker.EsimMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备或esim管理器未找到"})
+		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
 
@@ -1698,7 +1694,7 @@ func (s *Server) handleEsimListProfiles(c *gin.Context) {
 				respondEsimBusy(c, "refresh_profiles", err)
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			fail(c, http.StatusInternalServerError, "", err.Error())
 			return
 		}
 	}
@@ -1709,7 +1705,7 @@ func (s *Server) handleEsimListProfiles(c *gin.Context) {
 			respondEsimBusy(c, "list_profiles", err)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, profiles)
@@ -1758,12 +1754,13 @@ func esimDeleteHTTPStatus(err error) int {
 func respondEsimBusy(c *gin.Context, reason string, err error) {
 	retryAfterSec := (esimBusyRetryAfterMs + 999) / 1000
 	c.Header("Retry-After", strconv.Itoa(retryAfterSec))
-	c.JSON(http.StatusConflict, gin.H{
-		"error":        err.Error(),
-		"busy":         true,
-		"code":         "ESIM_BUSY",
-		"reason":       reason,
-		"retryAfterMs": esimBusyRetryAfterMs,
+	failWith(c, http.StatusConflict, "ESIM_BUSY", err.Error(), gin.H{
+		"busy":   true,
+		"reason": reason,
+		// retryAfterMs 是全局 snake_case 里唯一的 camelCase 字段。前端与外部
+		// 脚本都在读它，改名是破坏性的；两个一起给，新代码用 retry_after_ms。
+		"retryAfterMs":   esimBusyRetryAfterMs,
+		"retry_after_ms": esimBusyRetryAfterMs,
 	})
 }
 
@@ -1820,7 +1817,7 @@ func (s *Server) handleEsimListNotifications(c *gin.Context) {
 	id := deviceIDParam(c)
 	worker := s.pool.GetWorker(id)
 	if worker == nil || worker.EsimMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备或esim管理器未找到"})
+		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
 	items, err := esimNotificationListExec(worker.EsimMgr.ListNotifications, strings.TrimSpace(c.Query("aid_hex")))
@@ -1829,7 +1826,7 @@ func (s *Server) handleEsimListNotifications(c *gin.Context) {
 			respondEsimBusy(c, "list_notifications", err)
 			return
 		}
-		c.JSON(esimNotificationHTTPStatus(err), gin.H{"error": err.Error()})
+		fail(c, esimNotificationHTTPStatus(err), "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
@@ -1839,12 +1836,12 @@ func (s *Server) handleEsimRetryNotification(c *gin.Context) {
 	id := deviceIDParam(c)
 	worker := s.pool.GetWorker(id)
 	if worker == nil || worker.EsimMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备或esim管理器未找到"})
+		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
 	sequence, err := strconv.ParseInt(strings.TrimSpace(c.Param("sequence")), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的通知序号"})
+		fail(c, http.StatusBadRequest, "", "无效的通知序号")
 		return
 	}
 	err = esimNotificationRetryExec(worker.EsimMgr.RetryNotification, sequence, strings.TrimSpace(c.Query("aid_hex")))
@@ -1853,7 +1850,7 @@ func (s *Server) handleEsimRetryNotification(c *gin.Context) {
 			respondEsimBusy(c, "retry_notification", err)
 			return
 		}
-		c.JSON(esimNotificationHTTPStatus(err), gin.H{"error": err.Error()})
+		fail(c, esimNotificationHTTPStatus(err), "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "通知重试发送成功"})
@@ -1864,13 +1861,13 @@ func (s *Server) handleEsimSwitchProfile(c *gin.Context) {
 	id := deviceIDParam(c)
 	var req esimSwitchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		fail(c, http.StatusBadRequest, "", err.Error())
 		return
 	}
 
 	worker := s.pool.GetWorker(id)
 	if worker == nil || worker.EsimMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备或esim管理器未找到"})
+		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
 
@@ -1884,7 +1881,7 @@ func (s *Server) handleEsimSwitchProfile(c *gin.Context) {
 			respondEsimBusy(c, "switch_profile", err)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "esim配置切换失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "esim配置切换失败: "+err.Error())
 		return
 	}
 
@@ -1910,7 +1907,7 @@ func (s *Server) handleEsimGetEID(c *gin.Context) {
 	id := deviceIDParam(c)
 	worker := s.pool.GetWorker(id)
 	if worker == nil || worker.EsimMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备或esim管理器未找到"})
+		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
 
@@ -1920,7 +1917,7 @@ func (s *Server) handleEsimGetEID(c *gin.Context) {
 			respondEsimBusy(c, "get_eids", err)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"eids": eids})
@@ -1931,7 +1928,7 @@ func (s *Server) handleEsimGetChipInfo(c *gin.Context) {
 	id := deviceIDParam(c)
 	worker := s.pool.GetWorker(id)
 	if worker == nil || worker.EsimMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备或esim管理器未找到"})
+		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
 
@@ -1942,7 +1939,7 @@ func (s *Server) handleEsimGetChipInfo(c *gin.Context) {
 			respondEsimBusy(c, "get_chip_info", err)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, chipInfo)
@@ -1953,7 +1950,7 @@ func (s *Server) handleEsimGetOverview(c *gin.Context) {
 	id := deviceIDParam(c)
 	worker := s.pool.GetWorker(id)
 	if worker == nil || worker.EsimMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备或esim管理器未找到"})
+		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
 
@@ -1964,7 +1961,7 @@ func (s *Server) handleEsimGetOverview(c *gin.Context) {
 				respondEsimBusy(c, "refresh_overview", err)
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			fail(c, http.StatusInternalServerError, "", err.Error())
 			return
 		}
 	}
@@ -1975,7 +1972,7 @@ func (s *Server) handleEsimGetOverview(c *gin.Context) {
 			respondEsimBusy(c, "get_overview", err)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 
@@ -1988,7 +1985,7 @@ func (s *Server) handleEsimRenameProfile(c *gin.Context) {
 	iccid := c.Param("iccid")
 	worker := s.pool.GetWorker(id)
 	if worker == nil || worker.EsimMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备或esim管理器未找到"})
+		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
 
@@ -1997,7 +1994,7 @@ func (s *Server) handleEsimRenameProfile(c *gin.Context) {
 		AIDHex string `json:"aid_hex"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name 为必填项"})
+		fail(c, http.StatusBadRequest, "", "name 为必填项")
 		return
 	}
 
@@ -2006,7 +2003,7 @@ func (s *Server) handleEsimRenameProfile(c *gin.Context) {
 			respondEsimBusy(c, "rename_profile", err)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "修改名称失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "修改名称失败: "+err.Error())
 		return
 	}
 
@@ -2019,12 +2016,12 @@ func (s *Server) handleEsimDeleteProfile(c *gin.Context) {
 	iccid := c.Param("iccid")
 	worker := s.pool.GetWorker(id)
 	if worker == nil || worker.EsimMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备或esim管理器未找到"})
+		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
 
 	if iccid == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "iccid 为必填项"})
+		fail(c, http.StatusBadRequest, "", "iccid 为必填项")
 		return
 	}
 
@@ -2038,7 +2035,7 @@ func (s *Server) handleEsimDeleteProfile(c *gin.Context) {
 			respondEsimBusy(c, "delete_profile", err)
 			return
 		}
-		c.JSON(esimDeleteHTTPStatus(err), gin.H{"error": "删除 profile 失败: " + err.Error()})
+		fail(c, esimDeleteHTTPStatus(err), "", "删除 profile 失败: "+err.Error())
 		return
 	}
 
@@ -2056,19 +2053,19 @@ func (s *Server) handleDeviceMgmtExecuteUSSD(c *gin.Context) {
 	id := deviceIDParam(c)
 	var req executeUSSDRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误: " + err.Error()})
+		fail(c, http.StatusBadRequest, "", "参数错误: "+err.Error())
 		return
 	}
 
 	cmd := strings.TrimSpace(req.Command)
 	if cmd == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "command 不能为空"})
+		fail(c, http.StatusBadRequest, "", "command 不能为空")
 		return
 	}
 
 	worker := s.pool.GetWorker(id)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+		fail(c, http.StatusNotFound, "", "设备未找到")
 		return
 	}
 
@@ -2086,7 +2083,9 @@ func (s *Server) handleDeviceMgmtExecuteUSSD(c *gin.Context) {
 		defer cancel()
 		resp, err := s.pool.SendVoWiFiUSSD(ctx, id, cmd)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error(), "channel": "vowifi"})
+			failWith(c, http.StatusInternalServerError, "", err.Error(), gin.H{
+				"channel": "vowifi",
+			})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "result": resp, "channel": "vowifi"})
@@ -2096,12 +2095,14 @@ func (s *Server) handleDeviceMgmtExecuteUSSD(c *gin.Context) {
 	// 回退到 CS 域 USSD
 	provider, ok := worker.Backend.(backend.USSDProvider)
 	if !ok || provider == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "当前设备后端不支持 USSD"})
+		fail(c, http.StatusBadRequest, "", "当前设备后端不支持 USSD")
 		return
 	}
 	resp, err := provider.ExecuteUSSD(c.Request.Context(), cmd, timeout)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error(), "channel": "cs"})
+		failWith(c, http.StatusInternalServerError, "", err.Error(), gin.H{
+			"channel": "cs",
+		})
 		return
 	}
 	markCSUSSDSession(resp)
@@ -2119,13 +2120,13 @@ func (s *Server) handleDeviceMgmtContinueUSSD(c *gin.Context) {
 	id := deviceIDParam(c)
 	var req continueUSSDRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误: " + err.Error()})
+		fail(c, http.StatusBadRequest, "", "参数错误: "+err.Error())
 		return
 	}
 
 	input := strings.TrimSpace(req.Input)
 	if input == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "input 不能为空"})
+		fail(c, http.StatusBadRequest, "", "input 不能为空")
 		return
 	}
 
@@ -2140,17 +2141,19 @@ func (s *Server) handleDeviceMgmtContinueUSSD(c *gin.Context) {
 	if !s.pool.IsVoWiFiActive(id) {
 		worker := s.pool.GetWorker(id)
 		if worker == nil {
-			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+			fail(c, http.StatusNotFound, "", "设备未找到")
 			return
 		}
 		provider, ok := worker.Backend.(backend.USSDContinueProvider)
 		if !ok || provider == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "当前设备后端不支持多轮 USSD"})
+			fail(c, http.StatusBadRequest, "", "当前设备后端不支持多轮 USSD")
 			return
 		}
 		resp, err := provider.ContinueUSSD(c.Request.Context(), input, timeout)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error(), "channel": "cs"})
+			failWith(c, http.StatusInternalServerError, "", err.Error(), gin.H{
+				"channel": "cs",
+			})
 			return
 		}
 		markCSUSSDSession(resp)
@@ -2162,7 +2165,7 @@ func (s *Server) handleDeviceMgmtContinueUSSD(c *gin.Context) {
 	defer cancel()
 	resp, err := s.pool.ContinueVoWiFiUSSD(ctx, id, req.SessionID, input)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "result": resp, "channel": "vowifi"})
@@ -2184,16 +2187,16 @@ func (s *Server) handleDeviceMgmtCancelUSSD(c *gin.Context) {
 	if !s.pool.IsVoWiFiActive(id) {
 		worker := s.pool.GetWorker(id)
 		if worker == nil {
-			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+			fail(c, http.StatusNotFound, "", "设备未找到")
 			return
 		}
 		provider, ok := worker.Backend.(backend.USSDProvider)
 		if !ok || provider == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "当前设备后端不支持 USSD 取消"})
+			fail(c, http.StatusBadRequest, "", "当前设备后端不支持 USSD 取消")
 			return
 		}
 		if err := provider.CancelUSSD(c.Request.Context()); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+			fail(c, http.StatusInternalServerError, "", err.Error())
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "USSD 会话已取消", "channel": "cs"})
@@ -2201,7 +2204,7 @@ func (s *Server) handleDeviceMgmtCancelUSSD(c *gin.Context) {
 	}
 
 	if err := s.pool.CancelVoWiFiUSSD(c.Request.Context(), id, req.SessionID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "USSD 会话已取消"})
@@ -2217,33 +2220,33 @@ func markCSUSSDSession(resp *backend.USSDResult) {
 func (s *Server) handleDeviceMgmtSetFlightMode(c *gin.Context) {
 	id := deviceIDParam(c)
 	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误"})
+		fail(c, http.StatusBadRequest, "", "参数错误")
 		return
 	}
 
 	if s.pool == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "message": "服务未就绪"})
+		fail(c, http.StatusServiceUnavailable, "", "服务未就绪")
 		return
 	}
 
 	var req setFlightModeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误"})
+		fail(c, http.StatusBadRequest, "", "参数错误")
 		return
 	}
 
 	worker := s.pool.GetWorker(id)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到或未运行"})
+		fail(c, http.StatusNotFound, "", "设备未找到或未运行")
 		return
 	}
 	if s.pool.IsESIMSwitching(id) {
-		c.JSON(http.StatusConflict, gin.H{"status": "error", "message": "设备正在切卡，请稍后再切换飞行模式"})
+		fail(c, http.StatusConflict, "", "设备正在切卡，请稍后再切换飞行模式")
 		return
 	}
 
 	if s.pool.IsVoWiFiActive(id) {
-		c.JSON(http.StatusConflict, gin.H{"status": "error", "message": "VoWiFi 正在接管飞行模式，请先停用或退出 VoWiFi"})
+		fail(c, http.StatusConflict, "", "VoWiFi 正在接管飞行模式，请先停用或退出 VoWiFi")
 		return
 	}
 
@@ -2265,7 +2268,7 @@ func (s *Server) handleDeviceMgmtSetFlightMode(c *gin.Context) {
 
 	operatingMode, flightMode, err := setWorkerFlightMode(c.Request.Context(), worker, flightModeEnabled)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "切换飞行模式失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "切换飞行模式失败: "+err.Error())
 		return
 	}
 	go func(disabled bool) {
@@ -2299,12 +2302,12 @@ func (s *Server) handleDeviceMgmtReboot(c *gin.Context) {
 
 	worker := s.pool.GetWorker(id)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+		fail(c, http.StatusNotFound, "", "设备未找到")
 		return
 	}
 
 	if err := validateRebootWorkerIdentity(c.Request.Context(), worker); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusConflict, "", err.Error())
 		return
 	}
 
@@ -2329,14 +2332,14 @@ func (s *Server) handleDeviceMgmtReboot(c *gin.Context) {
 	// QMI 模式设备的主路径；AT 模式设备在 AT 端口不可用/发送失败时的降级路径
 	if !rebootSent && worker.Backend != nil {
 		if err := worker.Backend.Reboot(c.Request.Context()); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "重启指令失败: " + err.Error()})
+			fail(c, http.StatusInternalServerError, "", "重启指令失败: "+err.Error())
 			return
 		}
 		rebootSent = true
 	}
 
 	if !rebootSent {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "无法发送重启指令，无可用通道"})
+		fail(c, http.StatusInternalServerError, "", "无法发送重启指令，无可用通道")
 		return
 	}
 
@@ -2375,19 +2378,19 @@ func (s *Server) handleDeviceMgmtReconnectVoWiFi(c *gin.Context) {
 	// 验证设备存在（硬件/传输配置仍在 config.yaml）
 	md, err := config.GetDeviceByID(id)
 	if err != nil || md == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备配置不存在"})
+		fail(c, http.StatusNotFound, "", "设备配置不存在")
 		return
 	}
 
 	// VoWiFi 开关已跟卡走、只存在于运行时投影。门禁读 worker 的有效策略；
 	// 无 worker 时跳过友好门禁，交由 RestartVoWiFi 报告底层错误。
 	if worker := s.pool.GetWorker(id); worker != nil && !worker.Config.VoWiFiEnabled {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "设备未开启 VoWiFi，无法重连"})
+		fail(c, http.StatusBadRequest, "", "设备未开启 VoWiFi，无法重连")
 		return
 	}
 
 	if err := s.pool.RestartVoWiFi(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "VoWiFi 重连失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "VoWiFi 重连失败: "+err.Error())
 		return
 	}
 

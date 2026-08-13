@@ -16,12 +16,12 @@ func TestHandleStaticPrefersRouteHTMLOverSameNamedDirectory(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	fsys := fstest.MapFS{
-		"index.html":                {Data: []byte("ROOT")},
-		"login.html":                {Data: []byte("LOGIN")},
-		"login/__next._tree.txt":    {Data: []byte("internal")},
-		"devices.html":              {Data: []byte("DEVICES")},
-		"devices/__next._tree.txt":  {Data: []byte("internal")},
-		"_next/static/chunks/a.js":  {Data: []byte("JS")},
+		"index.html":               {Data: []byte("ROOT")},
+		"login.html":               {Data: []byte("LOGIN")},
+		"login/__next._tree.txt":   {Data: []byte("internal")},
+		"devices.html":             {Data: []byte("DEVICES")},
+		"devices/__next._tree.txt": {Data: []byte("internal")},
+		"_next/static/chunks/a.js": {Data: []byte("JS")},
 	}
 
 	s := &Server{fs: http.FS(fsys)}

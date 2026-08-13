@@ -7,10 +7,10 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yuanshuai1122/vohive/internal/config"
 	"github.com/yuanshuai1122/vohive/internal/updater"
 	"github.com/yuanshuai1122/vohive/pkg/logger"
-	"github.com/gin-gonic/gin"
 )
 
 var errNotFound = errors.New("not found")
@@ -48,7 +48,7 @@ func (s *Server) handleCheckUpdate(c *gin.Context) {
 	info, err := updater.CheckUpdate()
 	if err != nil {
 		logger.Error("检查系统更新失败", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, info)

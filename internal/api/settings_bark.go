@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yuanshuai1122/vohive/internal/config"
 	"github.com/yuanshuai1122/vohive/internal/notify"
-	"github.com/gin-gonic/gin"
 )
 
 type testBarkRequest struct {

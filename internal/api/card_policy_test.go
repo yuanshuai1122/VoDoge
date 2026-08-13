@@ -9,10 +9,10 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yuanshuai1122/vohive/internal/config"
 	"github.com/yuanshuai1122/vohive/internal/db"
 	"github.com/yuanshuai1122/vohive/internal/device"
-	"github.com/gin-gonic/gin"
 )
 
 // injectWorker 通过 unsafe 反射将 worker 注入到 pool 的内部 workers map，

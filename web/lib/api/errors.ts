@@ -1,14 +1,17 @@
 /**
  * 错误响应归一化。
  *
- * 后端有三种错误形状（见 docs/frontend-api-matrix.md §2.2）：
- *   1. {status:"error", message, code?, request_id?}        —— 主流
- *   2. {error:"..."}                                        —— 整个 eSIM 模块
- *   3. {error, busy:true, code:"ESIM_BUSY", reason,
- *       retryAfterMs}                                       —— eSIM 并发冲突(409)
+ * 后端自 2026-08-14 起只有一种错误形状：
+ *   {status:"error", code, message, request_id}
+ * 并发冲突等场景在同一层级附加 busy / reason / retry_after_ms / task_id。
  *
- * 注意 retryAfterMs 是 camelCase，与全局 snake_case 相反。
- * `code` 字段仅在少数端点出现，业务层不要依赖它做分支，优先用 httpStatus。
+ * 曾经还有裸 {error:"..."}（整个 eSIM 模块、卡策略、选网）。**解析仍然保留**
+ * 那一支：外部脚本可能仍按旧形状发请求或解析响应，容错本身没有代价，
+ * 而少一个分支省不下什么。
+ *
+ * `code` 多数时候只是按 HTTP 状态推导的通用码，业务层优先用 httpStatus 分支；
+ * 只有 ESIM_BUSY / ESIM_DOWNLOAD_IN_PROGRESS / e911_* / websheet_* 这类
+ * 专属码值得直接判。
  */
 
 export class ApiError extends Error {
@@ -88,19 +91,26 @@ export function parseApiError(httpStatus: number, body: unknown): ApiError {
     return new ApiError(defaultMessageFor(httpStatus), { httpStatus });
   }
 
-  // 形状 3：eSIM 并发冲突。必须在形状 2 之前判断——它同样带 error 字段。
+  // 并发冲突先判：它同时带 message 与（历史上的）error，落到下面会丢掉
+  // busy / retry_after_ms，调用方就不知道该等多久了。
   if (rec.busy === true || rec.code === "ESIM_BUSY") {
-    return new ApiError(asString(rec.error) ?? "eSIM 操作正忙，请稍后重试", {
-      httpStatus,
-      code: asString(rec.code) ?? "ESIM_BUSY",
-      busy: true,
-      retryAfterMs: asNumber(rec.retryAfterMs),
-      reason: asString(rec.reason),
-      body: rec,
-    });
+    return new ApiError(
+      asString(rec.message) ?? asString(rec.error) ?? "eSIM 操作正忙，请稍后重试",
+      {
+        httpStatus,
+        code: asString(rec.code) ?? "ESIM_BUSY",
+        busy: true,
+        // snake_case 是现行字段名，camelCase 是为兼容保留的旧名
+        retryAfterMs:
+          asNumber(rec.retry_after_ms) ?? asNumber(rec.retryAfterMs),
+        reason: asString(rec.reason),
+        requestId: asString(rec.request_id),
+        body: rec,
+      },
+    );
   }
 
-  // 形状 1
+  // 现行形状
   const message = asString(rec.message);
   if (message) {
     return new ApiError(message, {
@@ -111,10 +121,15 @@ export function parseApiError(httpStatus: number, body: unknown): ApiError {
     });
   }
 
-  // 形状 2
+  // 旧形状：裸 {error:"..."}。后端已不再产生，保留以兼容外部调用方。
   const err = asString(rec.error);
   if (err) {
-    return new ApiError(err, { httpStatus, code: asString(rec.code), body: rec });
+    return new ApiError(err, {
+      httpStatus,
+      code: asString(rec.code),
+      requestId: asString(rec.request_id),
+      body: rec,
+    });
   }
 
   return new ApiError(defaultMessageFor(httpStatus), {

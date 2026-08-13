@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/yuanshuai1122/vohive/internal/db"
 	"github.com/gin-gonic/gin"
+	"github.com/yuanshuai1122/vohive/internal/db"
 )
 
 type enabledPatchRequest struct {
@@ -21,7 +21,7 @@ type networkPatchRequest struct {
 func (s *Server) handleDeviceNetworkPatch(c *gin.Context) {
 	var req networkPatchRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "enabled 为必填项"})
+		fail(c, http.StatusBadRequest, "", "enabled 为必填项")
 		return
 	}
 
@@ -56,7 +56,7 @@ func (s *Server) handleDeviceNetworkPatch(c *gin.Context) {
 func (s *Server) handleDeviceVoWiFiPatch(c *gin.Context) {
 	var req enabledPatchRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "enabled 为必填项"})
+		fail(c, http.StatusBadRequest, "", "enabled 为必填项")
 		return
 	}
 

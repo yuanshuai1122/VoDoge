@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yuanshuai1122/vohive/internal/backend"
 	"github.com/yuanshuai1122/vohive/internal/config"
 	"github.com/yuanshuai1122/vohive/internal/device"
 	"github.com/yuanshuai1122/vohive/pkg/logger"
-	"github.com/gin-gonic/gin"
 )
 
 type operatorScanResponse struct {
@@ -41,13 +41,13 @@ func (s *Server) handleDeviceMgmtOperatorScan(c *gin.Context) {
 	deviceID := deviceIDParam(c)
 	w := s.pool.GetWorker(deviceID)
 	if w == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备未找到或已离线"})
+		fail(c, http.StatusNotFound, "", "设备未找到或已离线")
 		return
 	}
 
 	if err := validateOperatorScanWorker(w); err != nil {
 		logger.Error("扫描运营商失败", "device", deviceID, "err", err)
-		c.JSON(operatorSelectionErrorStatus(err), gin.H{"error": "扫描失败: " + err.Error()})
+		fail(c, operatorSelectionErrorStatus(err), "", "扫描失败: "+err.Error())
 		return
 	}
 
@@ -158,14 +158,14 @@ func (s *Server) handleDeviceMgmtGetOperatorSelection(c *gin.Context) {
 	deviceID := deviceIDParam(c)
 	w := s.pool.GetWorker(deviceID)
 	if w == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备未找到或已离线"})
+		fail(c, http.StatusNotFound, "", "设备未找到或已离线")
 		return
 	}
 
 	sel, err := w.GetOperatorSelection(c.Request.Context())
 	if err != nil {
 		logger.Error("读取运营商选择配置失败", "device", deviceID, "err", err)
-		c.JSON(operatorSelectionErrorStatus(err), gin.H{"error": "读取失败: " + err.Error()})
+		fail(c, operatorSelectionErrorStatus(err), "", "读取失败: "+err.Error())
 		return
 	}
 
@@ -176,20 +176,20 @@ func (s *Server) handleDeviceMgmtSetOperatorSelection(c *gin.Context) {
 	deviceID := deviceIDParam(c)
 	var req backend.SetOperatorSelectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数无效"})
+		fail(c, http.StatusBadRequest, "", "参数无效")
 		return
 	}
 
 	w := s.pool.GetWorker(deviceID)
 	if w == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备未找到或已离线"})
+		fail(c, http.StatusNotFound, "", "设备未找到或已离线")
 		return
 	}
 
 	sel, err := w.SetOperatorSelection(c.Request.Context(), req)
 	if err != nil {
 		logger.Error("设置运营商失败", "device", deviceID, "err", err)
-		c.JSON(operatorSelectionErrorStatus(err), gin.H{"error": "设置失败: " + err.Error()})
+		fail(c, operatorSelectionErrorStatus(err), "", "设置失败: "+err.Error())
 		return
 	}
 

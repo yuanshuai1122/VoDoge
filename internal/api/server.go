@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/boa-z/vowifi-go/runtimehost/messaging"
+	"github.com/boa-z/vowifi-go/runtimehost/voicehost"
 	"github.com/yuanshuai1122/vohive/internal/config"
 	"github.com/yuanshuai1122/vohive/internal/data/repo"
 	"github.com/yuanshuai1122/vohive/internal/db"
@@ -29,11 +31,9 @@ import (
 	proxytraffic "github.com/yuanshuai1122/vohive/internal/proxy/traffic"
 	vwebsheet "github.com/yuanshuai1122/vohive/internal/websheet"
 	"github.com/yuanshuai1122/vohive/pkg/smscodec"
-	"github.com/boa-z/vowifi-go/runtimehost/messaging"
-	"github.com/boa-z/vowifi-go/runtimehost/voicehost"
 
-	"github.com/yuanshuai1122/vohive/pkg/logger"
 	"github.com/spf13/viper"
+	"github.com/yuanshuai1122/vohive/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -332,15 +332,12 @@ func (s *Server) handleListDevices(c *gin.Context) {
 // handleDeviceRescan 手动触发设备重新扫描
 func (s *Server) handleDeviceRescan(c *gin.Context) {
 	if s.pool == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "message": "服务未就绪"})
+		fail(c, http.StatusServiceUnavailable, "", "服务未就绪")
 		return
 	}
 
 	if err := s.pool.RescanAndReconnect(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "重新扫描失败: " + err.Error(),
-		})
+		fail(c, http.StatusInternalServerError, "", "重新扫描失败: "+err.Error())
 		return
 	}
 
@@ -482,7 +479,14 @@ func (s *Server) handleLogHistory(c *gin.Context) {
 
 	recentLines, err := readLastLines(logFile, lines, 1<<20)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"logs": []logger.LogEntry{}, "error": "无法读取日志文件"})
+		// 读不到日志文件不是错误——刚启动、或日志只往 stdout 走时就是这样。
+		// 这里以前回的是 200 + {status:"error"}，一个自相矛盾的形状：
+		// 前端按成功路径取 logs 拿到空数组，按错误路径又会抛。
+		c.JSON(http.StatusOK, gin.H{
+			"status": "ok",
+			"logs":   []logger.LogEntry{},
+			"note":   "日志文件不可读：" + err.Error(),
+		})
 		return
 	}
 
@@ -619,7 +623,7 @@ func (s *Server) handleDeviceDetail(c *gin.Context) {
 	deviceID := deviceIDParam(c)
 	worker := s.pool.GetWorker(deviceID)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+		fail(c, http.StatusNotFound, "", "设备未找到")
 		return
 	}
 
@@ -630,7 +634,7 @@ func (s *Server) handleDeviceTraffic(c *gin.Context) {
 	deviceID := deviceIDParam(c)
 	worker := s.pool.GetWorker(deviceID)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+		fail(c, http.StatusNotFound, "", "设备未找到")
 		return
 	}
 	iface := worker.Config.Interface
@@ -663,7 +667,7 @@ func (s *Server) handleDeviceTraffic(c *gin.Context) {
 	ctx := c.Request.Context()
 	instances, err := s.proxyRepo.List(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "加载代理实例失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "加载代理实例失败: "+err.Error())
 		return
 	}
 	var insts []instTraffic
@@ -727,29 +731,23 @@ func (s *Server) handleRotate(c *gin.Context) {
 		if len(workers) == 1 {
 			deviceID = workers[0].ID
 		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "存在多个设备时必须指定 device_id"})
+			fail(c, http.StatusBadRequest, "", "存在多个设备时必须指定 device_id")
 			return
 		}
 	}
 
 	worker := s.pool.GetWorker(deviceID)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+		fail(c, http.StatusNotFound, "", "设备未找到")
 		return
 	}
 	nc := worker.NetworkController()
 	if nc == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"message": "当前设备不支持网络控制",
-		})
+		fail(c, http.StatusBadRequest, "", "当前设备不支持网络控制")
 		return
 	}
 	if !worker.NetworkConnected() {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"message": "设备网络未连接，请先启动网络",
-		})
+		fail(c, http.StatusBadRequest, "", "设备网络未连接，请先启动网络")
 		return
 	}
 
@@ -759,9 +757,7 @@ func (s *Server) handleRotate(c *gin.Context) {
 	duration := time.Since(startTime)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":   "error",
-			"message":  err.Error(),
+		failWith(c, http.StatusInternalServerError, "", err.Error(), gin.H{
 			"old_ip":   oldIP,
 			"new_ip":   newIP,
 			"duration": duration.String(),
@@ -783,20 +779,20 @@ func (s *Server) handleDeviceMgmtStartNetwork(c *gin.Context) {
 	deviceID := deviceIDParam(c)
 	worker := s.pool.GetWorker(deviceID)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+		fail(c, http.StatusNotFound, "", "设备未找到")
 		return
 	}
 	nc := worker.NetworkController()
 	if nc == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "当前设备不支持网络控制"})
+		fail(c, http.StatusBadRequest, "", "当前设备不支持网络控制")
 		return
 	}
 	if s.pool.IsVoWiFiActive(deviceID) {
-		c.JSON(http.StatusConflict, gin.H{"status": "error", "message": "VoWiFi 运行中，无法启动数据网络"})
+		fail(c, http.StatusConflict, "", "VoWiFi 运行中，无法启动数据网络")
 		return
 	}
 	if err := worker.StartNetwork(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "启动数据网络失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "启动数据网络失败: "+err.Error())
 		return
 	}
 	go func() { _ = worker.RefreshRuntime(nil, "start_network") }()
@@ -816,16 +812,16 @@ func (s *Server) handleDeviceMgmtStopNetwork(c *gin.Context) {
 	deviceID := deviceIDParam(c)
 	worker := s.pool.GetWorker(deviceID)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+		fail(c, http.StatusNotFound, "", "设备未找到")
 		return
 	}
 	nc := worker.NetworkController()
 	if nc == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "当前设备不支持网络控制"})
+		fail(c, http.StatusBadRequest, "", "当前设备不支持网络控制")
 		return
 	}
 	if err := worker.StopNetwork(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "停止数据网络失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "停止数据网络失败: "+err.Error())
 		return
 	}
 	go func() { _ = worker.RefreshRuntime(nil, "stop_network") }()
@@ -954,7 +950,7 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 
 	var req SendSMSRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误: " + err.Error()})
+		fail(c, http.StatusBadRequest, "", "参数错误: "+err.Error())
 		return
 	}
 
@@ -962,7 +958,7 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 	imsi := strings.TrimSpace(req.IMSI)
 	encoding, err := smscodec.NormalizeSMSEncoding(req.Encoding)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "短信编码参数错误: " + err.Error()})
+		fail(c, http.StatusBadRequest, "", "短信编码参数错误: "+err.Error())
 		return
 	}
 	sendOpts := smscodec.SubmitOptions{Encoding: encoding}
@@ -995,7 +991,7 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 		} else if imsi != "" {
 			msg = "未找到匹配 IMSI 的设备: " + imsi
 		}
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": msg})
+		fail(c, http.StatusNotFound, "", msg)
 		return
 	}
 
@@ -1017,9 +1013,7 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 		messageID = strings.TrimSpace(outcome.MessageID)
 		if err != nil {
 			_ = device.RecordVoWiFiSMSSendFailure(s.pool, deviceID, req.Phone, req.Message, time.Now())
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":         "error",
-				"message":        "VoWiFi 短信发送失败: " + err.Error(),
+			failWith(c, http.StatusInternalServerError, "", "VoWiFi 短信发送失败: "+err.Error(), gin.H{
 				"device":         deviceID,
 				"phone":          req.Phone,
 				"message_id":     messageID,
@@ -1035,11 +1029,9 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 			if imsi != "" {
 				_ = db.SaveSMS(imsi, worker.ID, req.Phone, req.Message, 2, 3, time.Now())
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":  "error",
-				"message": "发送失败: " + err.Error(),
-				"device":  deviceID,
-				"phone":   req.Phone,
+			failWith(c, http.StatusInternalServerError, "", "发送失败: "+err.Error(), gin.H{
+				"device": deviceID,
+				"phone":  req.Phone,
 			})
 			return
 		}
@@ -1063,11 +1055,11 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 func (s *Server) handleSMSDelivery(c *gin.Context) {
 	messageID := strings.TrimSpace(c.Param("message_id"))
 	if messageID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "message_id 不能为空"})
+		fail(c, http.StatusBadRequest, "", "message_id 不能为空")
 		return
 	}
 	if s.pool == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "message": "服务未就绪"})
+		fail(c, http.StatusServiceUnavailable, "", "服务未就绪")
 		return
 	}
 	services := s.pool.GetAllVoWiFiApps()
@@ -1082,7 +1074,7 @@ func (s *Server) handleSMSDelivery(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "delivery": status})
 		return
 	}
-	c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "未找到对应短信投递记录"})
+	fail(c, http.StatusNotFound, "", "未找到对应短信投递记录")
 }
 
 func (s *Server) handleVoWiFiSMSStatus(c *gin.Context) {
@@ -1107,30 +1099,28 @@ func (s *Server) handleVoWiFiSendSMS(c *gin.Context) {
 
 	var req SendSMSRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误: " + err.Error()})
+		fail(c, http.StatusBadRequest, "", "参数错误: "+err.Error())
 		return
 	}
 
 	if s.pool == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "message": "服务未就绪"})
+		fail(c, http.StatusServiceUnavailable, "", "服务未就绪")
 		return
 	}
 	encoding, err := smscodec.NormalizeSMSEncoding(req.Encoding)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "短信编码参数错误: " + err.Error()})
+		fail(c, http.StatusBadRequest, "", "短信编码参数错误: "+err.Error())
 		return
 	}
 	svc := s.pool.GetVoWiFiApp()
 	if svc == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "message": "IMS Core 未启动"})
+		fail(c, http.StatusServiceUnavailable, "", "IMS Core 未启动")
 		return
 	}
 
 	outcome, err := svc.SendSMSWithOptions(c.Request.Context(), req.To, req.Text, messaging.SendOptions{Encoding: string(encoding)})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":         "error",
-			"message":        "发送失败: " + err.Error(),
+		failWith(c, http.StatusInternalServerError, "", "发送失败: "+err.Error(), gin.H{
 			"message_id":     strings.TrimSpace(outcome.MessageID),
 			"parts_total":    outcome.PartsTotal,
 			"delivery_state": strings.TrimSpace(outcome.DeliveryState),
@@ -1151,20 +1141,18 @@ func (s *Server) handleVoWiFiSendSMS(c *gin.Context) {
 func (s *Server) handleVoWiFiEnable(c *gin.Context) {
 	deviceID := deviceIDParam(c)
 	if deviceID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请指定设备 ID"})
+		fail(c, http.StatusBadRequest, "", "请指定设备 ID")
 		return
 	}
 
 	if s.pool == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "message": "服务未就绪"})
+		fail(c, http.StatusServiceUnavailable, "", "服务未就绪")
 		return
 	}
 
 	if err := s.pool.EnableVoWiFi(deviceID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "VoWiFi 启用失败: " + err.Error(),
-			"device":  deviceID,
+		failWith(c, http.StatusInternalServerError, "", "VoWiFi 启用失败: "+err.Error(), gin.H{
+			"device": deviceID,
 		})
 		return
 	}
@@ -1181,15 +1169,13 @@ func (s *Server) handleVoWiFiDisable(c *gin.Context) {
 	deviceID := deviceIDParam(c)
 
 	if s.pool == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "message": "服务未就绪"})
+		fail(c, http.StatusServiceUnavailable, "", "服务未就绪")
 		return
 	}
 
 	if err := s.pool.DisableVoWiFi(deviceID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "VoWiFi 禁用失败: " + err.Error(),
-			"device":  deviceID,
+		failWith(c, http.StatusInternalServerError, "", "VoWiFi 禁用失败: "+err.Error(), gin.H{
+			"device": deviceID,
 		})
 		return
 	}
@@ -1205,20 +1191,19 @@ func (s *Server) handleVoWiFiDisable(c *gin.Context) {
 func (s *Server) handleSimulateCall(c *gin.Context) {
 	deviceID := deviceIDParam(c)
 	if s.voiceGW == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "语音网关未启用"})
+		fail(c, http.StatusServiceUnavailable, "", "语音网关未启用")
 		return
 	}
 
 	var req voicehost.SimulateCallRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数：" + err.Error()})
+		fail(c, http.StatusBadRequest, "", "无效的请求参数："+err.Error())
 		return
 	}
 
 	result, err := s.voiceGW.SimulateCall(c.Request.Context(), deviceID, req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   err.Error(),
+		failWith(c, http.StatusInternalServerError, "", err.Error(), gin.H{
 			"success": false,
 		})
 		return
@@ -1290,7 +1275,7 @@ func (s *Server) handleStatusDetail(c *gin.Context) {
 	deviceID := deviceIDParam(c)
 	worker := s.pool.GetWorker(deviceID)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
+		fail(c, http.StatusNotFound, "", "设备未找到")
 		return
 	}
 
@@ -1379,7 +1364,7 @@ func (s *Server) handleGetSMSInbox(c *gin.Context) {
 	if deviceID == "" || deviceID == "all" {
 		smsList, err := db.GetRecentSMS(limit)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "查询数据库失败: " + err.Error()})
+			fail(c, http.StatusInternalServerError, "", "查询数据库失败: "+err.Error())
 			return
 		}
 
@@ -1427,21 +1412,21 @@ func (s *Server) handleGetSMSInbox(c *gin.Context) {
 
 	worker := s.pool.GetWorker(deviceID)
 	if worker == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到: " + deviceID})
+		fail(c, http.StatusNotFound, "", "设备未找到: "+deviceID)
 		return
 	}
 
 	iccid := worker.CurrentICCID()
 	logger.Debug("查询指定设备短信", "device_id", deviceID, "iccid", iccid)
 	if iccid == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "该设备未识别到 SIM 卡 ICCID"})
+		fail(c, http.StatusBadRequest, "", "该设备未识别到 SIM 卡 ICCID")
 		return
 	}
 
 	smsList, err := db.GetSMSByICCID(iccid, limit)
 	if err != nil {
 		logger.Error("查询数据库短信失败", "err", err, "iccid", iccid)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "查询数据库失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "查询数据库失败: "+err.Error())
 		return
 	}
 
@@ -1532,7 +1517,7 @@ func (s *Server) handleGetSMSContacts(c *gin.Context) {
 	if strings.TrimSpace(deviceID) != "" {
 		resolved, status, msg := s.resolveSMSICCID(deviceID, imsi)
 		if status != 0 {
-			c.JSON(status, gin.H{"status": "error", "message": msg})
+			fail(c, status, "", msg)
 			return
 		}
 		iccid = resolved
@@ -1546,7 +1531,7 @@ func (s *Server) handleGetSMSContacts(c *gin.Context) {
 		contacts, err = db.GetSMSContacts(limit, beforeTs, beforePeer)
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "查询数据库失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "查询数据库失败: "+err.Error())
 		return
 	}
 
@@ -1607,7 +1592,7 @@ func (s *Server) handleGetSMSThread(c *gin.Context) {
 	imsi := c.Query("imsi")
 	peer := strings.TrimSpace(c.Query("peer"))
 	if peer == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少 peer 参数"})
+		fail(c, http.StatusBadRequest, "", "缺少 peer 参数")
 		return
 	}
 
@@ -1633,7 +1618,7 @@ func (s *Server) handleGetSMSThread(c *gin.Context) {
 	if strings.TrimSpace(deviceID) != "" || strings.TrimSpace(imsi) != "" {
 		resolved, status, msg := s.resolveSMSICCID(deviceID, imsi)
 		if status != 0 {
-			c.JSON(status, gin.H{"status": "error", "message": msg})
+			fail(c, status, "", msg)
 			return
 		}
 		iccid = resolved
@@ -1641,7 +1626,7 @@ func (s *Server) handleGetSMSThread(c *gin.Context) {
 
 	list, err := db.GetSMSByICCIDAndPeer(iccid, peer, limit, beforeTs, beforeID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "查询数据库失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "查询数据库失败: "+err.Error())
 		return
 	}
 
@@ -1682,17 +1667,17 @@ func (s *Server) handleGetSMSThread(c *gin.Context) {
 func (s *Server) handleDeleteSMSMessage(c *gin.Context) {
 	id64, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
 	if err != nil || id64 == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "无效的短信 id"})
+		fail(c, http.StatusBadRequest, "", "无效的短信 id")
 		return
 	}
 
 	threadEmpty, imsi, peer, err := db.DeleteSMSByID(uint(id64))
 	if err != nil {
 		if errors.Is(err, db.ErrSMSNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "短信不存在"})
+			fail(c, http.StatusNotFound, "", "短信不存在")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "删除短信失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "删除短信失败: "+err.Error())
 		return
 	}
 
@@ -1709,23 +1694,23 @@ func (s *Server) handleDeleteSMSThread(c *gin.Context) {
 	imsi := c.Query("imsi")
 	peer := strings.TrimSpace(c.Query("peer"))
 	if peer == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少 peer 参数"})
+		fail(c, http.StatusBadRequest, "", "缺少 peer 参数")
 		return
 	}
 
 	resolved, status, msg := s.resolveSMSICCID(deviceID, imsi)
 	if status != 0 {
-		c.JSON(status, gin.H{"status": "error", "message": msg})
+		fail(c, status, "", msg)
 		return
 	}
 
 	deleted, err := db.DeleteSMSByICCIDAndPeer(resolved, peer)
 	if err != nil {
 		if errors.Is(err, db.ErrSMSNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "短信会话不存在"})
+			fail(c, http.StatusNotFound, "", "短信会话不存在")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "删除短信会话失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "删除短信会话失败: "+err.Error())
 		return
 	}
 
@@ -1745,18 +1730,13 @@ func (s *Server) handleLogin(c *gin.Context) {
 		Password string `json:"password"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误"})
+		fail(c, http.StatusBadRequest, "", "参数错误")
 		return
 	}
 
 	clientIP := c.ClientIP()
 	if !s.allowLoginAttempt(clientIP, time.Now()) {
-		c.JSON(http.StatusTooManyRequests, gin.H{
-			"status":     "error",
-			"code":       "rate_limited",
-			"message":    "登录尝试过于频繁，请稍后再试",
-			"request_id": requestID(c),
-		})
+		fail(c, http.StatusTooManyRequests, "rate_limited", "登录尝试过于频繁，请稍后再试")
 		return
 	}
 
@@ -1764,12 +1744,7 @@ func (s *Server) handleLogin(c *gin.Context) {
 		token, exp, err := s.issueSessionToken()
 		if err != nil {
 			logger.Error("生成登录 token 失败", "err", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":     "error",
-				"code":       "internal_error",
-				"message":    "登录失败",
-				"request_id": requestID(c),
-			})
+			fail(c, http.StatusInternalServerError, "internal_error", "登录失败")
 			return
 		}
 		logger.Info("登录成功", "ip", clientIP, "username", req.Username)
@@ -1781,12 +1756,7 @@ func (s *Server) handleLogin(c *gin.Context) {
 		})
 	} else {
 		logger.Warn("登录失败", "ip", clientIP, "username", req.Username)
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"status":     "error",
-			"code":       "invalid_credentials",
-			"message":    "用户名或密码错误",
-			"request_id": requestID(c),
-		})
+		fail(c, http.StatusUnauthorized, "invalid_credentials", "用户名或密码错误")
 	}
 }
 
@@ -1798,37 +1768,25 @@ func (s *Server) handleChangePassword(c *gin.Context) {
 		ConfirmPassword string `json:"confirm_password"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误"})
+		fail(c, http.StatusBadRequest, "", "参数错误")
 		return
 	}
 
 	// 校验当前密码
 	if !checkPassword(s.auth.Password, req.OldPassword) {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"status":  "error",
-			"code":    "invalid_password",
-			"message": "当前密码错误",
-		})
+		fail(c, http.StatusUnauthorized, "invalid_password", "当前密码错误")
 		return
 	}
 
 	// 校验新密码与确认密码一致
 	if req.NewPassword != req.ConfirmPassword {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"code":    "password_mismatch",
-			"message": "两次输入的新密码不一致",
-		})
+		fail(c, http.StatusBadRequest, "password_mismatch", "两次输入的新密码不一致")
 		return
 	}
 
 	// 校验新密码不能为空
 	if strings.TrimSpace(req.NewPassword) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"code":    "empty_password",
-			"message": "新密码不能为空",
-		})
+		fail(c, http.StatusBadRequest, "empty_password", "新密码不能为空")
 		return
 	}
 
@@ -1836,10 +1794,7 @@ func (s *Server) handleChangePassword(c *gin.Context) {
 	hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		logger.Error("生成密码哈希失败", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "密码处理失败",
-		})
+		fail(c, http.StatusInternalServerError, "", "密码处理失败")
 		return
 	}
 	hashedPassword := string(hashed)
@@ -1847,10 +1802,7 @@ func (s *Server) handleChangePassword(c *gin.Context) {
 	// 持久化到配置文件
 	if err := config.UpdateWebCredentialsInFile(s.configPath, s.auth.Username, hashedPassword); err != nil {
 		logger.Error("更新密码配置失败", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "保存配置失败: " + err.Error(),
-		})
+		fail(c, http.StatusInternalServerError, "", "保存配置失败: "+err.Error())
 		return
 	}
 
@@ -1877,32 +1829,17 @@ func (s *Server) authorizeRotate(c *gin.Context, username string, password strin
 	username = strings.TrimSpace(username)
 	password = strings.TrimSpace(password)
 	if username == "" && password == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"status":     "error",
-			"code":       "unauthorized",
-			"message":    "未授权",
-			"request_id": requestID(c),
-		})
+		fail(c, http.StatusUnauthorized, "unauthorized", "未授权")
 		return false
 	}
 	if c.Request.Method != http.MethodPost {
-		c.JSON(http.StatusMethodNotAllowed, gin.H{
-			"status":     "error",
-			"code":       "method_not_allowed",
-			"message":    "仅支持 POST 表单/JSON 认证",
-			"request_id": requestID(c),
-		})
+		fail(c, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 POST 表单/JSON 认证")
 		return false
 	}
 
 	clientIP := c.ClientIP()
 	if !s.allowLoginAttempt(clientIP, now) {
-		c.JSON(http.StatusTooManyRequests, gin.H{
-			"status":     "error",
-			"code":       "rate_limited",
-			"message":    "请求过于频繁，请稍后再试",
-			"request_id": requestID(c),
-		})
+		fail(c, http.StatusTooManyRequests, "rate_limited", "请求过于频繁，请稍后再试")
 		return false
 	}
 
@@ -1910,12 +1847,7 @@ func (s *Server) authorizeRotate(c *gin.Context, username string, password strin
 		return true
 	}
 
-	c.JSON(http.StatusUnauthorized, gin.H{
-		"status":     "error",
-		"code":       "invalid_credentials",
-		"message":    "用户名或密码错误",
-		"request_id": requestID(c),
-	})
+	fail(c, http.StatusUnauthorized, "invalid_credentials", "用户名或密码错误")
 	return false
 }
 
@@ -1976,12 +1908,7 @@ func (s *Server) isAuthenticatedRequest(c *gin.Context, now time.Time) bool {
 func (s *Server) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if s.requestSessionToken(c) == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"status":     "error",
-				"code":       "unauthorized",
-				"message":    "未授权",
-				"request_id": requestID(c),
-			})
+			fail(c, http.StatusUnauthorized, "unauthorized", "未授权")
 			c.Abort()
 			return
 		}
@@ -1991,12 +1918,7 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"status":     "error",
-			"code":       "unauthorized",
-			"message":    "未授权",
-			"request_id": requestID(c),
-		})
+		fail(c, http.StatusUnauthorized, "unauthorized", "未授权")
 		c.Abort()
 	}
 }
@@ -2006,7 +1928,7 @@ func (s *Server) handleStatic(c *gin.Context) {
 
 	// 如果是 API 请求但未匹配到路由，返回 404
 	if strings.HasPrefix(requestPath, "/api") {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "API 不存在"})
+		fail(c, http.StatusNotFound, "", "API 不存在")
 		return
 	}
 

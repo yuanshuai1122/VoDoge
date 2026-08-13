@@ -76,17 +76,35 @@
 **注意**：`GET /devices/:id/overview` 返回的是 `{devices:[单个元素]}`，不是单对象——
 详情页要取 `data.devices[0]`。
 
-### 2.2 错误响应：3 种
+### 2.2 错误响应：1 种（2026-08-14 起）
 
-| 形状 | 使用范围 | 位置 |
-|------|----------|------|
-| `{status:"error", message, code?, request_id?}` | 主流（约 218 处错误响应的多数） | 全局 |
-| `{error:"..."}` | **整个 eSIM 模块** | `device_mgmt.go:2065` 等 |
-| `{error, busy:true, code:"ESIM_BUSY", reason, retryAfterMs}` + `Retry-After` 头 | eSIM 并发冲突（409） | `device_mgmt.go:1759` |
+```json
+{"status":"error", "code":"...", "message":"...", "request_id":"..."}
+```
 
-`code` 字段仅在 21 处出现，**不能依赖它做错误分支**；多数情况只能靠 HTTP 状态码 + `message` 文案。
+由 `internal/api/respond.go` 的 `fail` / `failWith` 统一产出，243 处错误站点全部走它。
 
-> `retryAfterMs` 是 camelCase，与全局 snake_case 约定相反。
+- `code` 多数是按 HTTP 状态推导的通用码（`bad_request` / `not_found` / `conflict` /
+  `internal_error` …），**这些不值得分支**，用 httpStatus 即可。
+  需要客户端据以决策的场景有专属码：`ESIM_BUSY`、`ESIM_DOWNLOAD_IN_PROGRESS`、
+  `e911_*`、`websheet_*`。
+- `request_id` **每个错误都有**，与服务端访问日志对应。
+- 附加字段平铺在同一层级，不额外包一层。
+
+| 场景 | 附加字段 |
+|------|---------|
+| eSIM 并发冲突（409 `ESIM_BUSY`） | `busy`、`reason`、`retry_after_ms`、`retryAfterMs`（旧名）+ `Retry-After` 头 |
+| eSIM 下载已在进行（409 `ESIM_DOWNLOAD_IN_PROGRESS`） | `busy`、`task_id`（可直接订阅） |
+
+**改动前**是三种形状，前端因而必须在**每个请求**上同时准备三套解析——
+它无从预知会拿到哪一种。更实际的损失是裸 `{error:"..."}` 丢掉了 `request_id`：
+用户报上来的错误信息，在服务端日志里搜不到对应的那次请求。
+
+> `retryAfterMs` 曾是全局 snake_case 里唯一的 camelCase 字段。现在
+> `retry_after_ms` 与它同时给出，旧名仅为兼容既有调用方保留。
+
+> 前端 `parseApiError` 仍保留裸 `{error:"..."}` 分支——后端不再产生它，
+> 但外部脚本可能还在按旧形状解析，容错本身没有代价。
 
 ---
 

@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yuanshuai1122/vohive/internal/db"
 	"github.com/yuanshuai1122/vohive/internal/upstreamproxy"
-	"github.com/gin-gonic/gin"
 )
 
 // ── 前置代理管理 API（主服务） ──
@@ -42,7 +42,7 @@ func probeUpstreamProxyConfig(c *gin.Context, proxy db.UpstreamProxy) (upstreamp
 func (s *Server) handleListUpstreamProxies(c *gin.Context) {
 	proxies, err := db.ListUpstreamProxies()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	// 密码脱敏
@@ -56,29 +56,27 @@ func (s *Server) handleListUpstreamProxies(c *gin.Context) {
 func (s *Server) handleCreateUpstreamProxy(c *gin.Context) {
 	var req db.UpstreamProxy
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数解析失败: " + err.Error()})
+		fail(c, http.StatusBadRequest, "", "参数解析失败: "+err.Error())
 		return
 	}
 	req = normalizeUpstreamProxyPayload(nil, req)
 	if req.ID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "id 不能为空"})
+		fail(c, http.StatusBadRequest, "", "id 不能为空")
 		return
 	}
 	if req.Addr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "addr 不能为空"})
+		fail(c, http.StatusBadRequest, "", "addr 不能为空")
 		return
 	}
 	result, probeErr := probeUpstreamProxyConfig(c, req)
 	if probeErr != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"status":  "error",
-			"message": "前置代理探测失败: " + result.FailureSummary(),
-			"result":  result,
+		failWith(c, http.StatusBadGateway, "", "前置代理探测失败: "+result.FailureSummary(), gin.H{
+			"result": result,
 		})
 		return
 	}
 	if err := db.UpsertUpstreamProxy(req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -93,35 +91,33 @@ func (s *Server) handleUpdateUpstreamProxy(c *gin.Context) {
 	id := upstreamProxyIDParam(c)
 	var req db.UpstreamProxy
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数解析失败: " + err.Error()})
+		fail(c, http.StatusBadRequest, "", "参数解析失败: "+err.Error())
 		return
 	}
 	existing, err := db.GetUpstreamProxyByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	if existing == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "前置代理不存在"})
+		fail(c, http.StatusNotFound, "", "前置代理不存在")
 		return
 	}
 	req.ID = id
 	req = normalizeUpstreamProxyPayload(existing, req)
 	if req.Addr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "addr 不能为空"})
+		fail(c, http.StatusBadRequest, "", "addr 不能为空")
 		return
 	}
 	result, probeErr := probeUpstreamProxyConfig(c, req)
 	if probeErr != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"status":  "error",
-			"message": "前置代理探测失败: " + result.FailureSummary(),
-			"result":  result,
+		failWith(c, http.StatusBadGateway, "", "前置代理探测失败: "+result.FailureSummary(), gin.H{
+			"result": result,
 		})
 		return
 	}
 	if err := db.UpsertUpstreamProxy(req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -135,7 +131,7 @@ func (s *Server) handleUpdateUpstreamProxy(c *gin.Context) {
 func (s *Server) handleDeleteUpstreamProxy(c *gin.Context) {
 	id := upstreamProxyIDParam(c)
 	if err := db.DeleteUpstreamProxy(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "前置代理已删除"})
@@ -146,11 +142,11 @@ func (s *Server) handleProbeUpstreamProxy(c *gin.Context) {
 	id := upstreamProxyIDParam(c)
 	proxy, err := db.GetUpstreamProxyByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	if proxy == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "前置代理不存在"})
+		fail(c, http.StatusNotFound, "", "前置代理不存在")
 		return
 	}
 
@@ -161,10 +157,8 @@ func (s *Server) handleProbeUpstreamProxy(c *gin.Context) {
 		Timeout:   5 * time.Second,
 	})
 	if probeErr != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"status":  "error",
-			"message": "前置代理探测失败: " + result.FailureSummary(),
-			"result":  result,
+		failWith(c, http.StatusBadGateway, "", "前置代理探测失败: "+result.FailureSummary(), gin.H{
+			"result": result,
 		})
 		return
 	}
@@ -199,7 +193,7 @@ func buildUpstreamProxyCountryRuleResponse(rule db.UpstreamProxyCountryRule) ups
 
 func (s *Server) handleListUpstreamProxyCountries(c *gin.Context) {
 	if !upstreamproxy.CountryTableReady() {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "mcc_mnc_table_unavailable"})
+		fail(c, http.StatusServiceUnavailable, "", "mcc_mnc_table_unavailable")
 		return
 	}
 	c.JSON(http.StatusOK, upstreamproxy.ListCountryDisplays())
@@ -208,7 +202,7 @@ func (s *Server) handleListUpstreamProxyCountries(c *gin.Context) {
 func (s *Server) handleListUpstreamProxyCountryRules(c *gin.Context) {
 	rules, err := db.ListUpstreamProxyCountryRules()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	out := make([]upstreamProxyCountryRuleResponse, 0, len(rules))
@@ -220,12 +214,12 @@ func (s *Server) handleListUpstreamProxyCountryRules(c *gin.Context) {
 
 func (s *Server) handleUpsertUpstreamProxyCountryRule(c *gin.Context) {
 	if !upstreamproxy.CountryTableReady() {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "mcc_mnc_table_unavailable"})
+		fail(c, http.StatusServiceUnavailable, "", "mcc_mnc_table_unavailable")
 		return
 	}
 	countryCode := upstreamproxy.NormalizeCountryCode(countryCodeParam(c))
 	if _, ok := upstreamproxy.MCCsForCountryCode(countryCode); !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "国家代码不在 MCC/MNC 表中"})
+		fail(c, http.StatusBadRequest, "", "国家代码不在 MCC/MNC 表中")
 		return
 	}
 	var req struct {
@@ -233,16 +227,16 @@ func (s *Server) handleUpsertUpstreamProxyCountryRule(c *gin.Context) {
 		Enabled         bool   `json:"enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数解析失败: " + err.Error()})
+		fail(c, http.StatusBadRequest, "", "参数解析失败: "+err.Error())
 		return
 	}
 	proxy, err := db.GetUpstreamProxyByID(req.UpstreamProxyID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	if proxy == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "前置代理不存在"})
+		fail(c, http.StatusNotFound, "", "前置代理不存在")
 		return
 	}
 	rule := db.UpstreamProxyCountryRule{
@@ -251,7 +245,7 @@ func (s *Server) handleUpsertUpstreamProxyCountryRule(c *gin.Context) {
 		Enabled:         req.Enabled,
 	}
 	if err := db.UpsertUpstreamProxyCountryRule(rule); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	rule.UpstreamProxyID = proxy.ID
@@ -262,7 +256,7 @@ func (s *Server) handleUpsertUpstreamProxyCountryRule(c *gin.Context) {
 func (s *Server) handleDeleteUpstreamProxyCountryRule(c *gin.Context) {
 	countryCode := upstreamproxy.NormalizeCountryCode(countryCodeParam(c))
 	if err := db.DeleteUpstreamProxyCountryRule(countryCode); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/yuanshuai1122/vohive/internal/db"
 	"github.com/gin-gonic/gin"
+	"github.com/yuanshuai1122/vohive/internal/db"
 )
 
 // patchCardPolicyForDevice 解析设备当前 ICCID，对 card_policies 行执行原地修改并落库。
@@ -43,7 +43,7 @@ func (s *Server) handleGetCardPolicy(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, pol)
@@ -53,7 +53,7 @@ func (s *Server) handleListCardPolicies(c *gin.Context) {
 	var out []db.CardPolicy
 	if db.DB != nil {
 		if err := db.DB.Order("updated_at desc").Find(&out).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			fail(c, http.StatusInternalServerError, "", err.Error())
 			return
 		}
 	}
@@ -69,7 +69,7 @@ func (s *Server) handlePutCardPolicy(c *gin.Context) {
 		APN            string `json:"apn"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		fail(c, http.StatusBadRequest, "", err.Error())
 		return
 	}
 
@@ -94,7 +94,7 @@ func (s *Server) handlePutCardPolicy(c *gin.Context) {
 	pol.Source = "user"
 
 	if err := db.UpsertCardPolicy(pol); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
 

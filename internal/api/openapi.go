@@ -98,7 +98,7 @@ func (s *Server) handleOpenAPIYAML(c *gin.Context) {
 func (s *Server) handleOpenAPIJSON(c *gin.Context) {
 	payload, err := loadOpenAPISpecJSON()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "生成 OpenAPI JSON 失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "生成 OpenAPI JSON 失败: "+err.Error())
 		return
 	}
 	c.Data(http.StatusOK, "application/json; charset=utf-8", payload)

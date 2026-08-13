@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yuanshuai1122/vohive/internal/esim"
 	"github.com/yuanshuai1122/vohive/pkg/logger"
-	"github.com/gin-gonic/gin"
 )
 
 // eSIM Profile 下载：POST 建任务 + GET 订阅进度。
@@ -196,31 +196,29 @@ func (s *Server) handleEsimDownloadStart(c *gin.Context) {
 	id := deviceIDParam(c)
 	worker := s.pool.GetWorker(id)
 	if worker == nil || worker.EsimMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "设备或esim管理器未找到"})
+		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
 
 	var req esimDownloadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		fail(c, http.StatusBadRequest, "", "参数错误: "+err.Error())
 		return
 	}
 	if strings.TrimSpace(req.SMDP) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "smdp 为必填项"})
+		fail(c, http.StatusBadRequest, "", "smdp 为必填项")
 		return
 	}
 
 	task, created := s.esimDownloads.begin(id)
 	if task == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建下载任务"})
+		fail(c, http.StatusInternalServerError, "", "无法创建下载任务")
 		return
 	}
 	if !created {
 		// 复用语义与 eSIM 其它接口一致：409 + 已有任务 id，前端可直接订阅
-		c.JSON(http.StatusConflict, gin.H{
-			"error":   "该设备已有进行中的下载任务",
+		failWith(c, http.StatusConflict, "ESIM_DOWNLOAD_IN_PROGRESS", "该设备已有进行中的下载任务", gin.H{
 			"busy":    true,
-			"code":    "ESIM_DOWNLOAD_IN_PROGRESS",
 			"task_id": task.ID,
 		})
 		return
@@ -263,16 +261,16 @@ func (s *Server) handleEsimDownloadStart(c *gin.Context) {
 func (s *Server) handleEsimDownloadStream(c *gin.Context) {
 	taskID := strings.TrimSpace(c.Query("task_id"))
 	if taskID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "task_id 为必填项"})
+		fail(c, http.StatusBadRequest, "", "task_id 为必填项")
 		return
 	}
 	task := s.esimDownloads.get(taskID)
 	if task == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "下载任务不存在或已过期"})
+		fail(c, http.StatusNotFound, "", "下载任务不存在或已过期")
 		return
 	}
 	if task.DeviceID != deviceIDParam(c) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "下载任务不属于该设备"})
+		fail(c, http.StatusNotFound, "", "下载任务不属于该设备")
 		return
 	}
 
@@ -284,7 +282,7 @@ func (s *Server) handleEsimDownloadStream(c *gin.Context) {
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "流式输出不支持"})
+		fail(c, http.StatusInternalServerError, "", "流式输出不支持")
 		return
 	}
 

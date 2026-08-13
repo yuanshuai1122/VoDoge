@@ -181,7 +181,7 @@ func (s *Server) handleGetNotificationSettings(c *gin.Context) {
 func (s *Server) handleUpdateNotificationSettings(c *gin.Context) {
 	var req updateNotificationSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "参数错误"})
+		fail(c, http.StatusBadRequest, "", "参数错误")
 		return
 	}
 
@@ -280,48 +280,48 @@ func (s *Server) handleUpdateNotificationSettings(c *gin.Context) {
 
 	if tg.Enabled {
 		if tg.BotToken == "" || tg.ChatID == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Telegram 启用时必须填写 bot_token 与 chat_id"})
+			fail(c, http.StatusBadRequest, "", "Telegram 启用时必须填写 bot_token 与 chat_id")
 			return
 		}
 	}
 
 	if fs.Enabled {
 		if fs.AppID == "" || fs.AppSecret == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "飞书启用时必须填写 app_id 与 app_secret"})
+			fail(c, http.StatusBadRequest, "", "飞书启用时必须填写 app_id 与 app_secret")
 			return
 		}
 	}
 
 	if qq.Enabled {
 		if qq.AppID == "" || qq.AppSecret == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "QQ 启用时必须填写 app_id 与 app_secret"})
+			fail(c, http.StatusBadRequest, "", "QQ 启用时必须填写 app_id 与 app_secret")
 			return
 		}
 	}
 
 	if wh.Enabled && len(wh.URLs) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Webhook 启用时至少需要一个 URL"})
+		fail(c, http.StatusBadRequest, "", "Webhook 启用时至少需要一个 URL")
 		return
 	}
 
 	if barkCfg.Enabled && len(barkCfg.URLs) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Bark 启用时至少需要一个 URL"})
+		fail(c, http.StatusBadRequest, "", "Bark 启用时至少需要一个 URL")
 		return
 	}
 
 	if em.Enabled && (em.SMTPHost == "" || em.FromAddress == "" || len(em.ToAddresses) == 0) {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Email 启用时必须填写 SMTP Host、发件人及收件人"})
+		fail(c, http.StatusBadRequest, "", "Email 启用时必须填写 SMTP Host、发件人及收件人")
 		return
 	}
 
 	if pp.Enabled && pp.Token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Pushplus 启用时必须填写 Token"})
+		fail(c, http.StatusBadRequest, "", "Pushplus 启用时必须填写 Token")
 		return
 	}
 
 	if err := config.UpdateNotificationInFile(s.configPath, tg, fs, qq, wh, barkCfg, em, pp); err != nil {
 		logger.Error("写入通知配置失败", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "写入配置文件失败: " + err.Error()})
+		fail(c, http.StatusInternalServerError, "", "写入配置文件失败: "+err.Error())
 		return
 	}
 

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/yuanshuai1122/vohive/internal/e911"
 	"github.com/gin-gonic/gin"
+	"github.com/yuanshuai1122/vohive/internal/e911"
 )
 
 func e911ErrorStatus(err error) int {
@@ -47,7 +47,7 @@ func (s *Server) handleDeviceE911Websheet(c *gin.Context) {
 	}
 	info, err := coord.StartWebsheet(c.Request.Context(), deviceIDParam(c))
 	if err != nil {
-		c.JSON(e911ErrorStatus(err), gin.H{"status": "error", "code": e911ErrorCode(err), "message": err.Error()})
+		fail(c, e911ErrorStatus(err), e911ErrorCode(err), err.Error())
 		return
 	}
 	c.JSON(http.StatusCreated, info)

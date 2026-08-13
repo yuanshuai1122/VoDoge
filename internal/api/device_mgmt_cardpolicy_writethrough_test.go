@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yuanshuai1122/vohive/internal/config"
 	"github.com/yuanshuai1122/vohive/internal/db"
 	"github.com/yuanshuai1122/vohive/internal/device"
-	"github.com/gin-gonic/gin"
 )
 
 func TestCardPolicyFromDeviceConfigMapping(t *testing.T) {
