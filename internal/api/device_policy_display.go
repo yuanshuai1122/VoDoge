@@ -29,8 +29,8 @@ func (s *Server) currentEffectiveDevicePolicy(deviceID string) (iccid string, ne
 			return w.CurrentICCID(), w.Config.NetworkEnabled, w.Config.VoWiFiEnabled, w.Config.IPVersion, w.Config.APN
 		}
 	}
-	off := resolveOfflineDevicePolicy(deviceID)
-	return db.CurrentICCIDForDevice(deviceID), off.NetworkEnabled, off.VoWiFiEnabled, off.IPVersion, off.APN
+	off := s.resolveOfflineDevicePolicy(deviceID)
+	return s.data().SIM.CurrentICCIDForDevice(deviceID), off.NetworkEnabled, off.VoWiFiEnabled, off.IPVersion, off.APN
 }
 
 // offlineDevicePolicy 是离线设备(无运行中 worker)用于展示的有效卡策略。
@@ -45,13 +45,13 @@ type offlineDevicePolicy struct {
 // resolveOfflineDevicePolicy 解析离线设备的有效策略用于 UI 展示：
 // device → 当前 ICCID → card_policies。无 ICCID 或无策略记录时返回安全默认。
 // SMS 恒为启用（写死系统语义），与 card_policies 无关。
-func resolveOfflineDevicePolicy(deviceID string) offlineDevicePolicy {
+func (s *Server) resolveOfflineDevicePolicy(deviceID string) offlineDevicePolicy {
 	out := offlineDevicePolicy{SMSEnabled: true, IPVersion: "v4"}
-	iccid := db.CurrentICCIDForDevice(deviceID)
+	iccid := s.data().SIM.CurrentICCIDForDevice(deviceID)
 	if iccid == "" {
 		return out
 	}
-	pol, err := db.GetCardPolicy(iccid)
+	pol, err := s.data().CardPolicy.Get(iccid)
 	if err != nil {
 		if errors.Is(err, db.ErrCardPolicyNotFound) {
 			return out

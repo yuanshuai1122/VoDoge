@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/internal/db"
 	"github.com/yuanshuai1122/vohive/internal/global"
 	"github.com/yuanshuai1122/vohive/internal/proxy/server"
 
@@ -114,7 +113,7 @@ func (s *Server) handleDeviceTraffic(c *gin.Context) {
 	}
 	iface := worker.Config.Interface
 	tag := deviceID + "@" + iface
-	ps, rx, tx, _ := db.GetLatestMinuteDeltas("iface", tag)
+	ps, rx, tx, _ := s.data().Traffic.LatestMinuteDeltas("iface", tag)
 	var ifaceObj any = nil
 	if iface != "" {
 		ifaceObj = gin.H{
@@ -154,7 +153,7 @@ func (s *Server) handleDeviceTraffic(c *gin.Context) {
 		if mode == "" {
 			mode = "socks5"
 		}
-		ips, irx, itx, _ := db.GetLatestMinuteDeltas("proxy_instance", inst.ID)
+		ips, irx, itx, _ := s.data().Traffic.LatestMinuteDeltas("proxy_instance", inst.ID)
 		if irx == 0 && itx == 0 {
 			continue
 		}
@@ -246,7 +245,7 @@ func (s *Server) handleStats(c *gin.Context) {
 		tags = append(tags, tag)
 	}
 
-	byTag, _ := db.GetLatestMinuteDeltasBatch("iface", tags)
+	byTag, _ := s.data().Traffic.LatestMinuteDeltasBatch("iface", tags)
 
 	deviceStats := make(map[string]map[string]int64)
 	for _, w := range workers {

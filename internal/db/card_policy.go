@@ -72,6 +72,21 @@ func GetCardPolicy(iccid string) (CardPolicy, error) {
 	return out, err
 }
 
+// ListCardPolicies 按最近更新排序列出全部策略。
+//
+// DB 未初始化时返回空列表而非报错：这个列表是设置页的只读展示，
+// 没有数据库就是"还没有任何策略"，不值得让页面整个失败。
+func ListCardPolicies() ([]CardPolicy, error) {
+	if DB == nil {
+		return nil, nil
+	}
+	var out []CardPolicy
+	if err := DB.Order("updated_at desc").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UpsertCardPolicy 写入/覆盖一行（归一化不变式后落库）。
 func UpsertCardPolicy(p CardPolicy) error {
 	if DB == nil {

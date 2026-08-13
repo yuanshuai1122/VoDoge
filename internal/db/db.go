@@ -907,8 +907,8 @@ func upsertSMSContactFromSMS(tx *gorm.DB, sms *SMS) error {
 			"last_type":      sms.Type,
 			// 必须限定表名：PostgreSQL 的 ON CONFLICT DO UPDATE 中，
 			// 裸 unread_count 会与 EXCLUDED 的同名列产生歧义（SQLSTATE 42702）。
-			"unread_count":   gorm.Expr("sms_contacts.unread_count + 1"),
-			"updated_at":     time.Now(),
+			"unread_count": gorm.Expr("sms_contacts.unread_count + 1"),
+			"updated_at":   time.Now(),
 		})
 	}
 

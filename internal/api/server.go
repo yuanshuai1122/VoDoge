@@ -31,14 +31,17 @@ import (
 
 // Server 是 API 服务器的核心结构
 type Server struct {
-	cfg         config.ServerConfig // HTTP 服务器配置
-	fullCfg     *config.Config      // 完整配置引用
-	pool        *device.Pool        // 设备工作器池
-	auth        config.WebConfig    // Web 认证配置
-	fs          http.FileSystem     // 静态文件系统
-	configPath  string              // 配置文件路径
-	proxyMgr    *server.Manager     // 代理实例管理器
-	trafficRT   realtimeTrafficSubscriber
+	cfg        config.ServerConfig // HTTP 服务器配置
+	fullCfg    *config.Config      // 完整配置引用
+	pool       *device.Pool        // 设备工作器池
+	auth       config.WebConfig    // Web 认证配置
+	fs         http.FileSystem     // 静态文件系统
+	configPath string              // 配置文件路径
+	proxyMgr   *server.Manager     // 代理实例管理器
+	trafficRT  realtimeTrafficSubscriber
+	// store 是本层唯一的持久化入口。handler 不再直接调 internal/db，
+	// 因此可以注入假实现来测试，不必连真库（见 internal/data/repo）。
+	store       *repo.Store
 	proxyRepo   repo.ProxyInstanceRepository
 	proxySyncMu sync.Mutex
 	voiceGW     *voicehost.Gateway
@@ -76,6 +79,7 @@ func New(cfg *config.Config, pool *device.Pool, fs http.FileSystem, proxyMgr *se
 	if strings.TrimSpace(configPath) == "" {
 		configPath = "config/config.yaml"
 	}
+	store := repo.NewStore()
 	s := &Server{
 		cfg:           cfg.Server,
 		fullCfg:       cfg,
@@ -86,7 +90,8 @@ func New(cfg *config.Config, pool *device.Pool, fs http.FileSystem, proxyMgr *se
 		proxyMgr:      proxyMgr,
 		voiceGW:       voiceGW,
 		notifyMgr:     notifyMgr,
-		proxyRepo:     repo.NewDBRepo(),
+		store:         store,
+		proxyRepo:     store.ProxyInstance,
 		websheets:     vwebsheet.New(vwebsheet.Config{BasePath: "/api/websheets"}),
 		loginAttempts: make(map[string]loginAttempt),
 		shutdownCh:    make(chan struct{}),
@@ -94,6 +99,21 @@ func New(cfg *config.Config, pool *device.Pool, fs http.FileSystem, proxyMgr *se
 	}
 
 	return s
+}
+
+// defaultStore 是未显式注入 store 时的回退。
+//
+// 直接构造 &Server{...} 的测试有几十处，逐个补 store 字段只会制造噪音；
+// 回退到真实实现后它们的行为与从前完全一致（本来就在调 internal/db）。
+// 需要脱库的测试显式注入假实现即可。
+var defaultStore = repo.NewStore()
+
+// data 返回本次请求应使用的持久化入口。
+func (s *Server) data() *repo.Store {
+	if s.store != nil {
+		return s.store
+	}
+	return defaultStore
 }
 
 func (s *Server) SetRealtimeTraffic(m *proxytraffic.RealtimeManager) {

@@ -5,8 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/db"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,7 +16,7 @@ func (s *Server) handleTrafficAnalysis(c *gin.Context) {
 	deviceID := strings.TrimSpace(c.Query("device_id"))
 	now := time.Now()
 
-	buckets, chartData, err := db.GetTrafficAnalysisWithChart(rng, deviceID, now)
+	buckets, chartData, err := s.data().Traffic.AnalysisWithChart(rng, deviceID, now)
 	if err != nil {
 		fail(c, http.StatusBadRequest, "", err.Error())
 		return

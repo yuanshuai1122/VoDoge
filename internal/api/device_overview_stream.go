@@ -120,7 +120,7 @@ func (s *Server) handleDeviceMgmtOverviewStreamSingle(c *gin.Context) {
 			item = s.buildOverviewLiteDetailItemFromWorker(w, overviewDisplayConfig(w.Config, *md, true), status, &trueVal)
 			if overviewRealtimeTrafficEnabled(item) {
 				tag := w.ID + "@" + md.Interface
-				ps, rx, tx, _ := db.GetLatestMinuteDeltas("iface", tag)
+				ps, rx, tx, _ := s.data().Traffic.LatestMinuteDeltas("iface", tag)
 				item.Traffic, item.TrafficRaw, item.TrafficMeta = buildTrafficOverviewFields(md.Interface, db.LatestMinuteDeltas{
 					PeriodStart: ps,
 					RxBytes:     rx,
@@ -129,7 +129,7 @@ func (s *Server) handleDeviceMgmtOverviewStreamSingle(c *gin.Context) {
 			}
 		} else {
 			trueVal := true
-			pol := resolveOfflineDevicePolicy(deviceID)
+			pol := s.resolveOfflineDevicePolicy(deviceID)
 			item = deviceMgmtOverviewLiteItem{
 				ID:                     md.ID,
 				Name:                   md.Name,

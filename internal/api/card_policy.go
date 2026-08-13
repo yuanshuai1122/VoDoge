@@ -21,14 +21,14 @@ func (s *Server) patchCardPolicyForDevice(deviceID string, mutate func(*db.CardP
 	if iccid == "" {
 		return "", false, nil
 	}
-	p, err := db.ResolveCardPolicy(iccid)
+	p, err := s.data().CardPolicy.Resolve(iccid)
 	if err != nil {
 		return iccid, false, fmt.Errorf("获取卡策略失败: %w", err)
 	}
 	mutate(&p)
 	p.Source = "user"
 	db.NormalizeCardPolicy(&p)
-	if err := db.UpsertCardPolicy(p); err != nil {
+	if err := s.data().CardPolicy.Upsert(p); err != nil {
 		return iccid, false, fmt.Errorf("保存卡策略失败: %w", err)
 	}
 	return iccid, true, nil
@@ -36,7 +36,7 @@ func (s *Server) patchCardPolicyForDevice(deviceID string, mutate func(*db.CardP
 
 func (s *Server) handleGetCardPolicy(c *gin.Context) {
 	iccid := c.Param("iccid")
-	pol, err := db.GetCardPolicy(iccid)
+	pol, err := s.data().CardPolicy.Get(iccid)
 	if errors.Is(err, db.ErrCardPolicyNotFound) {
 		// 未建档则返回默认模板（不落库，读端点保持只读语义）
 		c.JSON(http.StatusOK, db.DefaultCardPolicy(iccid))
@@ -50,12 +50,14 @@ func (s *Server) handleGetCardPolicy(c *gin.Context) {
 }
 
 func (s *Server) handleListCardPolicies(c *gin.Context) {
-	var out []db.CardPolicy
-	if db.DB != nil {
-		if err := db.DB.Order("updated_at desc").Find(&out).Error; err != nil {
-			fail(c, http.StatusInternalServerError, "", err.Error())
-			return
-		}
+	out, err := s.data().CardPolicy.List()
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "", err.Error())
+		return
+	}
+	if out == nil {
+		// 前端按数组消费，null 会让 .map 崩掉
+		out = []db.CardPolicy{}
 	}
 	c.JSON(http.StatusOK, gin.H{"policies": out})
 }
@@ -74,7 +76,7 @@ func (s *Server) handlePutCardPolicy(c *gin.Context) {
 	}
 
 	// 查出当前策略（查不到则用默认值）
-	pol, err := db.GetCardPolicy(iccid)
+	pol, err := s.data().CardPolicy.Get(iccid)
 	if err != nil {
 		pol = db.DefaultCardPolicy(iccid)
 	}
@@ -93,7 +95,7 @@ func (s *Server) handlePutCardPolicy(c *gin.Context) {
 	}
 	pol.Source = "user"
 
-	if err := db.UpsertCardPolicy(pol); err != nil {
+	if err := s.data().CardPolicy.Upsert(pol); err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}

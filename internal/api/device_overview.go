@@ -80,11 +80,11 @@ func registrationStateLabel(regStatus int) string {
 // 零路径持久化后持久化侧已不含这些路径,必须用运行时真实值展示,否则在线设备会被
 // 误判为“未探测到数据控制端”、流量按空接口名也统计不到。
 // cardPolicyVoWiFiEnabled 从卡策略读取用户意图，ICCID 为空或查不到时降级用 fallback。
-func cardPolicyVoWiFiEnabled(iccid string, fallback bool) bool {
+func (s *Server) cardPolicyVoWiFiEnabled(iccid string, fallback bool) bool {
 	if iccid == "" {
 		return fallback
 	}
-	pol, err := db.GetCardPolicy(iccid)
+	pol, err := s.data().CardPolicy.Get(iccid)
 	if err != nil {
 		return fallback
 	}
@@ -138,7 +138,7 @@ func (s *Server) handleDeviceMgmtOverview(c *gin.Context) {
 		tagByID[w.ID] = tag
 		tags = append(tags, tag)
 	}
-	byTag, _ := db.GetLatestMinuteDeltasBatch("iface", tags)
+	byTag, _ := s.data().Traffic.LatestMinuteDeltasBatch("iface", tags)
 	now := time.Now()
 
 	workerByID := map[string]bool{}
@@ -461,11 +461,11 @@ func (s *Server) buildOverviewLiteItemFromWorkerWithModem(w *device.Worker, cfg 
 		ATPort:                 w.ResolvedATPort(),
 		USBPath:                cfg.USBPath,
 		AudioDevice:            cfg.AudioDevice,
-		LocalPhone:             overviewLocalPhone(effectiveOverviewIMSI(w, status), strings.TrimSpace(status.ICCID)),
+		LocalPhone:             s.overviewLocalPhone(effectiveOverviewIMSI(w, status), strings.TrimSpace(status.ICCID)),
 		E911SetupAvailable:     e911.SetupAvailable(modemStatus),
 		SMSEnabled:             cfg.SMSEnabled,
 		NetworkEnabled:         cfg.NetworkEnabled,
-		VoWiFiEnabled:          cardPolicyVoWiFiEnabled(strings.TrimSpace(status.ICCID), cfg.VoWiFiEnabled),
+		VoWiFiEnabled:          s.cardPolicyVoWiFiEnabled(strings.TrimSpace(status.ICCID), cfg.VoWiFiEnabled),
 		VoWiFiActive:           s.pool.IsVoWiFiActive(w.ID),
 		VoWiFiRuntime:          s.getVoWiFiRuntimeDTO(w.ID),
 		RadioLiveOK:            radioLiveOK,
@@ -509,25 +509,25 @@ func effectiveOverviewIMSI(w *device.Worker, status modem.DeviceStatus) string {
 	return strings.TrimSpace(w.GetCachedIMSI())
 }
 
-func overviewLocalPhoneByIMSI(imsi string) string {
+func (s *Server) overviewLocalPhoneByIMSI(imsi string) string {
 	imsi = strings.TrimSpace(imsi)
 	if imsi == "" {
 		return ""
 	}
-	phone, err := db.GetSIMCardPhoneNumberByIMSI(imsi)
+	phone, err := s.data().SIM.PhoneByIMSI(imsi)
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(phone)
 }
 
-func overviewLocalPhone(imsi, iccid string) string {
+func (s *Server) overviewLocalPhone(imsi, iccid string) string {
 	imsi = strings.TrimSpace(imsi)
 	iccid = strings.TrimSpace(iccid)
 	if imsi == "" && iccid == "" {
 		return ""
 	}
-	phone, err := db.GetPhoneNumberByIMSIOrICCID(imsi, iccid)
+	phone, err := s.data().SIM.PhoneByIMSIOrICCID(imsi, iccid)
 	if err != nil {
 		return ""
 	}
@@ -572,7 +572,7 @@ func (s *Server) handleDeviceMgmtOverviewLite(c *gin.Context) {
 			item.ControlOnline = controlOnline
 			s.applyLifecycleToOverviewLiteItem(&item, w, cfg)
 			tag := w.ID + "@" + cfg.Interface
-			ps, rx, tx, _ := db.GetLatestMinuteDeltas("iface", tag)
+			ps, rx, tx, _ := s.data().Traffic.LatestMinuteDeltas("iface", tag)
 			item.Traffic, item.TrafficRaw, item.TrafficMeta = buildTrafficOverviewFields(cfg.Interface, db.LatestMinuteDeltas{
 				PeriodStart: ps,
 				RxBytes:     rx,
@@ -583,7 +583,7 @@ func (s *Server) handleDeviceMgmtOverviewLite(c *gin.Context) {
 		}
 
 		if dc, err := config.GetDeviceByID(id); err == nil && dc != nil {
-			pol := resolveOfflineDevicePolicy(id)
+			pol := s.resolveOfflineDevicePolicy(id)
 			item := deviceMgmtOverviewLiteItem{
 				ID:                     dc.ID,
 				Name:                   dc.Name,
@@ -628,7 +628,7 @@ func (s *Server) handleDeviceMgmtOverviewLite(c *gin.Context) {
 		tagByID[w.ID] = tag
 		tags = append(tags, tag)
 	}
-	byTag, _ := db.GetLatestMinuteDeltasBatch("iface", tags)
+	byTag, _ := s.data().Traffic.LatestMinuteDeltasBatch("iface", tags)
 	now := time.Now()
 
 	workerByID := map[string]bool{}

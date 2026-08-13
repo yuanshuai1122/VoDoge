@@ -12,6 +12,22 @@ import (
 	"github.com/yuanshuai1122/vohive/internal/device"
 )
 
+// 这个测试**故意**用真库：它验的是"保存设备配置不会覆写 card_policies"这条
+// 跨层写穿不变式，假实现替换不了——换成 fake 就等于自己断言自己。
+// 其余只验取值逻辑的测试已经改用 repo.NewFakeStore()，不再需要数据库。
+func initPolicyTestDB(t *testing.T) {
+	t.Helper()
+	db.OpenTestDB(t)
+	t.Cleanup(func() {
+		if db.DB != nil {
+			if sqlDB, err := db.DB.DB(); err == nil && sqlDB != nil {
+				_ = sqlDB.Close()
+			}
+			db.DB = nil
+		}
+	})
+}
+
 func TestCardPolicyFromDeviceConfigMapping(t *testing.T) {
 	cfg := config.DeviceConfig{
 		NetworkEnabled: true, VoWiFiEnabled: true, IPVersion: "v4v6", APN: "ims",

@@ -40,7 +40,7 @@ func probeUpstreamProxyConfig(c *gin.Context, proxy db.UpstreamProxy) (upstreamp
 
 // handleListUpstreamProxies 获取所有前置代理实例
 func (s *Server) handleListUpstreamProxies(c *gin.Context) {
-	proxies, err := db.ListUpstreamProxies()
+	proxies, err := s.data().UpstreamProxy.List()
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
@@ -75,7 +75,7 @@ func (s *Server) handleCreateUpstreamProxy(c *gin.Context) {
 		})
 		return
 	}
-	if err := db.UpsertUpstreamProxy(req); err != nil {
+	if err := s.data().UpstreamProxy.Upsert(req); err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
@@ -94,7 +94,7 @@ func (s *Server) handleUpdateUpstreamProxy(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "", "参数解析失败: "+err.Error())
 		return
 	}
-	existing, err := db.GetUpstreamProxyByID(id)
+	existing, err := s.data().UpstreamProxy.Get(id)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
@@ -116,7 +116,7 @@ func (s *Server) handleUpdateUpstreamProxy(c *gin.Context) {
 		})
 		return
 	}
-	if err := db.UpsertUpstreamProxy(req); err != nil {
+	if err := s.data().UpstreamProxy.Upsert(req); err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
@@ -130,7 +130,7 @@ func (s *Server) handleUpdateUpstreamProxy(c *gin.Context) {
 // handleDeleteUpstreamProxy 删除前置代理实例
 func (s *Server) handleDeleteUpstreamProxy(c *gin.Context) {
 	id := upstreamProxyIDParam(c)
-	if err := db.DeleteUpstreamProxy(id); err != nil {
+	if err := s.data().UpstreamProxy.Delete(id); err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
@@ -140,7 +140,7 @@ func (s *Server) handleDeleteUpstreamProxy(c *gin.Context) {
 // handleProbeUpstreamProxy 探测前置代理是否支持标准 Socks5 + UDP Associate。
 func (s *Server) handleProbeUpstreamProxy(c *gin.Context) {
 	id := upstreamProxyIDParam(c)
-	proxy, err := db.GetUpstreamProxyByID(id)
+	proxy, err := s.data().UpstreamProxy.Get(id)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
@@ -200,7 +200,7 @@ func (s *Server) handleListUpstreamProxyCountries(c *gin.Context) {
 }
 
 func (s *Server) handleListUpstreamProxyCountryRules(c *gin.Context) {
-	rules, err := db.ListUpstreamProxyCountryRules()
+	rules, err := s.data().UpstreamProxy.ListCountryRules()
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
@@ -230,7 +230,7 @@ func (s *Server) handleUpsertUpstreamProxyCountryRule(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "", "参数解析失败: "+err.Error())
 		return
 	}
-	proxy, err := db.GetUpstreamProxyByID(req.UpstreamProxyID)
+	proxy, err := s.data().UpstreamProxy.Get(req.UpstreamProxyID)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
@@ -244,7 +244,7 @@ func (s *Server) handleUpsertUpstreamProxyCountryRule(c *gin.Context) {
 		UpstreamProxyID: proxy.ID,
 		Enabled:         req.Enabled,
 	}
-	if err := db.UpsertUpstreamProxyCountryRule(rule); err != nil {
+	if err := s.data().UpstreamProxy.UpsertCountryRule(rule); err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}
@@ -255,7 +255,7 @@ func (s *Server) handleUpsertUpstreamProxyCountryRule(c *gin.Context) {
 
 func (s *Server) handleDeleteUpstreamProxyCountryRule(c *gin.Context) {
 	countryCode := upstreamproxy.NormalizeCountryCode(countryCodeParam(c))
-	if err := db.DeleteUpstreamProxyCountryRule(countryCode); err != nil {
+	if err := s.data().UpstreamProxy.DeleteCountryRule(countryCode); err != nil {
 		fail(c, http.StatusInternalServerError, "", err.Error())
 		return
 	}

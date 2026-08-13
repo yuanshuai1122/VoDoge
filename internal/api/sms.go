@@ -132,7 +132,7 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 		if err := worker.SendSMSWithOptions(req.Phone, req.Message, sendOpts); err != nil {
 			// 发送失败，入库记录（status=3）
 			if imsi != "" {
-				_ = db.SaveSMS(imsi, worker.ID, req.Phone, req.Message, 2, 3, time.Now())
+				_ = s.data().SMS.Save(imsi, "", worker.ID, req.Phone, req.Message, 2, 3, time.Now())
 			}
 			failWith(c, http.StatusInternalServerError, "", "发送失败: "+err.Error(), gin.H{
 				"device": deviceID,
@@ -142,7 +142,7 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 		}
 		// 发送成功，入库记录（status=2）
 		if imsi != "" {
-			_ = db.SaveSMS(imsi, worker.ID, req.Phone, req.Message, 2, 2, time.Now())
+			_ = s.data().SMS.Save(imsi, "", worker.ID, req.Phone, req.Message, 2, 2, time.Now())
 		}
 	}
 
@@ -257,7 +257,7 @@ func (s *Server) handleGetSMSInbox(c *gin.Context) {
 	// 如果未指定设备 ID 且只有一个设备，默认使用该设备
 	// 如果未指定设备 ID，则返回全局最近短信
 	if deviceID == "" || deviceID == "all" {
-		smsList, err := db.GetRecentSMS(limit)
+		smsList, err := s.data().SMS.Recent(limit)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, "", "查询数据库失败: "+err.Error())
 			return
@@ -318,7 +318,7 @@ func (s *Server) handleGetSMSInbox(c *gin.Context) {
 		return
 	}
 
-	smsList, err := db.GetSMSByICCID(iccid, limit)
+	smsList, err := s.data().SMS.ByICCID(iccid, limit)
 	if err != nil {
 		logger.Error("查询数据库短信失败", "err", err, "iccid", iccid)
 		fail(c, http.StatusInternalServerError, "", "查询数据库失败: "+err.Error())
@@ -378,7 +378,7 @@ func (s *Server) resolveSMSICCID(deviceID, imsi string) (string, int, string) {
 		if imsi == "" {
 			return "", http.StatusBadRequest, "缺少 imsi 参数（device_id=all 时必须指定）"
 		}
-		return db.GetICCIDForIMSI(imsi), 0, ""
+		return s.data().SIM.ICCIDForIMSI(imsi), 0, ""
 	}
 
 	worker := s.pool.GetWorker(deviceID)
@@ -421,9 +421,9 @@ func (s *Server) handleGetSMSContacts(c *gin.Context) {
 	var contacts []db.SMSContact
 	var err error
 	if iccid != "" {
-		contacts, err = db.GetSMSContactsByICCID(iccid, limit, beforeTs, beforePeer)
+		contacts, err = s.data().SMS.ContactsByICCID(iccid, limit, beforeTs, beforePeer)
 	} else {
-		contacts, err = db.GetSMSContacts(limit, beforeTs, beforePeer)
+		contacts, err = s.data().SMS.Contacts(limit, beforeTs, beforePeer)
 	}
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "", "查询数据库失败: "+err.Error())
@@ -464,7 +464,7 @@ func (s *Server) handleGetSMSContacts(c *gin.Context) {
 
 	// 手机号仍通过 IMSI 从 sim_subscriptions 查询（sim_subscriptions 主键尚为 IMSI）。
 	imsiPhone := make(map[string]string)
-	if phones, err := db.GetSIMPhoneNumbersByIMSI(); err == nil {
+	if phones, err := s.data().SIM.PhonesByIMSI(); err == nil {
 		imsiPhone = phones
 	}
 
@@ -519,7 +519,7 @@ func (s *Server) handleGetSMSThread(c *gin.Context) {
 		iccid = resolved
 	}
 
-	list, err := db.GetSMSByICCIDAndPeer(iccid, peer, limit, beforeTs, beforeID)
+	list, err := s.data().SMS.ThreadByICCID(iccid, peer, limit, beforeTs, beforeID)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "", "查询数据库失败: "+err.Error())
 		return
@@ -566,7 +566,7 @@ func (s *Server) handleDeleteSMSMessage(c *gin.Context) {
 		return
 	}
 
-	threadEmpty, imsi, peer, err := db.DeleteSMSByID(uint(id64))
+	threadEmpty, imsi, peer, err := s.data().SMS.DeleteByID(uint(id64))
 	if err != nil {
 		if errors.Is(err, db.ErrSMSNotFound) {
 			fail(c, http.StatusNotFound, "", "短信不存在")
@@ -599,7 +599,7 @@ func (s *Server) handleDeleteSMSThread(c *gin.Context) {
 		return
 	}
 
-	deleted, err := db.DeleteSMSByICCIDAndPeer(resolved, peer)
+	deleted, err := s.data().SMS.DeleteThreadByICCID(resolved, peer)
 	if err != nil {
 		if errors.Is(err, db.ErrSMSNotFound) {
 			fail(c, http.StatusNotFound, "", "短信会话不存在")
