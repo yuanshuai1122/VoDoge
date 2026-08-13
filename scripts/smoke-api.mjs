@@ -155,17 +155,26 @@ async function main() {
 
   // SSE 走 query token（后端仅对流式端点白名单开放）
   await step("日志流 SSE", async () => {
-    const res = await fetch(
-      `${BASE}/api/logs/stream?level=info&token=${encodeURIComponent(token)}`,
-      { signal: AbortSignal.timeout(8000) },
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const ct = res.headers.get("content-type") ?? "";
-    if (!ct.includes("text/event-stream")) {
-      throw new Error(`content-type 非 SSE：${ct}`);
+    // 用 AbortController 而非读完 body：这是个不会结束的流。
+    // 必须 abort 而不是 body.cancel()——后者在 Windows 上会让 libuv 在
+    // 进程退出时命中 UV_HANDLE_CLOSING 断言。
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 8000);
+    try {
+      const res = await fetch(
+        `${BASE}/api/logs/stream?level=info&token=${encodeURIComponent(token)}`,
+        { signal: ac.signal },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("text/event-stream")) {
+        throw new Error(`content-type 非 SSE：${ct}`);
+      }
+      return "已建立事件流";
+    } finally {
+      clearTimeout(timer);
+      ac.abort();
     }
-    res.body?.cancel();
-    return "已建立事件流";
   });
 
   const to = process.env.SMOKE_SEND_TO;
@@ -182,10 +191,11 @@ async function main() {
   }
 
   console.log(`\n${failures === 0 ? "全部通过" : `${failures} 项失败`}`);
-  process.exit(failures === 0 ? 0 : 1);
+  // 设置退出码而非强制 exit，让 Node 自行清理已中止的连接
+  process.exitCode = failures === 0 ? 0 : 1;
 }
 
 main().catch((e) => {
   console.error("冒烟脚本异常:", e.message);
-  process.exit(1);
+  process.exitCode = 1;
 });
