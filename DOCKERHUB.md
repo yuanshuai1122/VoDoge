@@ -1,10 +1,13 @@
 # VoHive
 
-4G/5G 模组管理平台 - 支持移远 EC20/EC25/RM500Q 等移远模组的统一管理与代理服务�?
+面向高通 4G/LTE/5G 模组（Quectel EC20/EC25/EC21/EG25/EM20 等）的综合管理与代理服务平台。
 
-## 🚀 快速开�?
+> **本版本需要 PostgreSQL。** 服务不再内置文件数据库；未提供可用的数据库连接串时会直接退出。
+> 从 v0.x 的 SQLite 版本升级时，旧的 `data/vohive.db` **不会自动迁移**。
 
-### 1. 创建配置目录
+## 🚀 快速开始
+
+### 1. 准备目录
 
 ```bash
 mkdir -p vohive/{config,data,logs}
@@ -21,118 +24,148 @@ server:
 
 web:
   username: admin
-  # 首次登录后请�?Web 界面修改密码
+  # 首次登录后请在 Web 界面修改密码
   password: admin123
-
 EOF
 ```
 
-### 3. 使用 Docker Compose 启动
+> 数据库连接串通过环境变量 `VOHIVE_DB_DSN` 注入（见下方 compose），
+> 优先级高于配置文件里的 `database.dsn`。
 
-创建 `docker-compose.yml`:
+### 3. 启动
+
+创建 `docker-compose.yml`：
 
 ```yaml
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vohive-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vohive
+      POSTGRES_PASSWORD: vohive
+      POSTGRES_DB: vohive
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vohive -d vohive"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   vohive:
     image: ghcr.io/yuanshuai1122/vohive:latest
     container_name: vohive
     restart: unless-stopped
-    ports:
-      - "7575:7575"
+    network_mode: host
+    privileged: true
     volumes:
-      # 配置文件 (首次运行需创建)
       - ./config:/app/config
       - ./data:/app/data
-      # 日志目录
       - ./logs:/app/logs
+      # USB 模组透传
+      - /dev:/dev
     environment:
       - TZ=Asia/Shanghai
       - CONFIG_PATH=/app/config/config.yaml
-      # 代理服务�?可�?
-      - HTTPS_PROXY=http://proxy-ip:port
-    # 需要访问宿主机设备时启用以下配�?
-    privileged: true
-    devices:
-      # USB 设备透传
-      - /dev/:/dev/
-    network_mode: host
-```
+      - VOHIVE_DB_DSN=host=127.0.0.1 user=vohive password=vohive dbname=vohive port=5432 sslmode=disable TimeZone=UTC
+      # 可选：访问 Telegram 等外部服务的代理
+      # - HTTPS_PROXY=http://proxy-ip:port
+    depends_on:
+      postgres:
+        condition: service_healthy
 
-启动服务�?
+volumes:
+  pgdata:
+```
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-### 4. 访问 Web 界面
+> `network_mode: host` 下容器与宿主共享网络，因此 DSN 用 `127.0.0.1`。
+> 若改用端口映射（如 Windows/Docker Desktop），请把 host 改为 `postgres`
+> 并为 vohive 加上 `ports: ["7575:7575"]`。
 
-打开浏览器访�? `http://YOUR_IP:7575`
+### 4. 访问
 
-默认账号: `admin` / `admin123`
+浏览器打开 `http://YOUR_IP:7575`，默认账号 `admin` / `admin123`。
 
 ## 📦 镜像标签
 
 | 标签 | 说明 |
 |------|------|
 | `latest` | 最新稳定版 |
-| `vX.X.X` | 指定版本�?|
-| `main` | 开发版 (可能不稳�? |
+| `vX.X.X` | 指定版本号 |
+| `main` | 开发版（可能不稳定） |
 
 ## 🔧 环境变量
 
-| 变量 | 默认�?| 说明 |
+| 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `TZ` | `UTC` | 时区 |
+| `VOHIVE_DB_DSN` | — | **必需**。PostgreSQL 连接串；为空或连不上时进程退出 |
+| `DATABASE_URL` | — | `VOHIVE_DB_DSN` 未设置时的备选 |
 | `CONFIG_PATH` | `/app/config/config.yaml` | 配置文件路径 |
+| `TZ` | `UTC` | 时区 |
+| `HTTPS_PROXY` | — | 外部服务代理（如 Telegram API） |
 
-## 📁 数据�?
+## 📁 数据卷
 
 | 路径 | 说明 |
 |------|------|
-| `/app/config` | 配置文件目录 |
-| `/app/data` | 数据库存�?|
+| `/app/config` | 配置文件 |
+| `/app/data` | 运行期缓存（如 MCC/MNC 表）；**业务数据在 PostgreSQL** |
 | `/app/logs` | 日志文件 |
+
+## 💾 备份
+
+业务数据全部在 PostgreSQL，备份方式是 `pg_dump`，不再是拷贝数据库文件：
+
+```bash
+docker exec vohive-postgres pg_dump -U vohive vohive > vohive-$(date +%F).sql
+```
+
+恢复：
+
+```bash
+cat vohive-2026-01-01.sql | docker exec -i vohive-postgres psql -U vohive -d vohive
+```
 
 ## 🤖 Telegram Bot
 
-支持通过 Telegram Bot 远程管理设备。在 Web 界面 **设置 �?通知** 中配置�?
+支持通过 Telegram Bot 远程管理设备，在 Web 界面 **系统设置 → 通知** 中配置。
 
-### 配置步骤
+1. 通过 [@BotFather](https://t.me/BotFather) 创建 Bot，获取 Token
+2. 获取你的 Chat ID（可通过 [@userinfobot](https://t.me/userinfobot) 查询）
+3. 在设置页填入 Bot Token 与 Chat ID
+4. 若服务器无法直连 Telegram，填写 TG API 代理地址
 
-1. 通过 [@BotFather](https://t.me/BotFather) 创建 Bot，获�?Token
-2. 获取你的 Chat ID（可通过 [@userinfobot](https://t.me/userinfobot) 查询�?
-3. �?VoHive 设置页面填入 Bot Token �?Chat ID
-4. 如服务器无法直连 Telegram，填�?TG API 代理地址
-
-### 支持的命�?
+### 支持的命令
 
 | 命令 | 说明 |
 |------|------|
 | `/list` | 列出设备列表 |
 | `/rotate <设备>` | 重置设备 IP |
-| `/sms <设备>` | 查看最近短�?|
-| `/send <设备> <号码> <内容>` | 发送短�?|
+| `/sms <设备>` | 查看最近短信 |
+| `/send <设备> <号码> <内容>` | 发送短信 |
 
-### 代理配置
-
-中国大陆服务器需要配置代理才能访�?Telegram API�?
-
-```yaml
-environment:
-  - HTTPS_PROXY=http://your-proxy:port
-```
-
-或在 Web 界面�?**TG API 代理** 字段填写 Cloudflare Worker 地址�?
-
-## 🖥�?支持架构
+## 🖥 支持架构
 
 - `linux/amd64` (x86_64)
 - `linux/arm64` (ARM64/aarch64)
 
+## ⚠️ 注意事项
+
+- **设备透传**：管理模组需要访问 USB 设备，因此需要 `privileged` 与 `/dev` 挂载。
+  Windows/macOS 的 Docker Desktop 没有 USB 透传，设备相关功能不可用
+  （Windows 可尝试 WSL2 + usbipd）。
+- **端口**：`network_mode: host` 时无需映射；否则需自行暴露 7575。
+
 ## 📖 文档
 
-完整文档请访�? [GitHub](https://github.com/yuanshuai1122/vohive)
+完整文档见 [GitHub](https://github.com/yuanshuai1122/vohive)。
 
 ## 📝 License
 
-Proprietary (see LICENSE)
+Proprietary，详见 LICENSE。

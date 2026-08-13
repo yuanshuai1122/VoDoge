@@ -63,6 +63,14 @@ npm install --prefix web && npm run dev --prefix web
 node scripts/smoke-api.mjs
 ```
 
+### 备份
+
+业务数据全部在 PostgreSQL，备份用 `pg_dump`，不再是拷贝数据库文件：
+
+```bash
+docker exec vohive-postgres pg_dump -U vohive vohive > vohive-$(date +%F).sql
+```
+
 ## 文档
 
 见 [`docs/README.md`](docs/README.md)。
