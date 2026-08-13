@@ -45,6 +45,7 @@
 | 端点 | 说明 |
 |------|------|
 | `GET /api/docs`、`/api/docs/assets/*` | Swagger UI 页面 |
+| `GET /api/openapi.yaml`、`/api/openapi.json` | 接口定义。**2026-08-13 起免鉴权**，与承载它的 Swagger UI 同级；此前 spec 需鉴权导致页面永远空白 |
 | `POST /api/auth/login` | 登录 |
 | `POST /api/rotateip` | **并非无鉴权**：handler 内经 `authorizeRotate` 校验，支持 Bearer 或 username/password 双模式（POST-only + 限流），供外部脚本调用 |
 | `OPTIONS /api/logs/stream` | CORS 预检 |
@@ -53,8 +54,7 @@
 > `POST /api/system/uninstall` 原本也在此列且**完全无校验**（handler 进来即执行自毁）。
 > 2026-08-12 已移入鉴权组，现需 Bearer token。
 
-> `GET /api/openapi.yaml` / `.json` 反而**需要**鉴权，而承载它的 Swagger UI 页面不需要——
-> 直接打开 `/api/docs` 会因为拉不到 spec 而空白。
+> 另有免鉴权的 `GET /ping`（不在 `/api` 下），只返回 `{"message":"pong"}`，供外部监控使用。
 
 ---
 
@@ -162,7 +162,7 @@
 | `/api/auth/login` | POST | 登录 |
 | `/api/settings/password` | POST | 改密（`{old_password,new_password,confirm_password}`，成功后必须重新登录） |
 | `/api/system/info` | GET | 版本 / 构建信息 |
-| `/api/health` | GET | 健康检查（**在鉴权组内**，注释称"外部监控用"与实现矛盾） |
+| `/api/health` | GET | 逐设备健康明细（设备 ID/信号/联网），**需鉴权**。外部监控请用免鉴权的 `GET /ping` |
 
 ### 5.2 仪表盘
 
@@ -318,8 +318,8 @@ E911 websheet 本质是把运营商网页代理进本服务。前端按「新窗
 | 2 | ~~`POST /api/rotateip` 无鉴权~~ | ❌ **判断有误**：handler 内有 `authorizeRotate` 双模式校验，非漏洞，未改动 |
 | 3 | SSE 端点无法用原生 EventSource | ✅ **已修复**：白名单 `?token=` 回退 + 访问日志脱敏 |
 | 4 | eSIM 激活码经 URL query 传输 | ⬜ 未处理。`confirmation_code` 走 GET query，会进浏览器历史。改为 POST body 需同时改前后端 |
-| 5 | `/api/docs` 免鉴权但其 spec 需鉴权，页面必然空白 | ⬜ 未处理 |
-| 6 | `/api/health` 需鉴权，与"外部监控用"注释矛盾 | ⬜ 未处理，外部监控接不上 |
+| 5 | `/api/docs` 免鉴权但其 spec 需鉴权，页面必然空白 | ✅ **已修复**（2026-08-13）spec 移至免鉴权区 |
+| 6 | `/api/health` 需鉴权，与"外部监控用"注释矛盾 | ✅ **已澄清**：该端点返回逐设备明细（设备 ID/信号），理应鉴权；注释已更正，外部监控应改用免鉴权的 `/ping` |
 
 第 4–6 条不阻塞前端开工，建议后续单独处理。
 

@@ -247,6 +247,11 @@ func (s *Server) newRouter() *gin.Engine {
 	// 作为能力凭证，且需接收运营商侧回调。
 	api.GET("/docs", s.handleAPIDocs)
 	api.GET("/docs/assets/*filepath", s.handleDocsAsset)
+	// spec 必须与承载它的 Swagger UI 页面同级：/docs 免鉴权而 spec 需鉴权时，
+	// 页面能打开却永远拉不到定义，只会一直空白。
+	// 这里公开的只是接口形状，spec 中描述的端点本身依然需要 Bearer token。
+	api.GET("/openapi.yaml", s.handleOpenAPIYAML)
+	api.GET("/openapi.json", s.handleOpenAPIJSON)
 	api.POST("/auth/login", s.handleLogin)
 	api.POST("/rotateip", s.handleRotate)
 	api.OPTIONS("/logs/stream", s.handleLogStreamOptions)
@@ -255,13 +260,12 @@ func (s *Server) newRouter() *gin.Engine {
 	// 以下接口需要鉴权
 	api.Use(s.authMiddleware())
 	{
-		api.GET("/openapi.yaml", s.handleOpenAPIYAML)
-		api.GET("/openapi.json", s.handleOpenAPIJSON)
-
 		// ===== 仪表盘 =====
 		api.GET("/dashboard/devices", s.handleListDevices)          // 获取所有设备概览（仪表盘卡片用）
 		api.GET("/devices/:device_id/status", s.handleStatusDetail) // 获取单个设备详细状态
-		api.GET("/health", s.handleHealth)                          // 健康检查（外部监控用）
+		// 返回逐设备的健康明细（设备 ID、信号、联网状态），因此需要鉴权。
+		// 外部监控请用免鉴权的 GET /ping，那个只回 pong、不含任何设备信息。
+		api.GET("/health", s.handleHealth)
 		api.GET("/traffic/analysis", s.handleTrafficAnalysis)       // 流量分析统计
 
 		// ===== 短信 =====
