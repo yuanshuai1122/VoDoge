@@ -104,6 +104,46 @@ type Session struct {
 	callbackCh chan Callback
 	doneCh     chan struct{}
 	doneOnce   sync.Once
+
+	// callbackCh 只保留最新一条且会被消费掉，无法用来回答"现在到哪一步了"。
+	// 轮询状态的调用方需要一个可以重复读的快照，故另存一份。
+	stateMu      sync.Mutex
+	lastCallback Callback
+	hasCallback  bool
+}
+
+// Status 是会话的可轮询快照。
+//
+// 承载表单跑在运营商自己的页面里，跨源无法观察其完成与否；前端只能靠轮询这个
+// 快照来知道流程结束了没有——所以会话完成后不能立刻销毁，要留到 TTL 到期。
+type Status struct {
+	ID         string    `json:"id"`
+	Finished   bool      `json:"finished"`
+	Event      string    `json:"event,omitempty"`
+	ResultCode string    `json:"result_code,omitempty"`
+	Title      string    `json:"title,omitempty"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+func (s *Session) Status() Status {
+	st := Status{
+		ID:        s.id,
+		Title:     s.title,
+		ExpiresAt: s.expiresAt,
+	}
+	select {
+	case <-s.doneCh:
+		st.Finished = true
+	default:
+	}
+
+	s.stateMu.Lock()
+	if s.hasCallback {
+		st.Event = s.lastCallback.Event
+		st.ResultCode = s.lastCallback.ResultCode
+	}
+	s.stateMu.Unlock()
+	return st
 }
 
 func New(cfg Config) *Broker {
@@ -172,6 +212,7 @@ func (b *Broker) Create(ctx context.Context, req Request) (*Session, error) {
 	}
 
 	b.mu.Lock()
+	b.gcLocked()
 	b.sessions[id] = session
 	b.mu.Unlock()
 	return session, nil
@@ -182,16 +223,26 @@ func (b *Broker) Get(id string) (*Session, error) {
 		return nil, ErrNotFound
 	}
 	b.mu.Lock()
+	b.gcLocked()
 	session := b.sessions[id]
-	if session != nil && session.expired() {
-		delete(b.sessions, id)
-		session = nil
-	}
 	b.mu.Unlock()
 	if session == nil {
 		return nil, ErrNotFound
 	}
 	return session, nil
+}
+
+// gcLocked 清掉所有已过期的会话。
+//
+// 会话持有运营商站点的 cookie jar，不能无限留存。以前的清理靠"流程结束就删"，
+// 但那样一来前端就再也查不到终态；改成按 TTL 统一回收，顺带补上了从未被再次
+// 访问的会话（它们此前会一直留在 map 里）。
+func (b *Broker) gcLocked() {
+	for id, session := range b.sessions {
+		if session.expired() {
+			delete(b.sessions, id)
+		}
+	}
 }
 
 func (b *Broker) Delete(id string) {
@@ -267,6 +318,11 @@ func (s *Session) Done() {
 }
 
 func (s *Session) Callback(callback Callback) {
+	s.stateMu.Lock()
+	s.lastCallback = callback
+	s.hasCallback = true
+	s.stateMu.Unlock()
+
 	sendLatest(s.callbackCh, callback)
 }
 

@@ -12,6 +12,7 @@ import (
 
 func (s *Server) registerWebsheetRoutes(api *gin.RouterGroup) {
 	api.GET("/websheets/:id", s.handleWebsheetBootstrap)
+	api.GET("/websheets/:id/status", s.handleWebsheetStatus)
 	api.GET("/websheets/:id/proxy", s.handleWebsheetProxy)
 	api.POST("/websheets/:id/proxy", s.handleWebsheetProxy)
 	api.PUT("/websheets/:id/proxy", s.handleWebsheetProxy)
@@ -56,6 +57,19 @@ func (s *Server) handleWebsheetBootstrap(c *gin.Context) {
 	if err := session.ServeBootstrap(c.Writer, c.Request); err != nil {
 		respondWebsheetError(c, err)
 	}
+}
+
+// handleWebsheetStatus 供前端轮询流程是否结束。
+//
+// 承载表单跑在运营商页面里、又是在新窗口打开的，跨源既读不到内容也收不到关闭
+// 事件，只能由服务端告诉前端"桥接脚本回调过了没有"。会话过期后返回 410。
+func (s *Server) handleWebsheetStatus(c *gin.Context) {
+	session, err := s.authorizedWebsheetSession(c)
+	if err != nil {
+		respondWebsheetError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, session.Status())
 }
 
 func (s *Server) handleWebsheetProxy(c *gin.Context) {
@@ -110,10 +124,9 @@ func (s *Server) handleWebsheetDone(c *gin.Context) {
 		respondWebsheetError(c, err)
 		return
 	}
+	// 这里刻意不销毁会话：前端要靠 /status 观察终态，而承载页在运营商域下，
+	// 跨源拿不到任何完成信号。会话按 TTL 统一回收（websheet.Broker.gcLocked）。
 	session.Done()
-	if s.websheets != nil {
-		s.websheets.Delete(c.Param("id"))
-	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 

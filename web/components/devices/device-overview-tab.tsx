@@ -26,6 +26,7 @@ import {
 import { useEventSource } from "@/lib/sse/use-event-source";
 import { ApiError } from "@/lib/api/errors";
 import { Sensitive } from "@/components/common/sensitive";
+import { E911Card } from "@/components/devices/e911-card";
 import { TrafficChart } from "@/components/traffic/traffic-chart";
 import type { DeviceOverview } from "@/types/device";
 
@@ -208,6 +209,14 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
           />
         </CardContent>
       </Card>
+
+      {/* VoWiFi 未启用时登记紧急地址没有意义——E911 是 VoWiFi 通话的前置条件 */}
+      {device.vowifi_enabled && (
+        <E911Card
+          deviceId={deviceId}
+          available={device.e911_setup_available}
+        />
+      )}
 
       <TrafficChart deviceId={deviceId} />
 

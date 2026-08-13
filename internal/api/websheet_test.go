@@ -123,3 +123,84 @@ func websheetToken(session *websheet.Session) string {
 	}
 	return parts[1]
 }
+
+// 前端靠轮询 /status 判断流程结束——终态回调之后会话必须还在，否则前端永远
+// 等不到"完成"，只会等到 404。
+func TestWebsheetStatusSurvivesDoneAndReportsTerminalState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	broker := websheet.New(websheet.Config{AllowPrivateHosts: true})
+	session, err := broker.Create(context.Background(), websheet.Request{URL: "https://203.0.113.10/start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := &Server{websheets: broker}
+	router := gin.New()
+	api := router.Group("/api")
+	server.registerWebsheetRoutes(api)
+
+	id := session.Info().ID
+	token := websheetToken(session)
+	statusPath := "/api/websheets/" + id + "/status?token=" + token
+
+	before := httptest.NewRecorder()
+	router.ServeHTTP(before, httptest.NewRequest(http.MethodGet, statusPath, nil))
+	if before.Code != http.StatusOK {
+		t.Fatalf("status before done=%d body=%s", before.Code, before.Body.String())
+	}
+	if strings.Contains(before.Body.String(), `"finished":true`) {
+		t.Fatalf("status=%s want finished=false before any callback", before.Body.String())
+	}
+
+	done := httptest.NewRecorder()
+	router.ServeHTTP(done, httptest.NewRequest(http.MethodPost, "/api/websheets/"+id+"/done?token="+token, nil))
+	if done.Code != http.StatusOK {
+		t.Fatalf("done status=%d body=%s", done.Code, done.Body.String())
+	}
+
+	after := httptest.NewRecorder()
+	router.ServeHTTP(after, httptest.NewRequest(http.MethodGet, statusPath, nil))
+	if after.Code != http.StatusOK {
+		t.Fatalf("status after done=%d body=%s — the session must outlive the flow", after.Code, after.Body.String())
+	}
+	if !strings.Contains(after.Body.String(), `"finished":true`) {
+		t.Fatalf("status=%s want finished=true", after.Body.String())
+	}
+}
+
+// 状态查询也接受已登录用户的凭证：前端手里只有自己的 bearer token，
+// 会话 token 藏在 embedUrl 里，没必要再解析出来。
+func TestWebsheetStatusAcceptsLoggedInUserWithoutSessionToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	broker := websheet.New(websheet.Config{AllowPrivateHosts: true})
+	session, err := broker.Create(context.Background(), websheet.Request{URL: "https://203.0.113.10/start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := &Server{auth: config.WebConfig{Password: "secret"}, websheets: broker}
+	token, _, err := server.issueSessionToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	router := gin.New()
+	api := router.Group("/api")
+	server.registerWebsheetRoutes(api)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/websheets/"+session.Info().ID+"/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status with user bearer token=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	anon := httptest.NewRecorder()
+	router.ServeHTTP(anon, httptest.NewRequest(http.MethodGet, "/api/websheets/"+session.Info().ID+"/status", nil))
+	if anon.Code != http.StatusUnauthorized {
+		t.Fatalf("status without any credential=%d want 401", anon.Code)
+	}
+}

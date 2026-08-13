@@ -49,7 +49,7 @@
 | `POST /api/auth/login` | 登录 |
 | `POST /api/rotateip` | **并非无鉴权**：handler 内经 `authorizeRotate` 校验，支持 Bearer 或 username/password 双模式（POST-only + 限流），供外部脚本调用 |
 | `OPTIONS /api/logs/stream` | CORS 预检 |
-| `/api/websheets/*`（13 条） | E911 websheet 代理；以随机 session id 作为能力凭证，且需接收运营商侧回调 |
+| `/api/websheets/*`（14 条） | E911 websheet 代理；以会话自带的随机 token 作为能力凭证，且需接收运营商侧回调。`/status` 额外接受用户 Bearer |
 
 > `POST /api/system/uninstall` 原本也在此列且**完全无校验**（handler 进来即执行自毁）。
 > 2026-08-12 已移入鉴权组，现需 Bearer token。
@@ -285,11 +285,21 @@
 |------|------|------|
 | `/api/devices/:id/vowifi` | PATCH | 启停 |
 | `/api/devices/:id/vowifi/actions/reconnect` | POST | 重连 |
-| `/api/devices/:id/vowifi/e911/websheet` | POST | 开 E911 websheet 会话 |
-| `/api/websheets/:id`、`/:id/proxy[/*target]`、`/:id/callback`、`/:id/done` | 多 | 运营商页面反向代理，**全部无鉴权** |
+| `/api/devices/:id/vowifi/e911/websheet` | POST | 开 E911 websheet 会话，201 + `{id, embedUrl, title?, url, method}` |
+| `/api/websheets/:id/status` | GET | 轮询流程是否结束；接受会话 token 或用户 Bearer |
+| `/api/websheets/:id`、`/:id/proxy[/*target]`、`/:id/callback`、`/:id/done` | 多 | 运营商页面反向代理；凭证是会话自带的一次性 token，不是用户 token |
 
-E911 websheet 本质是把运营商网页代理进本服务。前端按「新窗口/iframe 打开 `/api/websheets/:id`
-→ 轮询或等待 `/done`」处理，**不要试图解析其内容**。
+E911 websheet 本质是把运营商网页代理进本服务。前端流程：
+
+1. `POST .../e911/websheet` 拿到 `{id, embedUrl}`。`embedUrl` 已带会话 token，可直接打开。
+2. **新窗口**打开（不是 iframe）：页面内容不受我们控制，其 CSP / X-Frame-Options
+   随时可能拒绝被内嵌，且运营商流程常跳到第三方。窗口必须在点击的同步阶段先
+   `window.open("about:blank")` 占位，等 POST 回来再 `location.replace`，否则会被弹窗拦截。
+3. 轮询 `GET /websheets/:id/status` 直到 `finished:true`。
+   跨源读不到窗口内容、也收不到关闭事件，**完成信号只有服务端知道**。
+4. 会话在结束后保留到 TTL（10 分钟）到期，过期返回 410。
+
+**不要试图解析其内容**。
 
 ---
 
@@ -305,18 +315,21 @@ E911 websheet 本质是把运营商网页代理进本服务。前端按「新窗
 
 ---
 
-## 7. 与 `openapi.vohive.yaml` 的偏差（**不要以 spec 为准**）
+## 7. 与 `openapi.vohive.yaml` 的一致性
 
-- 实际注册：**84 条**（`server.go`）+ **13 条**（websheet）
-- OpenAPI 声明：**59 条**
-- **实际有、spec 无：17 条**，含 `overview/stream`、`operator_selection*`、`cards/*`、
-  `ussd/continue`、`ussd/cancel`、`system/update/*`、`bark/test`、`email/test`、`system/uninstall`
-- **spec 有、实际无：3 条**（全部是微信 QR 通知配置）：
-  `/settings/notifications/weixin/qr/start`、`/qr/status`、`/qr/cancel`
-  —— **按 spec 实现这三个会得到 404**
+**2026-08-13 起已对齐**，并由 `scripts/check-routes.mjs` 在本地流水线里持续校验：
+spec 缺少任何一条已注册路由、或声明了未注册的路由，`bash scripts/ci.sh routes` 都会失败。
 
-> 结论：spec 已显著滞后。**不要用它生成 TypeScript 类型**，会同时漏掉真实端点、
-> 生成不存在端点的调用代码。本矩阵是唯一依据。
+修复前的偏差（留档）：实际 84 条 + websheet 13 条，spec 只声明 59 条；
+其中 17 条真实端点未被描述（`overview/stream`、`operator_selection*`、`cards/*`、
+`ussd/continue`、`ussd/cancel`、`system/update/*`、`bark/test`、`email/test`、
+`system/uninstall`），另有 3 条微信 QR 通知配置在 spec 里但后端从未实现
+（`/settings/notifications/weixin/qr/{start,status,cancel}`，照着实现只会拿到 404）——
+那 3 条已连同其 schema 一并删除。
+
+> 例外：websheet 的承载页与代理通道（`/websheets/:id`、`/:id/proxy[/*target]`、
+> `/:id/callback`、`/:id/done`）仍不入 spec——路径含通配、请求与响应完全由
+> 运营商页面决定。校验脚本对这几条显式豁免，其余全部纳管，包括 `/:id/status`。
 
 ---
 

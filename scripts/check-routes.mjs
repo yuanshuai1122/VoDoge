@@ -24,12 +24,19 @@ const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 /**
  * 不纳入公开契约的路由。
  *
- * websheet 是把运营商的 E911 设置页反向代理进本服务的通道，路径含 `*target`
- * 通配、请求体与响应完全由对端决定，描述它没有意义；调用方只需要
- * `POST /devices/:id/vowifi/e911/websheet` 拿到会话地址，那一条是在 spec 里的。
+ * websheet 的承载页与代理通道是把运营商的 E911 设置页反向代理进本服务的管道：
+ * 路径含 `*target` 通配、请求体与响应完全由对端决定，描述它没有意义。
+ * 但 `/websheets/:id/status` **不在此列**——前端靠轮询它判断流程是否结束，
+ * 那是实打实的契约，必须写进 spec。
  * /docs/assets 是 Swagger UI 自身的静态资源。
  */
-const INTERNAL_ROUTE_PATTERNS = [/^\/websheets\//, /^\/docs\/assets\//];
+const INTERNAL_ROUTE_PATTERNS = [
+  /^\/websheets\/:id$/,
+  /^\/websheets\/:id\/proxy/,
+  /^\/websheets\/:id\/callback$/,
+  /^\/websheets\/:id\/done$/,
+  /^\/docs\/assets\//,
+];
 
 function isInternal(p) {
   return INTERNAL_ROUTE_PATTERNS.some((re) => re.test(p));

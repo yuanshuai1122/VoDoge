@@ -1,6 +1,0 @@
-# 占位文件，勿删。
-#
-# internal/web/fs.go 的 //go:embed all:dist 要求该目录在编译期存在，
-# 否则干净克隆下 `go build ./...` 会直接失败。
-# 真实前端产物由 `make frontend-dist` / Dockerfile 从 web/dist 拷入，
-# 内容不纳入版本控制（见根 .gitignore）。

@@ -1819,18 +1819,76 @@ paths:
       summary: 创建 E911 设置 websheet 会话
       description: |
         返回一个由本服务反向代理运营商页面的会话地址，供浏览器打开完成 E911 地址登记。
-        代理路径 `/websheets/{id}/...` 属内部通道，不在本文档描述范围内。
+        承载页与代理路径（`/websheets/{id}`、`/websheets/{id}/proxy/...`）属内部通道，
+        请求与响应完全由运营商页面决定，不在本文档描述范围内；
+        判断流程是否结束请轮询 `GET /websheets/{id}/status`。
+
+        `embedUrl` 已带该会话专属的一次性 token，可直接在新窗口打开。
       responses:
-        '200':
+        '201':
           description: 会话已创建
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/E911WebsheetResponse'
+        '400':
+          description: 当前运营商未启用 E911（`e911_not_supported` / `e911_provider_unavailable`）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/ErrorMessage'
+        '409':
+          description: 读不到 IMSI/IMEI 等身份信息（`e911_identity_unavailable`）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: 运营商未返回 websheet 地址（`e911_websheet_unavailable`）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /websheets/{id}/status:
+    get:
+      tags: [devices]
+      summary: 查询 websheet 会话状态
+      description: |
+        承载表单跑在运营商域下，跨源既读不到内容也收不到关闭事件——流程是否结束
+        只有服务端知道（桥接脚本会回调本服务）。前端通过轮询本端点获知终态。
+
+        凭证可用会话自己的 token（`?token=` 或 `X-Websheet-Token` 头），
+        也可用已登录用户的 `Authorization` 头。
+
+        会话在结束后仍保留至 TTL 到期，以便客户端取回终态；过期后返回 410。
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 会话状态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsheetStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+        '410':
+          description: 会话已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /settings/notifications/bark/test:
     post:
@@ -3624,15 +3682,46 @@ components:
 
     E911WebsheetResponse:
       type: object
+      required: [id, embedUrl, url, method]
       properties:
-        status:
-          type: string
         id:
           type: string
-          description: websheet 会话 id，对应内部代理路径 /websheets/{id}。
+          description: websheet 会话 id，用于 /websheets/{id}/status。
+        embedUrl:
+          type: string
+          description: |
+            供浏览器打开的承载页地址，已带该会话专属的一次性 token。
+            注意本字段是 camelCase，与全局 snake_case 相反。
+          example: /api/websheets/9f2c.../?token=...
+        title:
+          type: string
         url:
           type: string
-          description: 供浏览器打开的地址。
+          description: 运营商目标地址，仅供展示"将要访问哪里"。
+        method:
+          type: string
+          enum: [GET, POST]
+          description: 承载页对目标地址使用的方法，由运营商返回的内容类型决定。
+
+    WebsheetStatus:
+      type: object
+      required: [id, finished, expires_at]
+      properties:
+        id:
+          type: string
+        finished:
+          type: boolean
+          description: 桥接脚本已上报终态。
+        event:
+          type: string
+          description: 最后一次回调的事件名，如 finishFlow。
+        result_code:
+          type: string
+        title:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
 
     UpdateCheckResponse:
       type: object

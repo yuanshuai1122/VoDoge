@@ -217,3 +217,73 @@ func TestSessionExpires(t *testing.T) {
 		t.Fatalf("Get expired err=%v, want ErrNotFound", err)
 	}
 }
+
+// 承载表单在运营商域下打开，跨源既读不到内容也收不到关闭事件，
+// 前端只能轮询这个快照——所以它必须在流程结束后仍然可读。
+func TestSessionStatusRemainsReadableAfterDone(t *testing.T) {
+	b := New(Config{})
+	s, err := b.Create(context.Background(), Request{URL: "https://example.com/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if st := s.Status(); st.Finished {
+		t.Fatalf("status=%+v want not finished before any callback", st)
+	}
+
+	s.Callback(Callback{Event: "finishFlow", ResultCode: "0"})
+	s.Done()
+
+	got, err := b.Get(s.Info().ID)
+	if err != nil {
+		t.Fatalf("Get() after Done err=%v, want the session retained until TTL", err)
+	}
+	st := got.Status()
+	if !st.Finished || st.Event != "finishFlow" || st.ResultCode != "0" {
+		t.Fatalf("status=%+v want finished with the last callback preserved", st)
+	}
+}
+
+// Status 可以被反复读取；channel 上的回调会被消费掉，不能拿来回答"到哪一步了"。
+func TestSessionStatusIsRepeatable(t *testing.T) {
+	b := New(Config{})
+	s, err := b.Create(context.Background(), Request{URL: "https://example.com/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Callback(Callback{Event: "addressValidated"})
+
+	for i := range 3 {
+		if st := s.Status(); st.Event != "addressValidated" {
+			t.Fatalf("read %d: status=%+v want the callback still visible", i, st)
+		}
+	}
+}
+
+// 会话持有运营商站点的 cookie jar。以前靠"流程结束就删"清理，改为 TTL 回收后
+// 必须确认从未被再次访问的会话也会被扫掉，否则 broker 会无限增长。
+func TestBrokerSweepsExpiredSessionsNotJustTheOneBeingFetched(t *testing.T) {
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	b := New(Config{
+		TTL: time.Minute,
+		Now: func() time.Time { return now },
+	})
+	stale, err := b.Create(context.Background(), Request{URL: "https://example.com/stale"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now = now.Add(2 * time.Minute)
+	if _, err := b.Create(context.Background(), Request{URL: "https://example.com/fresh"}); err != nil {
+		t.Fatal(err)
+	}
+
+	b.mu.Lock()
+	_, present := b.sessions[stale.Info().ID]
+	count := len(b.sessions)
+	b.mu.Unlock()
+
+	if present || count != 1 {
+		t.Fatalf("sessions=%d stalePresent=%v want the expired session swept", count, present)
+	}
+}
