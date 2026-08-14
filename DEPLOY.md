@@ -158,8 +158,22 @@ cat vohive-2026-01-01.sql | docker exec -i vohive-postgres psql -U vohive -d voh
 
 ## 🖥 支持架构
 
-- `linux/amd64` (x86_64)
-- `linux/arm64` (ARM64/aarch64)
+| 架构 | 状态 |
+|------|------|
+| `linux/amd64` | ✅ 默认构建目标 |
+| `linux/arm64` | ✅ 已验证交叉构建 |
+| `linux/arm/v7` | ✅ 已验证交叉构建 |
+
+本地交叉构建：
+
+```bash
+bash scripts/ci.sh multiarch
+```
+
+前端与 Go 编译都固定在构建机架构上跑，用 Go 自己的交叉编译产出目标二进制，
+不经 QEMU 模拟——每个架构约 1.5 分钟，模拟的话是十几分钟。
+
+> 只构建、不推送。本项目不发布镜像，这一步回答的是"换个架构还编得过吗"。
 
 ## ⚠️ 注意事项
 

@@ -1,5 +1,8 @@
 # 构建阶段 1: 前端构建 (Frontend)
-FROM node:20-alpine AS frontend-builder
+#
+# 固定在 BUILDPLATFORM（构建机的架构）上跑：前端产物是与架构无关的静态文件，
+# 让 npm 在 QEMU 模拟的 arm 里跑一遍纯属浪费——那会把构建时间拖到十几分钟。
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
 WORKDIR /app/web
 COPY web/package*.json ./
 RUN npm ci
@@ -7,8 +10,21 @@ COPY web/ .
 RUN npm run build
 
 # 构建阶段 2: 后端构建 (Backend)
-FROM golang:1.26-alpine AS backend-builder
+#
+# 同样固定在 BUILDPLATFORM，用 Go 自己的交叉编译产出目标架构的二进制，
+# 而不是在模拟器里跑一个 arm 版的 Go 工具链。CGO 已禁用，交叉编译没有额外代价。
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS backend-builder
 WORKDIR /app
+
+# buildx 注入的目标平台信息
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+# 版本号由构建方传入。
+# 不能在容器里跑 git describe——.git 在 .dockerignore 里（镜像不该带版本库），
+# 于是它恒定回落到 "unknown"，界面上的版本号一直是假的。
+ARG VERSION=unknown
 
 # 启用 Go 工具链自动下载
 ENV GOTOOLCHAIN=auto
@@ -16,8 +32,8 @@ ENV GOWORK=off
 ENV GOPROXY=https://goproxy.cn,https://proxy.golang.org,direct
 ENV GOSUMDB=sum.golang.google.cn
 
-# 安装构建依赖
-RUN apk add --no-cache git ca-certificates
+# 安装构建依赖（不再需要 git：版本号改由 --build-arg 传入）
+RUN apk add --no-cache ca-certificates
 
 # 复制 go mod 文件
 COPY go.mod go.sum ./
@@ -38,9 +54,11 @@ RUN ls -la internal/web/dist/ && echo "Frontend assets copied successfully"
 
 # 验证依赖并编译二进制；依赖整理必须在提交前由 CI 的 tidy gate 完成。
 RUN go mod verify
-RUN VERSION=$(git describe --tags --always --dirty || echo "unknown") && \
-    BUILD_TIME=$(date "+%Y-%m-%d %H:%M:%S") && \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false -tags "with_utls nomsgpack" -ldflags "-s -w -X 'github.com/yuanshuai1122/vohive/internal/global.Version=${VERSION}' -X 'github.com/yuanshuai1122/vohive/internal/global.BuildTime=${BUILD_TIME}'" -o /app/vo-hive ./cmd/vohive
+RUN BUILD_TIME=$(date "+%Y-%m-%d %H:%M:%S") && \
+    # GOARM 只在 GOARCH=arm 时有意义；armv7 的 TARGETVARIANT 是 "v7"，去掉前缀即可
+    if [ "$TARGETARCH" = "arm" ]; then export GOARM="${TARGETVARIANT#v}"; fi && \
+    CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
+    go build -trimpath -buildvcs=false -tags "with_utls nomsgpack" -ldflags "-s -w -X 'github.com/yuanshuai1122/vohive/internal/global.Version=${VERSION}' -X 'github.com/yuanshuai1122/vohive/internal/global.BuildTime=${BUILD_TIME}'" -o /app/vo-hive ./cmd/vohive
 
 # 运行阶段 (Runtime)
 FROM alpine:latest

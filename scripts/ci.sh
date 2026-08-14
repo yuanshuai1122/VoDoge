@@ -187,14 +187,47 @@ go_build() {
 	)
 }
 
+# 版本号。
+#
+# 必须由构建方传入：`.git` 在 .dockerignore 里（镜像不该带版本库），
+# 容器内跑 git describe 只会恒定得到 "unknown"——界面上的版本号一直是假的。
+build_version() {
+	git describe --tags --always --dirty 2>/dev/null || echo unknown
+}
+
 image_build() {
 	need_docker
-	run docker build -t "${VOHIVE_IMAGE:-vohive:latest}" .
+	run docker build --build-arg VERSION="$(build_version)" -t "${VOHIVE_IMAGE:-vohive:latest}" .
+}
+
+# 交叉构建 arm64 与 armv7，验证目标平台产物真的能出来。
+#
+# 只构建、不推送：本项目不发布镜像（不使用 GHCR）。这一步要回答的问题是
+# "换个架构还编得过吗"，而不是"能不能发布"。
+#
+# 前端与 Go 编译都固定在 BUILDPLATFORM 上跑（见 Dockerfile），走 Go 自己的
+# 交叉编译而不是 QEMU 模拟——后者会把每个架构的构建时间从一分半拖到十几分钟。
+multiarch_build() {
+	need_docker
+	if ! docker buildx version >/dev/null 2>&1; then
+		printf 'this task needs docker buildx\n' >&2
+		return 127
+	fi
+
+	local version
+	version="$(build_version)"
+	for platform in ${MULTIARCH_PLATFORMS:-linux/arm64 linux/arm/v7}; do
+		# 多平台镜像无法 --load 进本地镜像库，这里逐个平台构建并加载，
+		# 顺便让产物可以被检查（见 docs 里的 ELF 头验证）。
+		run docker buildx build --platform "$platform" \
+			--build-arg VERSION="$version" \
+			-t "vohive:${platform//\//-}" --load .
+	done
 }
 
 usage() {
 	cat <<'USAGE'
-Usage: scripts/ci.sh [all|hygiene|encoding|routes|web|tidy|vet-all|fmt|test|build|image ...]
+Usage: scripts/ci.sh [all|hygiene|encoding|routes|web|tidy|vet-all|fmt|test|build|image|multiarch ...]
 
 Default `all` runs: hygiene, encoding, routes, web, vet-all, fmt, test, image.
 
@@ -209,6 +242,7 @@ Tasks:
   test      run the test suite against a throwaway PostgreSQL
   build     build the binary             (needs Go on the host)
   image     build the production image
+  multiarch cross-build arm64 + armv7 (needs buildx; not part of `all`)
 
 Environment:
   GO_BIN               path to go binary (only needed by tidy/build)
@@ -216,6 +250,7 @@ Environment:
   TEST_DATABASE_URL    override the throwaway test database
   CI_GO_TEST_PACKAGES  package list for tests
   VOHIVE_IMAGE         production image tag (default vohive:latest)
+  MULTIARCH_PLATFORMS  platforms for multiarch (default "linux/arm64 linux/arm/v7")
 USAGE
 }
 
@@ -243,6 +278,7 @@ for task in "${tasks[@]}"; do
 		test | go-test) go_tests ;;
 		build | go-build) go_build ;;
 		image | docker) image_build ;;
+		multiarch | arm) multiarch_build ;;
 		-h | --help | help)
 			usage
 			exit 0
