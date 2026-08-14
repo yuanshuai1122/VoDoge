@@ -76,8 +76,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        additionalProperties: true
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -98,7 +103,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LoginResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '401':
@@ -135,7 +145,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RotateResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RotateResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '401':
@@ -153,9 +168,14 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/DashboardDevice'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DashboardDevice'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -171,7 +191,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DeviceStatusDetail'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeviceStatusDetail'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -187,7 +212,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/HealthResponse'
         '503':
           description: 至少一个设备不健康
           content:
@@ -218,7 +248,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TrafficAnalysisResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TrafficAnalysisResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '401':
@@ -240,7 +275,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SMSSendResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SMSSendResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -264,7 +304,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SMSDeliveryResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SMSDeliveryResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -303,9 +348,14 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/SMSContact'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SMSContact'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -351,9 +401,14 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/SMSMessage'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SMSMessage'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -384,16 +439,21 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  deleted:
-                    type: integer
-                  imsi:
-                    type: string
-                  peer:
-                    type: string
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          deleted:
+                            type: integer
+                          imsi:
+                            type: string
+                          peer:
+                            type: string
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -418,16 +478,21 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  thread_empty:
-                    type: boolean
-                  imsi:
-                    type: string
-                  peer:
-                    type: string
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          thread_empty:
+                            type: boolean
+                          imsi:
+                            type: string
+                          peer:
+                            type: string
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -445,7 +510,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NotificationSettings'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/NotificationSettings'
     put:
       tags: [settings]
       summary: 保存通知设置
@@ -461,7 +531,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AppliedResult'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/AppliedResult'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '500':
@@ -483,7 +558,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TestWebhookResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TestWebhookResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '500':
@@ -505,7 +585,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '401':
@@ -523,7 +608,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SystemInfoResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemInfoResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -537,12 +627,17 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  devices:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/DeviceMgmtListItem'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          devices:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/DeviceMgmtListItem'
         '401':
           $ref: '#/components/responses/Unauthorized'
     post:
@@ -560,7 +655,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RuntimeApplyResult'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RuntimeApplyResult'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '409':
@@ -584,12 +684,17 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  devices:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/DiscoveredDevice'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          devices:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/DiscoveredDevice'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -605,12 +710,17 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  devices:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/DeviceMgmtOverviewLiteItem'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          devices:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/DeviceMgmtOverviewLiteItem'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -626,10 +736,15 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  config:
-                    $ref: '#/components/schemas/DeviceConfigDTO'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          config:
+                            $ref: '#/components/schemas/DeviceConfigDTO'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -655,7 +770,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RuntimeApplyResult'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RuntimeApplyResult'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -673,7 +793,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '404':
           $ref: '#/components/responses/ErrorMessage'
 
@@ -689,7 +814,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '404':
           $ref: '#/components/responses/ErrorMessage'
 
@@ -705,7 +835,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RebootResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RebootResponse'
         '404':
           $ref: '#/components/responses/ErrorMessage'
         '500':
@@ -729,7 +864,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExecuteATResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ExecuteATResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -755,7 +895,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExecuteUSSDResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ExecuteUSSDResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -781,7 +926,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -807,7 +957,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FlightModeResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/FlightModeResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -835,7 +990,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NetworkActionResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/NetworkActionResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -855,7 +1015,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '500':
           $ref: '#/components/responses/ErrorMessage'
 
@@ -869,7 +1034,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProxyOverviewResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ProxyOverviewResponse'
         '500':
           $ref: '#/components/responses/ErrorMessage'
 
@@ -889,7 +1059,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AppliedResult'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/AppliedResult'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '500':
@@ -907,7 +1082,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProxyInstanceDTO'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ProxyInstanceDTO'
         '404':
           $ref: '#/components/responses/ErrorMessage'
         '500':
@@ -925,7 +1105,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '500':
@@ -943,7 +1128,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '500':
@@ -961,7 +1151,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '500':
@@ -977,9 +1172,14 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/UpstreamProxy'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/UpstreamProxy'
         '500':
           $ref: '#/components/responses/ErrorMessage'
     post:
@@ -997,7 +1197,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UpstreamProxySaveResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UpstreamProxySaveResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '502':
@@ -1027,7 +1232,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UpstreamProxySaveResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UpstreamProxySaveResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -1051,7 +1261,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '500':
           $ref: '#/components/responses/ErrorMessage'
 
@@ -1067,7 +1282,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UpstreamProxySaveResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UpstreamProxySaveResponse'
         '404':
           $ref: '#/components/responses/ErrorMessage'
         '502':
@@ -1089,15 +1309,20 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/UpstreamProxyCountry'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/UpstreamProxyCountry'
         '503':
           description: MCC/MNC 表不可用
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /upstream-proxy-country-rules:
     get:
@@ -1109,9 +1334,14 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/UpstreamProxyCountryRule'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/UpstreamProxyCountryRule'
 
   /upstream-proxy-country-rules/{country_code}:
     put:
@@ -1131,7 +1361,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UpstreamProxyCountryRule'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UpstreamProxyCountryRule'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -1143,7 +1378,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ErrorEnvelope'
     delete:
       tags: [upstream-proxies]
       summary: 删除国家前置代理规则
@@ -1155,7 +1390,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '500':
           $ref: '#/components/responses/ErrorMessage'
 
@@ -1171,7 +1411,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EsimOverviewResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/EsimOverviewResponse'
         '404':
           $ref: '#/components/responses/ErrorMessage'
         '409':
@@ -1191,9 +1436,14 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/EsimProfile'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/EsimProfile'
         '404':
           $ref: '#/components/responses/ErrorMessage'
         '409':
@@ -1220,7 +1470,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EsimNotificationListResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/EsimNotificationListResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -1257,7 +1512,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -1285,7 +1545,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EsimSwitchResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/EsimSwitchResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -1305,7 +1570,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EsimEIDsResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/EsimEIDsResponse'
         '404':
           $ref: '#/components/responses/ErrorMessage'
         '409':
@@ -1329,7 +1599,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EsimChipInfo'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/EsimChipInfo'
         '404':
           $ref: '#/components/responses/ErrorMessage'
         '409':
@@ -1363,17 +1638,26 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EsimDownloadTaskAccepted'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/EsimDownloadTaskAccepted'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
           $ref: '#/components/responses/ErrorMessage'
         '409':
-          description: 该设备已有进行中的下载任务；响应中的 `task_id` 可直接订阅
+          description: |
+            该设备已有进行中的下载任务。`error.code` 为 `ESIM_DOWNLOAD_IN_PROGRESS`，
+            `error.details.task_id` 是那个任务的 id——**可直接订阅它的进度流**，
+            前端应当把这种情况当作正常结果而不是错误（用户重复点击、刷新页面
+            都会走到这条路径）。
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EsimDownloadBusy'
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /devices/{device_id}/esim/actions/download/stream:
     get:
@@ -1424,7 +1708,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -1451,13 +1740,18 @@ paths:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/StatusResponse'
+                  - $ref: '#/components/schemas/Envelope'
                   - type: object
                     properties:
-                      warning:
-                        type: string
-                      warning_code:
-                        type: string
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/StatusResponse'
+                          - type: object
+                            properties:
+                              warning:
+                                type: string
+                              warning_code:
+                                type: string
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -1485,7 +1779,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DeviceStatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeviceStatusResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '500':
@@ -1503,7 +1802,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
@@ -1561,7 +1865,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LogHistoryResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LogHistoryResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -1576,12 +1885,17 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  policies:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/CardPolicy'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          policies:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/CardPolicy'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -1602,7 +1916,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CardPolicy'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CardPolicy'
         '401':
           $ref: '#/components/responses/Unauthorized'
     put:
@@ -1620,7 +1939,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CardPolicy'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CardPolicy'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '401':
@@ -1683,7 +2007,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExecuteUSSDResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ExecuteUSSDResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '401':
@@ -1713,7 +2042,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1735,7 +2069,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OperatorSelection'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/OperatorSelection'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1756,7 +2095,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OperatorSelection'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/OperatorSelection'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '401':
@@ -1781,7 +2125,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OperatorScanResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/OperatorScanResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1839,13 +2188,18 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/E911WebsheetResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/E911WebsheetResponse'
         '400':
           description: 当前运营商未启用 E911（`e911_not_supported` / `e911_provider_unavailable`）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ErrorEnvelope'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1855,13 +2209,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ErrorEnvelope'
         '502':
           description: 运营商未返回 websheet 地址（`e911_websheet_unavailable`）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /websheets/{id}/status:
     get:
@@ -1887,7 +2241,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WebsheetStatus'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WebsheetStatus'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1897,7 +2256,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /settings/notifications/bark/test:
     post:
@@ -1909,7 +2268,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '401':
@@ -1925,7 +2289,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '401':
@@ -1941,7 +2310,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UpdateCheckResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UpdateCheckResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -1956,7 +2330,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StatusResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
@@ -1975,7 +2354,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageOnlyResponse'
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MessageOnlyResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -2030,88 +2414,105 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: '#/components/schemas/ErrorEnvelope'
     ErrorMessage:
       description: 错误信息
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: '#/components/schemas/ErrorEnvelope'
 
   schemas:
-    ErrorResponse:
+    Envelope:
       type: object
       description: |
-        所有错误响应的**唯一**形状。此前另有裸 `{error:"..."}` 一支（eSIM、
-        卡策略、选网），它丢掉了 `request_id`——用户报上来的错误信息在服务端
-        日志里搜不到对应请求。已于 2026-08-14 统一。
+        所有成功响应（2xx）的信封。
 
-        个别端点会在同一层级附加决策所需的字段，见各自的响应说明
-        （如 eSIM 并发冲突的 `busy` / `retry_after_ms`）。
-      required: [status, code, message]
+        `data` 恒存在（无资源可返回时为 `null`），`meta` 为空时不出现。
+        `data` 与 `error` 互斥且必有其一——判别是结构性的，不再依赖
+        `status:"ok"` 那种字符串（它曾经出现在 200 响应里表示失败）。
+
+        **不套信封的三处**：SSE 事件帧（领域事件流，不是 HTTP 响应）、
+        `GET /ping`（`/api` 之外的存活探针）、websheet 的承载页与代理通道
+        （内容由运营商页面决定）。
+      required: [data, request_id]
       properties:
-        status:
+        data:
+          nullable: true
+          description: 资源本身。集合为数组（空集合是 `[]`），纯动作为 `null`。
+        meta:
+          type: object
+          additionalProperties: true
+          description: |
+            关于**这次操作**的说明，不是资源的一部分。常见键：
+
+            - `message` 给人看的操作结果
+            - `warning` / `warning_code` 操作成功但有保留
+            - `requires_restart` / `started` / `applied` 生效状态
+            - `device_limit` 集合的额度上限
+            - `space_delta` eSIM 空间变化
+            - `thread_empty` / `deleted` 删除的副作用
+            - `channel` USSD 走的通路（vowifi / cs）
+            - `range` 查询参数回显
+        request_id:
           type: string
-          enum: [error]
+          description: 与服务端访问日志对应，排查时用它定位。
+
+    ErrorEnvelope:
+      type: object
+      description: 所有错误响应（4xx/5xx）的信封。
+      required: [error, request_id]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+        request_id:
+          type: string
+
+    ErrorDetail:
+      type: object
+      required: [code, message]
+      properties:
         code:
           type: string
           description: |
             供程序判别的稳定标识。多数端点用按 HTTP 状态推导的通用码
-            （`bad_request` / `not_found` / `conflict` / `internal_error` …）；
-            需要客户端据以分支的场景有专属码，如 `ESIM_BUSY`、
-            `ESIM_DOWNLOAD_IN_PROGRESS`、`e911_not_supported`、`websheet_expired`。
+            （`bad_request` / `not_found` / `conflict` / `internal_error` …），
+            **这些不值得分支**，用 HTTP 状态即可。需要客户端据以决策的场景有
+            专属码：`ESIM_BUSY`、`ESIM_DOWNLOAD_IN_PROGRESS`、
+            `e911_*`、`websheet_*`。
         message:
           type: string
           description: 给人读的说明，不要用于程序分支。
-        request_id:
-          type: string
-          description: 与服务端访问日志对应，排查时用它定位。
-        busy:
-          type: boolean
-          description: 仅 eSIM 并发冲突（409 `ESIM_BUSY`）。
-        reason:
-          type: string
-          description: 仅 eSIM 并发冲突，占用原因（如 `rename_profile`）。
-        retry_after_ms:
-          type: integer
-          description: 仅 eSIM 并发冲突，建议的重试等待毫秒数。
-        retryAfterMs:
-          type: integer
-          deprecated: true
+        details:
+          type: object
+          additionalProperties: true
           description: |
-            同 `retry_after_ms`。全局 snake_case 中唯一的 camelCase 字段，
-            为兼容既有调用方保留，新代码请用 `retry_after_ms`。
-        task_id:
-          type: string
-          description: 仅 eSIM 下载冲突（409 `ESIM_DOWNLOAD_IN_PROGRESS`），可直接订阅该任务。
+            需要客户端据以决策的结构化数据，与给人读的 message 分开。
+
+            - 409 `ESIM_BUSY`：`busy` / `reason` / `retry_after_ms`（另有 `Retry-After` 头）
+            - 409 `ESIM_DOWNLOAD_IN_PROGRESS`：`busy` / `task_id`（可直接订阅该任务）
+
 
     StatusResponse:
       type: object
-      properties:
-        status:
-          type: string
-          example: ok
-        message:
-          type: string
-        warning:
-          type: string
+      nullable: true
+      description: |
+        纯动作，没有资源可返回，`data` 恒为 `null`。
+        操作结果的说明（`message`、`warning` 等）在信封的 `meta` 里。
 
     AppliedResult:
       type: object
-      properties:
-        status:
-          type: string
-          example: ok
-        applied:
-          type: boolean
-        warning:
-          type: string
+      nullable: true
+      description: |
+        配置类动作，`data` 恒为 `null`。
+        `meta.applied` 表示是否已实际生效；未生效时 `meta.warning` 说明原因
+        （配置已写入但运行时初始化失败仍返回 2xx）。
 
     MessageOnlyResponse:
       type: object
-      properties:
-        message:
-          type: string
+      nullable: true
+      description: |
+        `data` 恒为 `null`，提示语在 `meta.message`。
 
     DocsLinks:
       type: object
@@ -2149,10 +2550,8 @@ components:
 
     LoginResponse:
       type: object
+      required: [token, expires_at]
       properties:
-        status:
-          type: string
-          example: ok
         token:
           type: string
         expires_at:
@@ -2173,18 +2572,14 @@ components:
 
     RotateResponse:
       type: object
+      description: |
+        换 IP 的结果。耗时与提示语在 `meta`（`duration` / `message`）。
       properties:
-        status:
-          type: string
-        message:
-          type: string
         device:
           type: string
         old_ip:
           type: string
         new_ip:
-          type: string
-        duration:
           type: string
 
     StringMap:
@@ -2546,10 +2941,15 @@ components:
 
     HealthResponse:
       type: object
+      description: |
+        恒返回 200——"有设备不健康"不是这次请求失败。
+        整体判据是 `healthy`，逐设备明细在 `devices`。
+        按状态码判活请用免鉴权的 `GET /ping`。
+      required: [healthy, devices]
       properties:
-        status:
-          type: string
-          example: healthy
+        healthy:
+          type: boolean
+          description: 所有设备均健康时为 true。
         devices:
           type: object
           additionalProperties:
@@ -2557,19 +2957,16 @@ components:
 
     TrafficAnalysisResponse:
       type: object
+      description: |
+        `range` 只是把请求参数回显回来，在信封的 `meta.range` 里，不在 data。
       properties:
-        status:
-          type: string
-        range:
-          type: string
         buckets:
           type: array
           items:
-            type: object
-            additionalProperties: true
+            $ref: '#/components/schemas/TrafficBucket'
         chart:
-          type: object
-          additionalProperties: true
+          nullable: true
+          $ref: '#/components/schemas/TrafficChartData'
 
     SMSSendRequest:
       type: object
@@ -2586,11 +2983,10 @@ components:
 
     SMSSendResponse:
       type: object
+      description: |
+        提示语在 `meta.message`。
+        `message_id` 仅 VoWiFi 通道会生成，AT 通道为空字符串。
       properties:
-        status:
-          type: string
-        message:
-          type: string
         device:
           type: string
         phone:
@@ -2599,6 +2995,7 @@ components:
           type: string
         parts_total:
           type: integer
+          description: 长短信被拆成的分片数（按条计费）。
         delivery_state:
           type: string
 
@@ -3029,19 +3426,14 @@ components:
 
     RuntimeApplyResult:
       type: object
-      properties:
-        status:
-          type: string
-        started:
-          type: boolean
-        requires_restart:
-          type: boolean
-        applied:
-          type: boolean
-        warning:
-          type: string
-        vowifi_error:
-          type: string
+      nullable: true
+      description: |
+        设备保存/添加，`data` 恒为 `null`。结果全在 `meta`：
+
+        - `started` 运行时是否成功起来（配置写入成功但启动失败也返回 2xx）
+        - `requires_restart` 是否需要重启才生效
+        - `warning` 上述任一情况的说明，**必须展示给用户**
+        - `vowifi_error` VoWiFi 启动失败的具体原因
 
     ExecuteATRequest:
       type: object
@@ -3053,12 +3445,8 @@ components:
           type: integer
 
     ExecuteATResponse:
-      type: object
-      properties:
-        status:
-          type: string
-        response:
-          type: string
+      type: string
+      description: 模组的原始回显，`data` 直接就是这个字符串。
 
     ExecuteUSSDRequest:
       type: object
@@ -3071,10 +3459,14 @@ components:
 
     ExecuteUSSDResponse:
       type: object
+      description: |
+        模组返回的 USSD 结果。走的是哪条通路在 `meta.channel`（`vowifi` 或 `cs`）。
+        多轮会话要把 `session_id` 在后续 continue/cancel 中回传。
+      additionalProperties: true
       properties:
-        status:
+        session_id:
           type: string
-        result:
+        text:
           type: string
 
     SetUSBNetModeRequest:
@@ -3100,11 +3492,8 @@ components:
 
     FlightModeResponse:
       type: object
+      description: 提示语在 `meta.message`。
       properties:
-        status:
-          type: string
-        message:
-          type: string
         operating_mode:
           type: integer
         flight_mode:
@@ -3112,26 +3501,26 @@ components:
 
     RebootResponse:
       type: object
-      properties:
-        status:
-          type: string
-        response:
-          type: string
+      nullable: true
+      description: |
+        `data` 恒为 `null`——重启后设备会脱网并暂时下线，调用方只需知道
+        命令已送达（`meta.message`）。
 
     NetworkActionResponse:
       type: object
+      description: 提示语在 `meta.message`。
       properties:
-        status:
-          type: string
-        message:
-          type: string
         device:
           type: string
         network_connected:
           type: boolean
         private_ip:
           type: string
+        private_ipv6:
+          type: string
         public_ip:
+          type: string
+        public_ipv6:
           type: string
 
     ProxyInstanceDTO:
@@ -3311,14 +3700,9 @@ components:
           type: string
 
     UpstreamProxySaveResponse:
-      type: object
-      properties:
-        status:
-          type: string
-        message:
-          type: string
-        result:
-          $ref: '#/components/schemas/UpstreamProxyProbeResult'
+      description: |
+        `data` 是探测结果，提示语在 `meta.message`。
+      $ref: '#/components/schemas/UpstreamProxyProbeResult'
 
     EsimProfile:
       type: object
@@ -3515,39 +3899,17 @@ components:
 
     EsimDownloadTaskAccepted:
       type: object
-      required: [status, task_id]
+      required: [task_id]
       properties:
-        status:
-          type: string
-          example: ok
         task_id:
           type: string
           description: 用于订阅进度流的任务 id
 
-    EsimDownloadBusy:
-      type: object
-      required: [error, task_id]
-      properties:
-        error:
-          type: string
-        busy:
-          type: boolean
-        code:
-          type: string
-          example: ESIM_DOWNLOAD_IN_PROGRESS
-        task_id:
-          type: string
-          description: 进行中任务的 id，可直接订阅其进度流
-
     DeviceStatusResponse:
       type: object
-      properties:
-        status:
-          type: string
-        message:
-          type: string
-        device:
-          type: string
+      nullable: true
+      description: |
+        `data` 恒为 `null`，提示语在 `meta.message`。
 
     LogEntry:
       type: object
