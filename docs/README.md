@@ -18,6 +18,7 @@
 | [backend-db-progress.md](./backend-db-progress.md) | 数据库改造进度 |
 | [db-migrate-runbook.md](./db-migrate-runbook.md) | 旧 SQLite 数据导入 PostgreSQL 的运维手册 |
 | [hardware-bringup-windows.md](./hardware-bringup-windows.md) | **Windows + WSL2 硬件联调环境**：自建内核、host 网络陷阱、棒子识别结果 |
+| [ufi103s-qmi-host.md](./ufi103s-qmi-host.md) | **UFI103S 原厂 QMI 接入**：单根验收、Debian 主机与多棒部署边界 |
 | [backend-api-refactor-plan.md](./backend-api-refactor-plan.md) | `internal/api` 重构方案与验收记录（路由表 / 统一错误 / 分域拆文件 / repository 层） |
 | [api-envelope-design.md](./api-envelope-design.md) | **响应结构统一方案**（`{data, meta, request_id}`），含破坏性变更清单 |
 
