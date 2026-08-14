@@ -1,0 +1,49 @@
+# 行尾规范化。
+#
+# 起因很具体：仓库在 Windows 上检出为 CRLF，而构建与测试跑在 Linux 容器里，
+# `gofmt -l` 因此会把**每一个** .go 文件都列成"未格式化"——那项检查完全没法
+# 用，只能靠人工在容器里手动跑。有了这份规范，工作区里的源码就是 LF，
+# gofmt 可以进流水线。
+#
+# 另一半原因是 shell 脚本：CRLF 的 `#!/usr/bin/env bash` 在 Linux 上会以
+# `bash\r` 作为解释器名，报 "no such file or directory"——一个看起来毫无道理
+# 的错误。`packaging/openwrt` 里的 init 脚本尤其不能出这个问题。
+
+# 未在下面显式声明的文本文件，由 Git 自行判断并在提交时归一为 LF
+* text=auto eol=lf
+
+# 源码与配置：一律 LF，包括在 Windows 工作区里
+*.go        text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.mts       text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.css       text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.sh        text eol=lf
+*.txt       text eol=lf
+go.mod      text eol=lf
+go.sum      text eol=lf
+Makefile    text eol=lf
+Dockerfile* text eol=lf
+LICENSE     text eol=lf
+NOTICE      text eol=lf
+.gitignore      text eol=lf
+.dockerignore   text eol=lf
+packaging/openwrt/vohive/files/* text eol=lf
+
+# 二进制：绝不做行尾转换，也不要在 diff 里展开
+*.ico    binary
+*.png    binary
+*.jpg    binary
+*.woff   binary
+*.woff2  binary
+
+# 前端构建产物：由 npm run build 生成后原样嵌入 Go 二进制，
+# 不参与 diff 审阅，也不该被行尾转换碰。
+internal/web/dist/** -text -diff
+web/dist/**          -text -diff
