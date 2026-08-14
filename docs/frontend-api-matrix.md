@@ -1,17 +1,19 @@
 # VoHive 前端 ↔ 后端 API 契约矩阵
 
-> **来源**：直接阅读 `internal/api/` 源码得出，**不以 `openapi.vohive.yaml` 为准**（两者偏差见 §7）。  
-> **日期**：2026-08-12  
-> **用途**：前端重写的唯一接口依据。实现每个页面前先查本文件。
+> **来源**：直接阅读 `internal/api/` 源码得出。  
+> **日期**：2026-08-14（响应结构统一后）  
+> **用途**：前端的接口依据。实现每个页面前先查本文件。
+> `openapi.vohive.yaml` 已与实现对齐（§7），两者由 `scripts/ci.sh` 持续校验。
 
 ---
 
 ## 0. 一句话结论
 
-后端契约**不统一**：成功响应有 6 种形状、错误响应有 3 种形状、SSE 有 2 种帧风格。
-前端必须在 API 层做一次归一化收敛，不能让这些不一致漏进业务组件。
+后端契约已统一：**所有 JSON 响应都是同一个信封**（§2），SSE 另有自己的帧格式（§3）。
 
-> SSE 鉴权问题（原生 `EventSource` 无法带 token）已于 2026-08-12 在后端修复，见 §3。
+前端的 API 层因此从"归一化六种形状"退化成"拆一层信封"：
+`apiFetch` 返回 `{data, meta, requestId}`，端点层取 `.data` 或 `.meta`。
+原先的 `unwrap.ts`（6 个解包函数）已删除。
 
 ---
 
@@ -22,7 +24,7 @@
 | 项 | 事实 | 位置 |
 |----|------|------|
 | 登录 | `POST /api/auth/login` `{username, password}` | `server.go:1870` |
-| 成功 | `{status:"ok", token, expires_at}`（RFC3339） | `server.go:1905` |
+| 成功 | `data: {token, expires_at}`（RFC3339） | `auth.go` |
 | Token 构造 | `base64(exp_unix + "." + HMAC_SHA256(密码, exp_unix))` | `server.go:140` |
 | 有效期 | **30 天**，无 refresh 机制 | `server.go:141` |
 | 传递方式 | **仅** `Authorization: Bearer <token>` | `server.go:2076` |
@@ -35,7 +37,7 @@
 1. **改密码 = 所有 token 立即失效**。HMAC 密钥就是密码本身，改密后旧 token 校验必然失败。
    前端在 `POST /api/settings/password` 成功后**必须**主动清 token 并跳登录，否则用户会陷入
    「操作全部 401 但界面看着已登录」的状态。
-2. **401 语义单一**。`{status:"error", code:"unauthorized"}`，无法区分「过期」与「无效」，
+2. **401 语义单一**。`error.code = "unauthorized"`，无法区分「过期」与「无效」，
    统一按登出处理即可。
 
 ### 1.3 无需鉴权的端点（注册在 `api.Use(authMiddleware)` 之前）
@@ -58,53 +60,100 @@
 
 ---
 
-## 2. 响应形状（前端归一化的主要工作量）
+## 2. 响应结构：一种（2026-08-14 起）
 
-### 2.1 成功响应：至少 6 种
+```jsonc
+// 成功（2xx）
+{
+  "data": <载荷，可为 null>,
+  "meta": { ... },          // 可选，为空时不出现
+  "request_id": "9f2c…"
+}
 
-`internal/api/` 中 108 处 `c.JSON(http.StatusOK, ...)`，仅 47 处使用 `{status:"ok"}` 包装。
-
-| 形状 | 示例端点 | 位置 |
-|------|----------|------|
-| `{status:"ok", message}` | `POST /devices/:id/actions/refresh` | `device_mgmt.go:808` |
-| `{status:"ok", response:...}` | `POST /devices/:id/actions/at` | `device_mgmt.go:1648` |
-| `{devices:[...]}` | `GET /devices`、`GET /devices/:id/overview` | `device_mgmt.go:344` |
-| `{devices:[...], device_limit:N}` | `GET /devices`（管理页） | `device_mgmt.go:782` |
-| `{config:{...}}` / `{items:[...]}` / `{policies:[...]}` | 设备配置 / 通知 / 卡策略列表 | `device_mgmt.go:985` 等 |
-| **裸数组 / 裸对象** | `GET /sms/contacts`、`GET /sms/thread`、`GET /cards/:iccid/policy` | `server.go:1730`、`1807`、`card_policy.go:49` |
-
-**注意**：`GET /devices/:id/overview` 返回的是 `{devices:[单个元素]}`，不是单对象——
-详情页要取 `data.devices[0]`。
-
-### 2.2 错误响应：1 种（2026-08-14 起）
-
-```json
-{"status":"error", "code":"...", "message":"...", "request_id":"..."}
+// 失败（4xx/5xx）
+{
+  "error": { "code": "...", "message": "...", "details": { ... } },
+  "request_id": "9f2c…"
+}
 ```
 
-由 `internal/api/respond.go` 的 `fail` / `failWith` 统一产出，243 处错误站点全部走它。
+由 `internal/api/respond.go` 统一产出：`respondOK` / `respondOKWith` / `respond`
+与 `fail` / `failWith`。**112 处成功站点 + 243 处错误站点全部走它。**
 
-- `code` 多数是按 HTTP 状态推导的通用码（`bad_request` / `not_found` / `conflict` /
-  `internal_error` …），**这些不值得分支**，用 httpStatus 即可。
-  需要客户端据以决策的场景有专属码：`ESIM_BUSY`、`ESIM_DOWNLOAD_IN_PROGRESS`、
-  `e911_*`、`websheet_*`。
-- `request_id` **每个错误都有**，与服务端访问日志对应。
-- 附加字段平铺在同一层级，不额外包一层。
+### 2.1 三条不变式
 
-| 场景 | 附加字段 |
+1. **`data` 与 `error` 互斥且必有其一。** 判别是结构性的（`"error" in body`），
+   不再靠 `status:"ok"` 这种字符串——它曾经出现在 200 响应里表示失败
+   （日志读不到文件时回 `200 + {status:"error"}`），自相矛盾且无法防。
+2. **`request_id` 恒在**，成功失败都有，与 `X-Request-Id` 头一致。
+3. **`meta` 只放"关于这次操作/这批数据"的信息**，绝不放资源本身。
+
+### 2.2 data 的三种取值
+
+| 场景 | data |
+|------|------|
+| 单个资源 | 对象 |
+| 集合 | 数组（**空集合是 `[]` 不是 `null`**） |
+| 纯动作，无资源可返回 | `null` |
+
+### 2.3 meta 常见键
+
+| 键 | 含义 | 出现在 |
+|----|------|--------|
+| `message` | 给人看的操作结果 | 各类动作端点 |
+| `warning` / `warning_code` | 操作成功但有保留 | 保存设备、删 eSIM profile |
+| `requires_restart` / `started` | 生效状态 | 保存/添加设备 |
+| `applied` | 是否已实际生效 | 保存代理配置、通知设置 |
+| `device_limit` | 集合的额度上限 | `GET /devices` |
+| `space_delta` | eUICC 空间变化 | 删 eSIM profile |
+| `thread_empty` / `deleted` | 删除的副作用 | 删短信 / 删会话 |
+| `channel` | USSD 走的通路（`vowifi` / `cs`） | USSD 三个端点 |
+| `range` | 查询参数回显 | `GET /traffic/analysis` |
+
+### 2.4 error.details
+
+需要客户端据以决策的结构化数据，与给人读的 `message` 分开：
+
+| 场景 | details |
 |------|---------|
-| eSIM 并发冲突（409 `ESIM_BUSY`） | `busy`、`reason`、`retry_after_ms`、`retryAfterMs`（旧名）+ `Retry-After` 头 |
-| eSIM 下载已在进行（409 `ESIM_DOWNLOAD_IN_PROGRESS`） | `busy`、`task_id`（可直接订阅） |
+| 409 `ESIM_BUSY` | `busy` / `reason` / `retry_after_ms`（另有 `Retry-After` 头） |
+| 409 `ESIM_DOWNLOAD_IN_PROGRESS` | `busy` / `task_id`（**可直接订阅，前端应当当作正常结果处理**） |
 
-**改动前**是三种形状，前端因而必须在**每个请求**上同时准备三套解析——
-它无从预知会拿到哪一种。更实际的损失是裸 `{error:"..."}` 丢掉了 `request_id`：
-用户报上来的错误信息，在服务端日志里搜不到对应的那次请求。
+`code` 多数是按 HTTP 状态推导的通用码（`bad_request` / `not_found` / `conflict` /
+`internal_error` …），**这些不值得分支**，用 httpStatus 即可。专属码只有
+`ESIM_BUSY`、`ESIM_DOWNLOAD_IN_PROGRESS`、`e911_*`、`websheet_*`。
 
-> `retryAfterMs` 曾是全局 snake_case 里唯一的 camelCase 字段。现在
-> `retry_after_ms` 与它同时给出，旧名仅为兼容既有调用方保留。
+### 2.5 不套信封的三处
 
-> 前端 `parseApiError` 仍保留裸 `{error:"..."}` 分支——后端不再产生它，
-> 但外部脚本可能还在按旧形状解析，容错本身没有代价。
+| 端点 | 理由 |
+|------|------|
+| 全部 SSE 事件帧 | 是领域事件流，不是 HTTP 响应；`request_id` 对一条持续数分钟的流没有意义 |
+| `GET /ping` | `/api` 之外的免鉴权存活探针，外部监控在用，改它等于要求所有监控配置跟着改 |
+| websheet 承载页与代理通道 | 内容（HTML、重定向、任意 content-type）完全由运营商页面决定。`GET /websheets/:id/status` 是我们自己的接口，**要**套 |
+
+### 2.6 改造前的样子（留档）
+
+约 **60 种**成功形状。问题不止键名不齐，而是**元数据与载荷同层**：
+
+```
+{status, requires_restart, warning}            保存设备
+{devices, device_limit}                        设备列表
+{status, thread_empty, imsi, peer}             删短信
+{status:"ok", message, warning, space_delta}   删 eSIM profile
+```
+
+调用方分不清哪些是数据、哪些是关于数据的说明，加新字段还有撞名风险。
+前端为此维护了 6 个解包函数（`pick` / `pickOr` / `raw` / `rawArray` / `ok` /
+`pickFirstDevice`），已随本次改造全部删除。
+
+**顺带修掉的两个怪癖**：
+
+- `GET /devices/:id/overview` 曾返回 `{devices:[单元素]}`，设备不存在时给空数组，
+  逼得前端自己把"空"翻译成 404。现在直接返回设备对象，不存在就是 404。
+- `GET /health` 曾在有设备不健康时返回 503。非 2xx 应当带 error，而"有设备不健康"
+  并不是这次请求失败；现在恒 200，判据是 `data.healthy`。
+
+> `retryAfterMs` 这个 camelCase 遗留字段**已删除**，只保留 `retry_after_ms`。
 
 ---
 
@@ -138,7 +187,7 @@
 | 端点 | 事件名 | Payload | 备注 |
 |------|--------|---------|------|
 | `GET /api/logs/stream?level=` | `connected`、`log` | `{message}` / LogEntry | 带 CORS 头 |
-| `GET /api/devices/:id/overview/stream` | `overview`、`traffic`、`ussd` | `{devices:[item]}` / 流量快照 / USSD 事件 | 10s ticker + VoWiFi 状态变更 + 实时流量 |
+| `GET /api/devices/:id/overview/stream` | `overview`、`traffic`、`ussd` | `{devices:[item]}` / 流量快照 / USSD 事件 | 10s ticker + VoWiFi 状态变更 + 实时流量。**SSE 帧不套信封**，形状与 REST 的 `data` 不同 |
 | `GET /api/devices/:id/operator_selection/scan/stream` | `operator_scan` | 扫描结果 | 长耗时 |
 | `GET /api/devices/:id/esim/actions/download/stream?task_id=` | **无事件名**（默认 `message`） | `{step,msg,pct}` | 见下 |
 
@@ -147,10 +196,10 @@
 `internal/api/esim_download.go`。**两步**，不是一个 GET：
 
 1. `POST /api/devices/:id/esim/actions/download`，body `{smdp, matching_id?,
-   confirmation_code?, aid_hex?, imei?}` → `202 {status:"ok", task_id}`。
-   同一设备已有进行中的任务时返回 `409 {error, busy:true,
-   code:"ESIM_DOWNLOAD_IN_PROGRESS", task_id}`——**那个 task_id 可直接订阅**，
-   前端把它当正常结果处理（`startDownloadProfile` 已封装）。
+   confirmation_code?, aid_hex?, imei?}` → `202`，`data.task_id`。
+   同一设备已有进行中的任务时返回 409，`error.code` 为
+   `ESIM_DOWNLOAD_IN_PROGRESS`，`error.details.task_id` 就是那个任务——
+   **可直接订阅**，前端把它当正常结果处理（`startDownloadProfile` 已封装）。
 2. `GET /api/devices/:id/esim/actions/download/stream?task_id=...` 订阅进度。
 
 流的形状：

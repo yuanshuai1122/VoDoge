@@ -168,6 +168,45 @@ cat vohive-2026-01-01.sql | docker exec -i vohive-postgres psql -U vohive -d voh
   （Windows 可尝试 WSL2 + usbipd）。
 - **端口**：`network_mode: host` 时无需映射；否则需自行暴露 7575。
 
+## 🔄 升级：API 响应结构变更（2026-08-14，破坏性）
+
+**只影响直接调 HTTP API 的外部脚本。** Web 界面随镜像一同更新，无需你做任何事。
+
+所有 JSON 响应改成了同一个信封：
+
+```jsonc
+// 成功（2xx）——原先约 60 种形状
+{ "data": <载荷，可为 null>, "meta": { ... }, "request_id": "9f2c…" }
+
+// 失败（4xx/5xx）
+{ "error": { "code": "...", "message": "...", "details": { ... } }, "request_id": "9f2c…" }
+```
+
+如果你有脚本在调用本服务，按下表调整：
+
+| 原先 | 现在 |
+|------|------|
+| `resp.token` | `resp.data.token` |
+| `resp.devices` | `resp.data` |
+| `resp.message` | `resp.meta.message` |
+| `resp.warning` / `requires_restart` / `started` | `resp.meta.*` |
+| `resp.status === "ok"` | 判 HTTP 状态码即可（或 `"error" in resp`） |
+| `resp.message`（错误时） | `resp.error.message` |
+| `resp.code`（错误时） | `resp.error.code` |
+| `resp.retryAfterMs` | `resp.error.details.retry_after_ms` |
+
+三个端点的行为也变了：
+
+- `GET /api/devices/{id}/overview` 返回**单个设备对象**（原先是 `{devices:[单元素]}`）；
+  设备不存在时返回 **404**（原先是空数组）。
+- `GET /api/health` **恒返回 200**（原先有设备不健康时返回 503），
+  判据改为 `data.healthy`。**按状态码判活请改用免鉴权的 `GET /ping`**，它未改变。
+- eSIM 并发冲突的 `retryAfterMs` 已删除，只保留 `retry_after_ms`。
+
+**不受影响**：`GET /ping`、所有 SSE 事件帧、websheet 的承载页与代理通道。
+
+完整说明见 `docs/api-envelope-design.md` 与 `docs/frontend-api-matrix.md` §2。
+
 ## 📖 文档
 
 完整文档见 [GitHub](https://github.com/yuanshuai1122/vohive)。

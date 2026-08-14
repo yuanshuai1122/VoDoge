@@ -1,6 +1,6 @@
 # VoHive 剩余工作
 
-> 更新：2026-08-14（B1/B5/C1/D1 完成后）
+> 更新：2026-08-14（B1/B5/B7/C1/D1 完成后）
 > 相关：[known-issues.md](./known-issues.md)、[frontend-api-matrix.md](./frontend-api-matrix.md)、
 > [frontend-react-progress.md](./frontend-react-progress.md)
 
@@ -96,7 +96,8 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | 2 | ~~`/api/docs` 拉不到 spec~~ | ✅ 已修复：spec 移至免鉴权区 |
 | 3 | ~~`/api/health` 注释与实现矛盾~~ | ✅ 已澄清：返回逐设备明细故需鉴权，监控改用 `/ping` |
 | 4 | ~~Next dev 代理缓冲 SSE~~ | ✅ 已缓解：4 个 SSE 端点均加 CORS（仅 Debug 放行 localhost），前端 dev 直连 :7575 |
-| 5 | ~~OpenAPI 已显著滞后~~ | ✅ 已对齐，并由 `scripts/ci.sh routes` 持续校验（判据是 `routes.go` 的路由表本身） |
+| 5 | ~~OpenAPI 已显著滞后~~ | ✅ 已对齐：路径由 `scripts/ci.sh routes` 校验，**响应形状**由 `openapi_test.go` 校验（每个 2xx 必须引用 `Envelope`） |
+| 6 | ~~成功响应 6 种形状~~ | ✅ 已统一为一个信封 `{data, meta, request_id}`（实测是约 60 种，不是 6 种）。见 [api-envelope-design.md](./api-envelope-design.md) |
 
 ---
 
@@ -107,7 +108,7 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | 备份说明改 `pg_dump` | ✅ 已做 | README 与 DEPLOY.md 均已更新 |
 | 构建与验证入口 | ✅ 已做 | `scripts/ci.sh`。**本项目不使用 GitHub Actions**，构建全部在本机完成 |
 | `cmd/dbmigrate` | ✅ 已做 | PG 计划阶段 D。见 [db-migrate-runbook.md](./db-migrate-runbook.md) |
-| 前端测试 | ✅ 已做 | vitest + testing-library，67 例；已接入 `scripts/ci.sh web` |
+| 前端测试 | ✅ 已做 | vitest + testing-library，55 例；已接入 `scripts/ci.sh web` |
 | 多架构构建 | ⬜ | arm64/armv7 未验证；本机编译路径确定后再处理 |
 
 ---
@@ -118,8 +119,18 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 P1 现场验证（需硬件）──► 发现的问题回流 P2
 ```
 
-P2–P4 与 `internal/api` 重构均已收口（重构见[backend-api-refactor-plan.md](./backend-api-refactor-plan.md)），
-只剩多架构构建与 P1 现场验证。
+P2–P4、`internal/api` 重构与响应结构统一均已收口
+（见 [backend-api-refactor-plan.md](./backend-api-refactor-plan.md)、
+[api-envelope-design.md](./api-envelope-design.md)）。
+
+**仍在架构债清单上、且卡在硬件后面的**：`esim/manager.go`（4115 行）、
+`device.Pool`（46 字段的 Worker）、API 45 处直接摸设备内部、
+`internal/device` 剩余 8 处猴子补丁、彻底干掉 `db.DB` 全局。
+它们都在设备启停路径上，改动的正确性判据在真实模组上。
+
+**不卡硬件、可随时做的**：补 Go 测试（32/43 包）、补前端测试（6/84 文件）、
+拆 `db/db.go`（1326 行）、`.gitattributes` 统一行尾让 gofmt 能进流水线、
+多架构构建。
 
 P0 完成意味着「装得上、跑得起来、说明书没错」。
 P1 决定它是否真的可用——那部分只能在有模组的机器上做。
