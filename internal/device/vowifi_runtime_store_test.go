@@ -3,8 +3,8 @@ package device
 import (
 	"strings"
 
-	"github.com/yuanshuai1122/vohive/internal/vowifihost"
 	"github.com/boa-z/vowifi-go/runtimehost"
+	"github.com/yuanshuai1122/vohive/internal/vowifihost"
 )
 
 func (p *Pool) voWiFiRuntimeStore() vowifihost.RuntimeStore {

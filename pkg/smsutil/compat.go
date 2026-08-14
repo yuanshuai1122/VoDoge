@@ -3,8 +3,8 @@ package smsutil
 import (
 	"time"
 
-	"github.com/yuanshuai1122/vohive/pkg/smscodec"
 	"github.com/warthog618/sms/encoding/tpdu"
+	"github.com/yuanshuai1122/vohive/pkg/smscodec"
 )
 
 type RPDUKind = smscodec.RPDUKind

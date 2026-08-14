@@ -28,8 +28,8 @@ import (
 	"time"
 
 	"github.com/yuanshuai1122/vohive/internal/db"
-	_ "modernc.org/sqlite"
 	"gorm.io/gorm"
+	_ "modernc.org/sqlite"
 )
 
 // 复制顺序：先被引用的表，后引用它们的表。

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yuanshuai1122/vohive/pkg/smscodec"
 	"github.com/warthog618/sms/encoding/tpdu"
+	"github.com/yuanshuai1122/vohive/pkg/smscodec"
 )
 
 var (

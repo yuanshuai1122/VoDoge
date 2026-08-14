@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/db"
 	"github.com/boa-z/vowifi-go/runtimehost/messaging"
+	"github.com/yuanshuai1122/vohive/internal/db"
 	"gorm.io/gorm"
 )
 

@@ -109,6 +109,7 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | 构建与验证入口 | ✅ 已做 | `scripts/ci.sh`。**本项目不使用 GitHub Actions**，构建全部在本机完成 |
 | `cmd/dbmigrate` | ✅ 已做 | PG 计划阶段 D。见 [db-migrate-runbook.md](./db-migrate-runbook.md) |
 | 前端测试 | ✅ 已做 | vitest + testing-library，55 例；已接入 `scripts/ci.sh web` |
+| gofmt 进流水线 | ✅ 已做 | `.gitattributes` 把源码钉成 LF 后才可用——此前 Windows 检出为 CRLF，gofmt 会把 548 个 Go 文件里的 450 个都报成未格式化 |
 | 多架构构建 | ⬜ | arm64/armv7 未验证；本机编译路径确定后再处理 |
 
 ---
@@ -128,9 +129,8 @@ P2–P4、`internal/api` 重构与响应结构统一均已收口
 `internal/device` 剩余 8 处猴子补丁、彻底干掉 `db.DB` 全局。
 它们都在设备启停路径上，改动的正确性判据在真实模组上。
 
-**不卡硬件、可随时做的**：补 Go 测试（32/43 包）、补前端测试（6/84 文件）、
-拆 `db/db.go`（1326 行）、`.gitattributes` 统一行尾让 gofmt 能进流水线、
-多架构构建。
+**不卡硬件、可随时做的**：补 Go 测试（32/43 包）、补前端测试（5/84 文件）、
+拆 `db/db.go`（1326 行）、多架构构建。
 
 P0 完成意味着「装得上、跑得起来、说明书没错」。
 P1 决定它是否真的可用——那部分只能在有模组的机器上做。

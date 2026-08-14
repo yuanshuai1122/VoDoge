@@ -3,8 +3,8 @@ package device
 import (
 	"testing"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
 	"github.com/boa-z/vowifi-go/runtimehost"
+	"github.com/yuanshuai1122/vohive/internal/config"
 )
 
 func TestVoWiFiTeardownPathsRestoreSMSState(t *testing.T) {

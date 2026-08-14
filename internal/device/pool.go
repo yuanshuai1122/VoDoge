@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/boa-z/vowifi-go/runtimehost"
+	"github.com/boa-z/vowifi-go/runtimehost/voicehost"
 	"github.com/yuanshuai1122/vohive/internal/apduarbiter"
 	"github.com/yuanshuai1122/vohive/internal/backend"
 	"github.com/yuanshuai1122/vohive/internal/cardpolicy"
@@ -25,8 +27,6 @@ import (
 	"github.com/yuanshuai1122/vohive/internal/vowifihost"
 	"github.com/yuanshuai1122/vohive/pkg/logger"
 	"github.com/yuanshuai1122/vohive/pkg/smscodec"
-	"github.com/boa-z/vowifi-go/runtimehost"
-	"github.com/boa-z/vowifi-go/runtimehost/voicehost"
 
 	qmimanager "github.com/boa-z/quectel-qmi-go/pkg/manager"
 	"github.com/boa-z/quectel-qmi-go/pkg/qmi"

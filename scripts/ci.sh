@@ -105,6 +105,26 @@ encoding_check() {
 	printf '\n==> encoding check ok\n'
 }
 
+# gofmt 校验。
+#
+# 在容器里跑，因为本机不一定有 Go。这项检查此前根本无法使用：仓库在 Windows 上
+# 检出为 CRLF，gofmt 会把每一个文件都当成"未格式化"（548 个里报 450 个）。
+# `.gitattributes` 把源码钉成 LF 之后，它才开始有意义。
+fmt_check() {
+	need_docker
+	local unformatted
+	# MSYS_NO_PATHCONV：Git Bash 会把 `-w /src` 这类参数当成路径改写成
+	# `C:/Program Files/Git/src`，docker 随即报"工作目录不是绝对路径"。
+	unformatted="$(MSYS_NO_PATHCONV=1 docker run --rm -v "$ROOT":/src -w /src -e GOWORK=off \
+		"$VET_IMAGE" sh -c 'gofmt -l internal/ pkg/ cmd/')"
+
+	if [[ -n "$unformatted" ]]; then
+		printf '以下文件未经 gofmt 格式化：\n%s\n\n运行 gofmt -w 修复。\n' "$unformatted" >&2
+		return 1
+	fi
+	printf '\n==> gofmt ok\n'
+}
+
 # 校验 openapi.vohive.yaml 与 server.go 实际注册的路由一致。
 route_check() {
 	if ! command -v node >/dev/null 2>&1; then
@@ -174,14 +194,15 @@ image_build() {
 
 usage() {
 	cat <<'USAGE'
-Usage: scripts/ci.sh [all|hygiene|encoding|routes|web|tidy|vet-all|test|build|image ...]
+Usage: scripts/ci.sh [all|hygiene|encoding|routes|web|tidy|vet-all|fmt|test|build|image ...]
 
-Default `all` runs: hygiene, encoding, routes, web, vet-all, test, image.
+Default `all` runs: hygiene, encoding, routes, web, vet-all, fmt, test, image.
 
 Tasks:
   hygiene   forbidden dependency / local replace directives
   encoding  every tracked .go file must be valid UTF-8
   routes    openapi.vohive.yaml must match the routes server.go registers
+  fmt       gofmt -l must be empty (needs the vet image; run vet-all first)
   web       npm ci + typecheck + lint + test + build, then embed into internal/web/dist
   tidy      go mod tidy -diff            (needs Go on the host)
   vet-all   compile everything incl. _test.go, in a container
@@ -201,7 +222,8 @@ USAGE
 GO_BIN="$(find_go)"
 
 if [[ $# -eq 0 || "${1:-}" == "all" ]]; then
-	tasks=(hygiene encoding routes web vet-all test image)
+	# fmt 排在 vet-all 之后：它用的就是 vet-all 构建出来的镜像
+	tasks=(hygiene encoding routes web vet-all fmt test image)
 else
 	tasks=("$@")
 fi
@@ -214,6 +236,7 @@ for task in "${tasks[@]}"; do
 		hygiene | dependency-hygiene) dependency_hygiene ;;
 		encoding | encoding-check) encoding_check ;;
 		routes | route-check) route_check ;;
+		fmt | gofmt) fmt_check ;;
 		web | frontend) web_build ;;
 		tidy | tidy-check) tidy_check ;;
 		vet-all | vet) vet_all ;;

@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/boa-z/vowifi-go/runtimehost/eventhost"
 	"github.com/yuanshuai1122/vohive/internal/backend"
 	"github.com/yuanshuai1122/vohive/internal/db"
-	"github.com/boa-z/vowifi-go/runtimehost/eventhost"
 )
 
 type workerPhoneBackendStub struct {

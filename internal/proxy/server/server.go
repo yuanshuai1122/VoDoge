@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/pkg/logger"
 	socks5 "github.com/things-go/go-socks5"
+	"github.com/yuanshuai1122/vohive/pkg/logger"
 )
 
 const (

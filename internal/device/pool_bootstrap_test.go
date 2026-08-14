@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/yuanshuai1122/vohive/internal/config"
 )
 
 // requireQMIProxy 在缺少 libqmi 的 qmi-proxy 时跳过用例。

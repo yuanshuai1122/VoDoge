@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/boa-z/vowifi-go/runtimehost/carrier"
+	"github.com/boa-z/vowifi-go/runtimehost/voicehost"
 	"github.com/yuanshuai1122/vohive/internal/api"
 	"github.com/yuanshuai1122/vohive/internal/config"
 	"github.com/yuanshuai1122/vohive/internal/db"
@@ -22,8 +24,6 @@ import (
 	"github.com/yuanshuai1122/vohive/internal/proxy/traffic"
 	"github.com/yuanshuai1122/vohive/internal/sipgw"
 	"github.com/yuanshuai1122/vohive/internal/upstreamproxy"
-	"github.com/boa-z/vowifi-go/runtimehost/carrier"
-	"github.com/boa-z/vowifi-go/runtimehost/voicehost"
 
 	"github.com/yuanshuai1122/vohive/internal/web"
 	"github.com/yuanshuai1122/vohive/pkg/logger"
