@@ -12,6 +12,19 @@ import { getToken, triggerLogout } from "../auth/token";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
+/**
+ * 一次成功请求的结果。
+ *
+ * data 是资源本身，meta 是关于这次操作的说明（告警、是否需重启、额度上限…）。
+ * 后端把两者分了层，前端就不必再猜哪个字段是数据、哪个是对数据的注解。
+ */
+export interface ApiResult<T> {
+  data: T;
+  meta: Record<string, unknown>;
+  /** 与服务端访问日志对应，排查时用它定位。 */
+  requestId: string;
+}
+
 /** 默认请求超时。eSIM 等长耗时操作应显式放大。 */
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -44,7 +57,7 @@ export function buildUrl(
 export async function apiFetch<T = unknown>(
   path: string,
   options: RequestOptions = {},
-): Promise<T> {
+): Promise<ApiResult<T>> {
   const {
     json,
     query,
@@ -103,7 +116,41 @@ export async function apiFetch<T = unknown>(
     throw err;
   }
 
-  return payload as T;
+  return unwrapEnvelope<T>(payload);
+}
+
+/**
+ * 拆开成功信封。
+ *
+ * 后端所有 2xx 响应都是 {data, meta?, request_id}。这里拆成 ApiResult 之后，
+ * 端点层要么取 .data，要么取 .meta——不再需要"每个 endpoint 显式声明自己
+ * 期望哪种形状"那套约定，因为形状只有一种了。
+ *
+ * /ping 是唯一的例外（它在 /api 之外，给外部监控用），不走这条路径。
+ */
+function unwrapEnvelope<T>(payload: unknown): ApiResult<T> {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    // 非对象响应只可能来自不套信封的少数路径（如纯文本日志），原样透传
+    return { data: payload as T, meta: {}, requestId: "" };
+  }
+  const rec = payload as Record<string, unknown>;
+  if (!("data" in rec)) {
+    // 2xx 却没有 data：要么是漏改的端点，要么是代理插了一脚。
+    // 静默当成载荷会让问题一路飘到渲染层，不如在此处说清楚。
+    throw new ApiError("响应不符合信封结构（缺少 data 字段）", {
+      httpStatus: 200,
+      body: rec,
+    });
+  }
+  const meta =
+    typeof rec.meta === "object" && rec.meta !== null && !Array.isArray(rec.meta)
+      ? (rec.meta as Record<string, unknown>)
+      : {};
+  return {
+    data: rec.data as T,
+    meta,
+    requestId: typeof rec.request_id === "string" ? rec.request_id : "",
+  };
 }
 
 async function readBody(res: Response): Promise<unknown> {

@@ -1,5 +1,4 @@
 import { api } from "../client";
-import { ok, pick, rawArray } from "../unwrap";
 import type { SMSContact, SMSMessage } from "../../../types/sms";
 
 /**
@@ -25,7 +24,7 @@ export async function listContacts(params: {
   limit?: number;
   cursor?: ContactsCursor;
 }): Promise<SMSContact[]> {
-  const body = await api.get("/sms/contacts", {
+  const { data } = await api.get<SMSContact[]>("/sms/contacts", {
     query: {
       device_id: params.device_id,
       imsi: params.imsi,
@@ -34,7 +33,7 @@ export async function listContacts(params: {
       before_peer: params.cursor?.before_peer,
     },
   });
-  return rawArray<SMSContact>(body);
+  return data;
 }
 
 export interface ThreadCursor {
@@ -50,7 +49,7 @@ export async function listThread(params: {
   limit?: number;
   cursor?: ThreadCursor;
 }): Promise<SMSMessage[]> {
-  const body = await api.get("/sms/thread", {
+  const { data } = await api.get<SMSMessage[]>("/sms/thread", {
     query: {
       peer: params.peer,
       device_id: params.device_id,
@@ -60,7 +59,7 @@ export async function listThread(params: {
       before_id: params.cursor?.before_id,
     },
   });
-  return rawArray<SMSMessage>(body);
+  return data;
 }
 
 /** 从当前页末元素推导下一页游标；不足一页表示已到底。 */
@@ -83,7 +82,7 @@ export function nextThreadCursor(
 }
 
 export interface SendSMSResult {
-  status: string;
+  /** 操作说明，来自 meta */
   message: string;
   device: string;
   phone: string;
@@ -101,7 +100,15 @@ export async function sendSMS(input: {
   imsi?: string;
   encoding?: string;
 }): Promise<SendSMSResult> {
-  return api.post<SendSMSResult>("/sms/send", input, { timeoutMs: 60_000 });
+  const { data, meta } = await api.post<Omit<SendSMSResult, "message">>(
+    "/sms/send",
+    input,
+    { timeoutMs: 60_000 },
+  );
+  return {
+    ...data,
+    message: typeof meta.message === "string" ? meta.message : "",
+  };
 }
 
 /** 对齐 internal/db.SMSDelivery */
@@ -131,14 +138,11 @@ export interface SMSDelivery {
 export async function getDeliveryStatus(
   messageId: string,
 ): Promise<SMSDelivery> {
-  return pick<SMSDelivery>(
-    await api.get(`/sms/delivery/${encodeURIComponent(messageId)}`),
-    "delivery",
-  );
+  return (await api.get<SMSDelivery>(`/sms/delivery/${encodeURIComponent(messageId)}`)).data;
 }
 
 export async function deleteMessage(id: number): Promise<void> {
-  ok(await api.delete(`/sms/messages/${id}`));
+  await api.delete(`/sms/messages/${id}`);
 }
 
 /** DELETE /api/sms/thread —— 通过 query 指定会话 */
@@ -147,13 +151,11 @@ export async function deleteThread(params: {
   device_id?: string;
   imsi?: string;
 }): Promise<void> {
-  ok(
-    await api.delete("/sms/thread", {
+  await api.delete("/sms/thread", {
       query: {
         peer: params.peer,
         device_id: params.device_id,
         imsi: params.imsi,
       },
-    }),
-  );
+    });
 }

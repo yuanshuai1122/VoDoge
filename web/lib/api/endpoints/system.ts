@@ -1,5 +1,4 @@
 import { api } from "../client";
-import { ok, pick } from "../unwrap";
 import type { LogEntry } from "../../../types/log";
 
 export interface SystemInfo {
@@ -7,7 +6,7 @@ export interface SystemInfo {
 }
 
 export async function getSystemInfo(): Promise<SystemInfo> {
-  return api.get<SystemInfo>("/system/info");
+  return (await api.get<SystemInfo>("/system/info")).data;
 }
 
 /** GET /api/traffic/analysis，range 默认 day */
@@ -25,7 +24,7 @@ export async function getNotificationSettings(): Promise<unknown> {
 }
 
 export async function updateNotificationSettings(input: unknown): Promise<void> {
-  ok(await api.put("/settings/notifications", input));
+  await api.put("/settings/notifications", input);
 }
 
 /**
@@ -35,9 +34,9 @@ export async function updateNotificationSettings(input: unknown): Promise<void> 
 export type TestableChannel = "webhook" | "bark" | "email";
 
 export async function testNotification(channel: TestableChannel): Promise<void> {
-  ok(await api.post(`/settings/notifications/${channel}/test`, undefined, {
+  await api.post(`/settings/notifications/${channel}/test`, undefined, {
     timeoutMs: 60_000,
-  }));
+  });
 }
 
 export async function checkUpdate(): Promise<unknown> {
@@ -45,7 +44,7 @@ export async function checkUpdate(): Promise<unknown> {
 }
 
 export async function applyUpdate(): Promise<void> {
-  ok(await api.post("/system/update/apply", undefined, { timeoutMs: 120_000 }));
+  await api.post("/system/update/apply", undefined, { timeoutMs: 120_000 });
 }
 
 /**
@@ -55,8 +54,5 @@ export async function applyUpdate(): Promise<void> {
 export async function getLogHistory(params?: {
   level?: string;
 }): Promise<LogEntry[]> {
-  return pick<LogEntry[]>(
-    await api.get("/logs/history", { query: { level: params?.level } }),
-    "logs",
-  );
+  return (await api.get<LogEntry[]>("/logs/history", { query: { level: params?.level } })).data;
 }

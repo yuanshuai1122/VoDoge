@@ -53,11 +53,16 @@ async function call(method, path, { json, raw = false } = {}) {
   }
 
   if (!res.ok) {
-    const msg =
-      (body && (body.message || body.error)) || `HTTP ${res.status}`;
+    // 错误信封：{error:{code,message}, request_id}
+    const msg = body?.error?.message || `HTTP ${res.status}`;
     throw new Error(msg);
   }
-  return raw ? text : body;
+  if (raw) return text;
+  // 成功信封：{data, meta?, request_id}。/ping 之外的端点都是这个形状。
+  if (body && typeof body === "object" && "data" in body) {
+    return { data: body.data, meta: body.meta ?? {} };
+  }
+  return { data: body, meta: {} };
 }
 
 async function step(name, fn) {
@@ -76,9 +81,9 @@ async function main() {
     const r = await call("POST", "/auth/login", {
       json: { username: USER, password: PASS },
     });
-    if (!r?.token) throw new Error("响应中没有 token");
-    token = r.token;
-    return `token 有效期至 ${r.expires_at ?? "未知"}`;
+    if (!r.data?.token) throw new Error("响应中没有 token");
+    token = r.data.token;
+    return `token 有效期至 ${r.data.expires_at ?? "未知"}`;
   });
 
   if (!token) {
@@ -103,14 +108,16 @@ async function main() {
 
   await step("系统信息", async () => {
     const r = await call("GET", "/system/info");
-    return typeof r === "object" ? "已返回" : "响应异常";
+    return r.data?.version ? `版本 ${r.data.version}` : "已返回";
   });
 
   let devices = [];
   await step("设备列表", async () => {
     const r = await call("GET", "/devices");
-    devices = r?.devices ?? [];
-    return `${devices.length} 台设备`;
+    devices = r.data ?? [];
+    // 额度上限在 meta 里——它描述这批数据，不是某台设备的属性
+    const limit = r.meta.device_limit;
+    return `${devices.length} 台设备${limit ? ` / 上限 ${limit}` : ""}`;
   });
 
   if (devices.length > 0) {
@@ -118,8 +125,9 @@ async function main() {
 
     await step("设备概览", async () => {
       const r = await call("GET", `/devices/${encodeURIComponent(id)}/overview`);
-      const item = r?.devices?.[0];
-      if (!item) throw new Error("overview 未返回 devices[0]");
+      // 单设备端点返回单对象；曾经是 {devices:[单元素]}
+      const item = r.data;
+      if (!item?.id) throw new Error("overview 未返回设备对象");
       return `${item.name || item.id} · ${item.lifecycle_phase}`;
     });
 
@@ -127,7 +135,7 @@ async function main() {
     if (iccid) {
       await step("卡策略", async () => {
         const r = await call("GET", `/cards/${encodeURIComponent(iccid)}/policy`);
-        return `source=${r?.source ?? "?"}`;
+        return `source=${r.data?.source ?? "?"}`;
       });
     } else {
       log("skip", "卡策略", "设备未读取到 ICCID");
@@ -139,18 +147,18 @@ async function main() {
 
   await step("短信会话列表", async () => {
     const r = await call("GET", "/sms/contacts?limit=5");
-    if (!Array.isArray(r)) throw new Error("期望裸数组");
-    return `${r.length} 个会话`;
+    if (!Array.isArray(r.data)) throw new Error("data 应为数组");
+    return `${r.data.length} 个会话`;
   });
 
   await step("代理概览", async () => {
     const r = await call("GET", "/proxy-instances/overview");
-    return `${r?.instances?.length ?? 0} 个实例`;
+    return `${r.data?.instances?.length ?? 0} 个实例`;
   });
 
   await step("通知设置", async () => {
     const r = await call("GET", "/settings/notifications");
-    return typeof r === "object" ? "已返回" : "响应异常";
+    return typeof r.data === "object" ? "已返回" : "响应异常";
   });
 
   // SSE 走 query token（后端仅对流式端点白名单开放）

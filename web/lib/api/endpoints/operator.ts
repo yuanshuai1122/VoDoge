@@ -1,5 +1,4 @@
 import { api } from "../client";
-import { raw } from "../unwrap";
 
 /** 对齐 internal/backend.OperatorSelectionMode */
 export type OperatorSelectionMode = "automatic" | "manual";
@@ -47,9 +46,7 @@ export interface OperatorScanResponse {
 export async function getOperatorSelection(
   deviceId: string,
 ): Promise<OperatorSelection> {
-  return raw<OperatorSelection>(
-    await api.get(`/devices/${encodeURIComponent(deviceId)}/operator_selection`),
-  );
+  return (await api.get<OperatorSelection>(`/devices/${encodeURIComponent(deviceId)}/operator_selection`)).data;
 }
 
 /** POST /devices/:id/operator_selection —— 返回更新后的选择 */
@@ -65,14 +62,12 @@ export async function setOperatorSelection(
     rat?: string;
   },
 ): Promise<OperatorSelection> {
-  return raw<OperatorSelection>(
-    await api.post(
+  return (await api.post<OperatorSelection>(
       `/devices/${encodeURIComponent(deviceId)}/operator_selection`,
       input,
       // 锁网需要重新搜网，耗时较长
       { timeoutMs: 180_000 },
-    ),
-  );
+    )).data;
 }
 
 /** SSE 扫描流路径。扫描可能耗时数十秒，用流式获取中间结果。 */

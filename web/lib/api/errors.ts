@@ -1,17 +1,19 @@
 /**
  * 错误响应归一化。
  *
- * 后端自 2026-08-14 起只有一种错误形状：
- *   {status:"error", code, message, request_id}
- * 并发冲突等场景在同一层级附加 busy / reason / retry_after_ms / task_id。
+ * 后端只有一种错误形状：
  *
- * 曾经还有裸 {error:"..."}（整个 eSIM 模块、卡策略、选网）。**解析仍然保留**
- * 那一支：外部脚本可能仍按旧形状发请求或解析响应，容错本身没有代价，
- * 而少一个分支省不下什么。
+ *   {"error": {"code", "message", "details"?}, "request_id": "..."}
  *
- * `code` 多数时候只是按 HTTP 状态推导的通用码，业务层优先用 httpStatus 分支；
- * 只有 ESIM_BUSY / ESIM_DOWNLOAD_IN_PROGRESS / e911_* / websheet_* 这类
- * 专属码值得直接判。
+ * `data` 与 `error` 互斥且必有其一，所以判别是结构性的——不再靠
+ * `status:"ok"` 这种魔法字符串。那个字符串曾经出现在 200 响应里表示失败，
+ * 自相矛盾且无法防。
+ *
+ * `code` 多数时候只是按 HTTP 状态推导的通用码（`not_found`/`conflict`…），
+ * 业务层优先用 httpStatus 分支；只有 `ESIM_BUSY`、`ESIM_DOWNLOAD_IN_PROGRESS`、
+ * `e911_*`、`websheet_*` 这类专属码值得直接判。
+ *
+ * 需要据以决策的结构化数据在 `error.details` 里，与给人读的 message 分开。
  */
 
 export class ApiError extends Error {
@@ -26,10 +28,11 @@ export class ApiError extends Error {
   /** 仅 busy 时有值，占用原因（如 "rename_profile"）。 */
   readonly reason?: string;
   /**
-   * 原始错误体。少数端点会在错误响应里带上调用方需要的数据——例如
-   * eSIM 下载的 409 会返回进行中任务的 task_id，调用方要用它去订阅进度。
-   * 归一化后的字段之外的东西都在这里，取用时自行做类型收窄。
+   * error.details 原样。少数端点在这里放调用方需要的数据——例如 eSIM 下载
+   * 的 409 会带上进行中任务的 task_id，调用方要用它去订阅进度。
    */
+  readonly details?: Record<string, unknown>;
+  /** 原始响应体，排查用。 */
   readonly body?: Record<string, unknown>;
 
   constructor(
@@ -41,6 +44,7 @@ export class ApiError extends Error {
       busy?: boolean;
       retryAfterMs?: number;
       reason?: string;
+      details?: Record<string, unknown>;
       body?: Record<string, unknown>;
     },
   ) {
@@ -52,6 +56,7 @@ export class ApiError extends Error {
     this.busy = opts.busy ?? false;
     this.retryAfterMs = opts.retryAfterMs;
     this.reason = opts.reason;
+    this.details = opts.details;
     this.body = opts.body;
   }
 
@@ -83,58 +88,36 @@ function asNumber(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
-/** 把任意形状的错误响应体归一为 ApiError。 */
+/** 把错误响应体归一为 ApiError。 */
 export function parseApiError(httpStatus: number, body: unknown): ApiError {
   const rec = asRecord(body);
-
   if (!rec) {
     return new ApiError(defaultMessageFor(httpStatus), { httpStatus });
   }
 
-  // 并发冲突先判：它同时带 message 与（历史上的）error，落到下面会丢掉
-  // busy / retry_after_ms，调用方就不知道该等多久了。
-  if (rec.busy === true || rec.code === "ESIM_BUSY") {
-    return new ApiError(
-      asString(rec.message) ?? asString(rec.error) ?? "eSIM 操作正忙，请稍后重试",
-      {
-        httpStatus,
-        code: asString(rec.code) ?? "ESIM_BUSY",
-        busy: true,
-        // snake_case 是现行字段名，camelCase 是为兼容保留的旧名
-        retryAfterMs:
-          asNumber(rec.retry_after_ms) ?? asNumber(rec.retryAfterMs),
-        reason: asString(rec.reason),
-        requestId: asString(rec.request_id),
-        body: rec,
-      },
-    );
-  }
-
-  // 现行形状
-  const message = asString(rec.message);
-  if (message) {
-    return new ApiError(message, {
+  const requestId = asString(rec.request_id);
+  const err = asRecord(rec.error);
+  if (!err) {
+    // 非 2xx 却没有 error 字段：可能是被中间层拦截（网关错误页、代理超时），
+    // 也可能撞上了不套信封的路径。按状态码给兜底文案，并保留原始体供排查。
+    return new ApiError(defaultMessageFor(httpStatus), {
       httpStatus,
-      code: asString(rec.code),
-      requestId: asString(rec.request_id),
+      requestId,
       body: rec,
     });
   }
 
-  // 旧形状：裸 {error:"..."}。后端已不再产生，保留以兼容外部调用方。
-  const err = asString(rec.error);
-  if (err) {
-    return new ApiError(err, {
-      httpStatus,
-      code: asString(rec.code),
-      requestId: asString(rec.request_id),
-      body: rec,
-    });
-  }
+  const details = asRecord(err.details) ?? undefined;
+  const busy = details?.busy === true || err.code === "ESIM_BUSY";
 
-  return new ApiError(defaultMessageFor(httpStatus), {
+  return new ApiError(asString(err.message) ?? defaultMessageFor(httpStatus), {
     httpStatus,
-    requestId: asString(rec.request_id),
+    code: asString(err.code),
+    requestId,
+    busy,
+    retryAfterMs: asNumber(details?.retry_after_ms),
+    reason: asString(details?.reason),
+    details,
     body: rec,
   });
 }

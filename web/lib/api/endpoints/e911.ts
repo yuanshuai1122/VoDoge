@@ -38,15 +38,19 @@ export interface WebsheetStatus {
 export async function startE911Websheet(
   deviceId: string,
 ): Promise<WebsheetInfo> {
-  return api.post<WebsheetInfo>(
-    `/devices/${encodeURIComponent(deviceId)}/vowifi/e911/websheet`,
-    undefined,
-    // 要先与运营商做一次 entitlement 交互（含 AKA 鉴权），比普通请求慢得多
-    { timeoutMs: 60_000 },
-  );
+  return (
+    await api.post<WebsheetInfo>(
+      `/devices/${encodeURIComponent(deviceId)}/vowifi/e911/websheet`,
+      undefined,
+      // 要先与运营商做一次 entitlement 交互（含 AKA 鉴权），比普通请求慢得多
+      { timeoutMs: 60_000 },
+    )
+  ).data;
 }
 
 /** GET /websheets/:id/status —— 会话过期后返回 410。 */
 export async function getWebsheetStatus(id: string): Promise<WebsheetStatus> {
-  return api.get<WebsheetStatus>(`/websheets/${encodeURIComponent(id)}/status`);
+  return (
+    await api.get<WebsheetStatus>(`/websheets/${encodeURIComponent(id)}/status`)
+  ).data;
 }

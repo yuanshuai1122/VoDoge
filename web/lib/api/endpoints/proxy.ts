@@ -1,5 +1,4 @@
 import { api } from "../client";
-import { ok, raw, rawArray } from "../unwrap";
 
 /** 本机代理实例。对齐 internal/api/proxy.go 的 proxyInstanceDTO。 */
 export interface ProxyInstance {
@@ -45,31 +44,29 @@ export interface ProxyOverview {
 
 /** GET /api/proxy-instances/overview -> {instances, devices, status} */
 export async function getProxyOverview(): Promise<ProxyOverview> {
-  const body = await api.get<ProxyOverview>("/proxy-instances/overview");
+  const { data } = await api.get<ProxyOverview>("/proxy-instances/overview");
   return {
-    instances: body?.instances ?? [],
-    devices: body?.devices ?? [],
-    status: body?.status ?? [],
+    instances: data?.instances ?? [],
+    devices: data?.devices ?? [],
+    status: data?.status ?? [],
   };
 }
 
 /** PUT /api/proxy-instances/config —— 整体保存实例列表 */
 export async function saveProxyConfig(instances: ProxyInstance[]): Promise<void> {
-  ok(await api.put("/proxy-instances/config", { instances }));
+  await api.put("/proxy-instances/config", { instances });
 }
 
 export async function startInstance(id: string): Promise<void> {
-  ok(await api.post(`/proxy-instances/${encodeURIComponent(id)}/actions/start`));
+  await api.post(`/proxy-instances/${encodeURIComponent(id)}/actions/start`);
 }
 
 export async function stopInstance(id: string): Promise<void> {
-  ok(await api.post(`/proxy-instances/${encodeURIComponent(id)}/actions/stop`));
+  await api.post(`/proxy-instances/${encodeURIComponent(id)}/actions/stop`);
 }
 
 export async function restartInstance(id: string): Promise<void> {
-  ok(
-    await api.post(`/proxy-instances/${encodeURIComponent(id)}/actions/restart`),
-  );
+  await api.post(`/proxy-instances/${encodeURIComponent(id)}/actions/restart`);
 }
 
 /** 上游代理。对齐 internal/db.UpstreamProxy。密码在列表接口中已被后端脱敏。 */
@@ -86,7 +83,7 @@ export interface UpstreamProxy {
 
 /** GET /api/upstream-proxies —— 裸数组 */
 export async function listUpstreamProxies(): Promise<UpstreamProxy[]> {
-  return rawArray<UpstreamProxy>(await api.get("/upstream-proxies"));
+  return (await api.get<UpstreamProxy[]>("/upstream-proxies")).data;
 }
 
 export async function createUpstreamProxy(
@@ -111,13 +108,11 @@ export interface ProbeResult {
 }
 
 export async function probeUpstreamProxy(id: string): Promise<ProbeResult> {
-  return raw<ProbeResult>(
-    await api.post(
+  return (await api.post<ProbeResult>(
       `/upstream-proxies/${encodeURIComponent(id)}/actions/probe`,
       undefined,
       { timeoutMs: 60_000 },
-    ),
-  );
+    )).data;
 }
 
 /** 对齐 internal/upstreamproxy.CountryDisplay */
@@ -142,12 +137,12 @@ export interface CountryRule {
  * MCC/MNC 表未就绪时后端返回 503 mcc_mnc_table_unavailable。
  */
 export async function listUpstreamCountries(): Promise<CountryDisplay[]> {
-  return rawArray<CountryDisplay>(await api.get("/upstream-proxy-countries"));
+  return (await api.get<CountryDisplay[]>("/upstream-proxy-countries")).data;
 }
 
 /** GET /api/upstream-proxy-country-rules —— 裸数组 */
 export async function listCountryRules(): Promise<CountryRule[]> {
-  return rawArray<CountryRule>(await api.get("/upstream-proxy-country-rules"));
+  return (await api.get<CountryRule[]>("/upstream-proxy-country-rules")).data;
 }
 
 export async function upsertCountryRule(

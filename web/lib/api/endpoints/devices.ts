@@ -1,17 +1,21 @@
 import { api } from "../client";
-import { ok, pick, pickOr, pickFirstDevice, rawArray } from "../unwrap";
 import type { DeviceOverview, DeviceListResult } from "../../../types/device";
 import type {
   DeviceConfigDTO,
   DiscoveredDevice,
 } from "../../../types/device-config";
 
-/** GET /api/devices -> {devices, device_limit} */
+/**
+ * GET /api/devices
+ *
+ * 设备列表是 data；额度上限描述的是这批数据而非某台设备，因此在 meta 里。
+ */
 export async function listDevices(): Promise<DeviceListResult> {
-  const body = await api.get("/devices");
+  const { data, meta } = await api.get<DeviceOverview[]>("/devices");
   return {
-    devices: pick<DeviceOverview[]>(body, "devices"),
-    device_limit: pickOr<number | undefined>(body, "device_limit", undefined),
+    devices: data,
+    device_limit:
+      typeof meta.device_limit === "number" ? meta.device_limit : undefined,
   };
 }
 
@@ -40,25 +44,24 @@ export interface DashboardDevice {
 }
 
 export async function listDashboardDevices(): Promise<DashboardDevice[]> {
-  return rawArray<DashboardDevice>(await api.get("/dashboard/devices"));
+  return (await api.get<DashboardDevice[]>("/dashboard/devices")).data;
 }
 
 /**
- * GET /api/devices/:id/overview
- * 注意后端返回的是 {devices:[单元素]}，不是单对象。
+ * GET /api/devices/:id/overview —— 单个设备对象。
+ *
+ * 曾经返回 {devices:[单元素]}，设备不存在时给空数组，逼得前端自己把"空"
+ * 翻译成 404。现在后端直接给对象，不存在就是 404。
  */
 export async function getDeviceOverview(id: string): Promise<DeviceOverview> {
-  return pickFirstDevice<DeviceOverview>(
-    await api.get(`/devices/${encodeURIComponent(id)}/overview`),
-  );
+  return (
+    await api.get<DeviceOverview>(`/devices/${encodeURIComponent(id)}/overview`)
+  ).data;
 }
 
 /** GET /api/devices/discovered -> {devices} */
 export async function listDiscoveredDevices(): Promise<DiscoveredDevice[]> {
-  return pick<DiscoveredDevice[]>(
-    await api.get("/devices/discovered", { timeoutMs: 60_000 }),
-    "devices",
-  );
+  return (await api.get<DiscoveredDevice[]>("/devices/discovered", { timeoutMs: 60_000 })).data;
 }
 
 /**
@@ -68,7 +71,6 @@ export async function listDiscoveredDevices(): Promise<DiscoveredDevice[]> {
  * 配置写入成功但运行时启动失败也会返回 200，warning 必须展示。
  */
 export interface AddDeviceResult {
-  status: string;
   started?: boolean;
   requires_restart?: boolean;
   warning?: string;
@@ -77,19 +79,25 @@ export interface AddDeviceResult {
 export async function addDeviceWithConfig(
   config: DeviceConfigDTO,
 ): Promise<AddDeviceResult> {
-  return api.post<AddDeviceResult>("/devices", { config }, { timeoutMs: 60_000 });
+  // 添加设备没有资源可返回（data 为 null）；started/requires_restart/warning
+  // 描述的是这次操作的结果，都在 meta 里。
+  const { meta } = await api.post("/devices", { config }, { timeoutMs: 60_000 });
+  return {
+    started: typeof meta.started === "boolean" ? meta.started : undefined,
+    requires_restart:
+      typeof meta.requires_restart === "boolean"
+        ? meta.requires_restart
+        : undefined,
+    warning: typeof meta.warning === "string" ? meta.warning : undefined,
+  };
 }
 
 /** GET /api/devices/:id/config -> {config} */
 export async function getDeviceConfig(id: string): Promise<DeviceConfigDTO> {
-  return pick<DeviceConfigDTO>(
-    await api.get(`/devices/${encodeURIComponent(id)}/config`),
-    "config",
-  );
+  return (await api.get<DeviceConfigDTO>(`/devices/${encodeURIComponent(id)}/config`)).data;
 }
 
 export interface UpdateDeviceResult {
-  status: string;
   requires_restart?: boolean;
   warning?: string;
   vowifi_error?: string;
@@ -110,31 +118,41 @@ export async function updateDevice(
   id: string,
   config: DeviceConfigDTO,
 ): Promise<UpdateDeviceResult> {
-  return api.put<UpdateDeviceResult>(
+  // 同 addDeviceWithConfig：保存本身没有资源可返回，结果说明全在 meta
+  const { meta } = await api.put(
     `/devices/${encodeURIComponent(id)}`,
     { config },
     { timeoutMs: 60_000 },
   );
+  return {
+    requires_restart:
+      typeof meta.requires_restart === "boolean"
+        ? meta.requires_restart
+        : undefined,
+    warning: typeof meta.warning === "string" ? meta.warning : undefined,
+    vowifi_error:
+      typeof meta.vowifi_error === "string" ? meta.vowifi_error : undefined,
+  };
 }
 
 export async function deleteDevice(id: string): Promise<void> {
-  ok(await api.delete(`/devices/${encodeURIComponent(id)}`));
+  await api.delete(`/devices/${encodeURIComponent(id)}`);
 }
 
 export async function refreshDevice(id: string): Promise<void> {
-  ok(await api.post(`/devices/${encodeURIComponent(id)}/actions/refresh`));
+  await api.post(`/devices/${encodeURIComponent(id)}/actions/refresh`);
 }
 
 export async function rebootDevice(id: string): Promise<void> {
-  ok(await api.post(`/devices/${encodeURIComponent(id)}/actions/reboot`));
+  await api.post(`/devices/${encodeURIComponent(id)}/actions/reboot`);
 }
 
 export async function rescanDevices(): Promise<void> {
-  ok(await api.post("/devices/actions/rescan"));
+  await api.post("/devices/actions/rescan");
 }
 
 /**
- * POST /api/devices/:id/actions/at -> {status:"ok", response}
+ * POST /api/devices/:id/actions/at —— data 就是模组的原始回显。
  * 请求字段是 `cmd`（注意 USSD 用的是 `command`，两者不一致）。
  */
 export async function executeAT(
@@ -142,26 +160,43 @@ export async function executeAT(
   cmd: string,
   timeoutMs?: number,
 ): Promise<string> {
-  const body = await api.post(
-    `/devices/${encodeURIComponent(id)}/actions/at`,
-    { cmd, timeout_ms: timeoutMs },
-    { timeoutMs: 60_000 },
-  );
-  return pick<string>(body, "response");
+  return (
+    await api.post<string>(
+      `/devices/${encodeURIComponent(id)}/actions/at`,
+      { cmd, timeout_ms: timeoutMs },
+      { timeoutMs: 60_000 },
+    )
+  ).data;
 }
 
 /**
  * USSD 是多轮会话：execute -> (continue)* -> cancel。
- * 响应形如 {status:"ok", result, channel}，channel 为 "vowifi" 或 "cs"。
- * result 中携带 session_id，续轮时必须回传。
+ *
+ * data 是模组返回的结果（含 session_id，续轮时必须回传）；
+ * 走的是哪条通路（vowifi / cs）属于 meta.channel。
  */
+export interface USSDResponse {
+  session_id?: string;
+  text?: string;
+  [key: string]: unknown;
+}
+
 export interface USSDResult {
-  status: string;
+  /** "vowifi" 或 "cs" */
   channel: string;
-  result: {
-    session_id?: string;
-    text?: string;
-    [key: string]: unknown;
+  result: USSDResponse;
+}
+
+async function ussdCall(
+  path: string,
+  body: unknown,
+): Promise<USSDResult> {
+  const { data, meta } = await api.post<USSDResponse>(path, body, {
+    timeoutMs: 130_000,
+  });
+  return {
+    channel: typeof meta.channel === "string" ? meta.channel : "",
+    result: data,
   };
 }
 
@@ -169,11 +204,9 @@ export async function executeUSSD(
   id: string,
   command: string,
 ): Promise<USSDResult> {
-  return api.post<USSDResult>(
-    `/devices/${encodeURIComponent(id)}/actions/ussd`,
-    { command },
-    { timeoutMs: 130_000 },
-  );
+  return ussdCall(`/devices/${encodeURIComponent(id)}/actions/ussd`, {
+    command,
+  });
 }
 
 export async function continueUSSD(
@@ -181,11 +214,10 @@ export async function continueUSSD(
   sessionId: string,
   input: string,
 ): Promise<USSDResult> {
-  return api.post<USSDResult>(
-    `/devices/${encodeURIComponent(id)}/actions/ussd/continue`,
-    { session_id: sessionId, input },
-    { timeoutMs: 130_000 },
-  );
+  return ussdCall(`/devices/${encodeURIComponent(id)}/actions/ussd/continue`, {
+    session_id: sessionId,
+    input,
+  });
 }
 
 export async function cancelUSSD(id: string, sessionId?: string): Promise<void> {
@@ -200,15 +232,15 @@ export async function setDeviceNetwork(
   id: string,
   input: { enabled: boolean; ip_version?: string; apn?: string },
 ): Promise<void> {
-  ok(await api.patch(`/devices/${encodeURIComponent(id)}/network`, input));
+  await api.patch(`/devices/${encodeURIComponent(id)}/network`, input);
 }
 
 export async function setFlightMode(id: string, enabled: boolean): Promise<void> {
-  ok(await api.patch(`/devices/${encodeURIComponent(id)}/flight-mode`, { enabled }));
+  await api.patch(`/devices/${encodeURIComponent(id)}/flight-mode`, { enabled });
 }
 
 export async function setVoWiFi(id: string, enabled: boolean): Promise<void> {
-  ok(await api.patch(`/devices/${encodeURIComponent(id)}/vowifi`, { enabled }));
+  await api.patch(`/devices/${encodeURIComponent(id)}/vowifi`, { enabled });
 }
 
 /**
@@ -230,9 +262,7 @@ export const USBNET_MODES = [
 ] as const;
 
 export async function setUSBNetMode(id: string, mode: number): Promise<void> {
-  ok(
-    await api.patch(`/devices/${encodeURIComponent(id)}/usbnet-mode`, { mode }),
-  );
+  await api.patch(`/devices/${encodeURIComponent(id)}/usbnet-mode`, { mode });
 }
 
 /**
@@ -240,11 +270,9 @@ export async function setUSBNetMode(id: string, mode: number): Promise<void> {
  * 重新发起 IMS 注册。注册过程可能持续数十秒，超时放宽。
  */
 export async function reconnectVoWiFi(id: string): Promise<void> {
-  ok(
-    await api.post(
+  await api.post(
       `/devices/${encodeURIComponent(id)}/vowifi/actions/reconnect`,
       undefined,
       { timeoutMs: 90_000 },
-    ),
-  );
+    );
 }

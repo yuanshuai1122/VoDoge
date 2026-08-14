@@ -1,5 +1,4 @@
 import { api } from "../client";
-import { pick, raw } from "../unwrap";
 
 /** 对齐 internal/db.CardPolicy。策略跟 ICCID 走，不跟设备。 */
 export interface CardPolicy {
@@ -20,9 +19,7 @@ export interface CardPolicy {
  * 策略不存在时后端返回 DefaultCardPolicy 而非 404，因此这里不会抛 not found。
  */
 export async function getCardPolicy(iccid: string): Promise<CardPolicy> {
-  return raw<CardPolicy>(
-    await api.get(`/cards/${encodeURIComponent(iccid)}/policy`),
-  );
+  return (await api.get<CardPolicy>(`/cards/${encodeURIComponent(iccid)}/policy`)).data;
 }
 
 /** PUT /api/cards/:iccid/policy —— 返回更新后的裸对象 */
@@ -30,12 +27,10 @@ export async function putCardPolicy(
   iccid: string,
   input: Partial<CardPolicy>,
 ): Promise<CardPolicy> {
-  return raw<CardPolicy>(
-    await api.put(`/cards/${encodeURIComponent(iccid)}/policy`, input),
-  );
+  return (await api.put<CardPolicy>(`/cards/${encodeURIComponent(iccid)}/policy`, input)).data;
 }
 
 /** GET /api/cards/policies -> {policies} */
 export async function listCardPolicies(): Promise<CardPolicy[]> {
-  return pick<CardPolicy[]>(await api.get("/cards/policies"), "policies");
+  return (await api.get<CardPolicy[]>("/cards/policies")).data;
 }

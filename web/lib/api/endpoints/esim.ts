@@ -1,41 +1,41 @@
 import { api } from "../client";
 import { ApiError } from "../errors";
-import { pick, raw, rawArray } from "../unwrap";
 import type { EUICCProfiles } from "../../../types/esim";
 
 /**
  * eSIM 端点。
  *
- * 两点与其它域不同：
- *  - 错误体是 {error:"..."}，不是 {status:"error", message}（已由 errors.ts 归一）
- *  - 所有操作经 APDU 仲裁器串行化，任一调用都可能返回 409 ESIM_BUSY，
- *    调用方必须配合 stores/esim-busy 做互斥，不要盲目重试
+ * 所有操作经 APDU 仲裁器串行化，任一调用都可能返回 409 ESIM_BUSY，
+ * 调用方必须配合 stores/esim-lock 做互斥，不要盲目重试。
  */
 
-/** GET /devices/:id/esim/profiles —— 裸数组，按 eUICC 分组 */
+/** GET /devices/:id/esim/profiles —— 按 eUICC 分组的数组 */
 export async function listProfiles(deviceId: string): Promise<EUICCProfiles[]> {
-  const body = await api.get(
-    `/devices/${encodeURIComponent(deviceId)}/esim/profiles`,
-    { timeoutMs: 60_000 },
-  );
-  return rawArray<EUICCProfiles>(body);
+  return (
+    await api.get<EUICCProfiles[]>(
+      `/devices/${encodeURIComponent(deviceId)}/esim/profiles`,
+      { timeoutMs: 60_000 },
+    )
+  ).data;
 }
 
 export async function getEsimOverview(deviceId: string): Promise<unknown> {
-  return api.get(`/devices/${encodeURIComponent(deviceId)}/esim`, {
-    timeoutMs: 60_000,
-  });
+  return (
+    await api.get(`/devices/${encodeURIComponent(deviceId)}/esim`, {
+      timeoutMs: 60_000,
+    })
+  ).data;
 }
 
-/** GET /devices/:id/esim/chip-info —— 裸对象 */
 export async function getChipInfo(
   deviceId: string,
 ): Promise<Record<string, unknown>> {
-  return raw<Record<string, unknown>>(
-    await api.get(`/devices/${encodeURIComponent(deviceId)}/esim/chip-info`, {
-      timeoutMs: 60_000,
-    }),
-  );
+  return (
+    await api.get<Record<string, unknown>>(
+      `/devices/${encodeURIComponent(deviceId)}/esim/chip-info`,
+      { timeoutMs: 60_000 },
+    )
+  ).data;
 }
 
 export async function switchProfile(
@@ -62,9 +62,12 @@ export async function renameProfile(
   );
 }
 
-/** 删除成功可能带 warning / warning_code / space_delta，需展示而非忽略。 */
+/**
+ * 删除的结果全在 meta：提示语、通知未确认的告警、eUICC 空间变化。
+ * 被删掉的 profile 没有资源可返回，data 为 null。
+ * warning 必须展示而不是忽略——它表示删成功了但通知没送达运营商。
+ */
 export interface DeleteProfileResult {
-  status?: string;
   message?: string;
   warning?: string;
   warning_code?: string;
@@ -75,10 +78,17 @@ export async function deleteProfile(
   deviceId: string,
   iccid: string,
 ): Promise<DeleteProfileResult> {
-  return api.delete<DeleteProfileResult>(
+  const { meta } = await api.delete(
     `/devices/${encodeURIComponent(deviceId)}/esim/profiles/${encodeURIComponent(iccid)}`,
     { timeoutMs: 120_000 },
   );
+  return {
+    message: typeof meta.message === "string" ? meta.message : undefined,
+    warning: typeof meta.warning === "string" ? meta.warning : undefined,
+    warning_code:
+      typeof meta.warning_code === "string" ? meta.warning_code : undefined,
+    space_delta: meta.space_delta,
+  };
 }
 
 /** 对齐 internal/esim.NotificationItem */
@@ -91,15 +101,15 @@ export interface EsimNotification {
   can_retry: boolean;
 }
 
-/** GET /devices/:id/esim/notifications -> {items} */
 export async function listNotifications(
   deviceId: string,
 ): Promise<EsimNotification[]> {
-  const body = await api.get(
-    `/devices/${encodeURIComponent(deviceId)}/esim/notifications`,
-    { timeoutMs: 60_000 },
-  );
-  return pick<EsimNotification[]>(body, "items");
+  return (
+    await api.get<EsimNotification[]>(
+      `/devices/${encodeURIComponent(deviceId)}/esim/notifications`,
+      { timeoutMs: 60_000 },
+    )
+  ).data;
 }
 
 export async function retryNotification(
@@ -135,15 +145,16 @@ export async function startDownloadProfile(
   input: StartDownloadInput,
 ): Promise<{ task_id: string; already_running: boolean }> {
   try {
-    const body = await api.post<{ task_id?: string }>(
+    const { data } = await api.post<{ task_id?: string }>(
       `/devices/${encodeURIComponent(deviceId)}/esim/actions/download`,
       input,
       { timeoutMs: 30_000 },
     );
-    return { task_id: body?.task_id ?? "", already_running: false };
+    return { task_id: data?.task_id ?? "", already_running: false };
   } catch (err) {
     if (err instanceof ApiError && err.httpStatus === 409) {
-      const taskId = err.body?.task_id;
+      // 已有任务时 task_id 在 error.details 里——那是客户端要据以决策的数据
+      const taskId = err.details?.task_id;
       if (typeof taskId === "string" && taskId) {
         return { task_id: taskId, already_running: true };
       }

@@ -1,9 +1,7 @@
 import { api } from "../client";
-import { ok } from "../unwrap";
 import { setToken, triggerLogout } from "../../auth/token";
 
 interface LoginResponse {
-  status: string;
   token: string;
   expires_at: string;
 }
@@ -13,12 +11,12 @@ interface LoginResponse {
  * 失败：401 invalid_credentials / 429 rate_limited（2 分钟 10 次/IP）
  */
 export async function login(username: string, password: string): Promise<void> {
-  const res = await api.post<LoginResponse>(
+  const { data } = await api.post<LoginResponse>(
     "/auth/login",
     { username, password },
     { skipAuthRedirect: true },
   );
-  setToken(res.token, res.expires_at);
+  setToken(data.token, data.expires_at);
 }
 
 /**
@@ -32,7 +30,7 @@ export async function changePassword(input: {
   new_password: string;
   confirm_password: string;
 }): Promise<void> {
-  ok(await api.post("/settings/password", input));
+  await api.post("/settings/password", input);
   triggerLogout();
 }
 

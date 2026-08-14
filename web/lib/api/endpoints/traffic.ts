@@ -19,7 +19,7 @@ export interface TrafficChartData {
 }
 
 export interface TrafficAnalysis {
-  status: string;
+  /** 请求参数的回显，来自 meta */
   range: string;
   buckets: TrafficBucket[];
   chart: TrafficChartData | null;
@@ -27,18 +27,24 @@ export interface TrafficAnalysis {
 
 export type TrafficRange = "day" | "week" | "month";
 
-/** GET /api/traffic/analysis -> {status, range, buckets, chart} */
+/**
+ * GET /api/traffic/analysis
+ *
+ * buckets 与 chart 是数据；range 只是把请求参数回显回来，属于 meta。
+ */
 export async function getTrafficAnalysis(params: {
   range?: TrafficRange;
   deviceId?: string;
 }): Promise<TrafficAnalysis> {
-  const body = await api.get<TrafficAnalysis>("/traffic/analysis", {
+  const { data, meta } = await api.get<{
+    buckets?: TrafficBucket[];
+    chart?: TrafficChartData | null;
+  }>("/traffic/analysis", {
     query: { range: params.range ?? "day", device_id: params.deviceId },
   });
   return {
-    status: body?.status ?? "ok",
-    range: body?.range ?? "day",
-    buckets: body?.buckets ?? [],
-    chart: body?.chart ?? null,
+    range: typeof meta.range === "string" ? (meta.range as TrafficRange) : "day",
+    buckets: data?.buckets ?? [],
+    chart: data?.chart ?? null,
   };
 }
