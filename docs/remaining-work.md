@@ -52,8 +52,9 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 
 ## P1 — 需要真实模组才能验证（代码已写，未经现场）
 
-必须在**接有 Quectel 模组的 Linux 主机**上做（Windows/Docker Desktop 无 USB 透传，
-日志里的 `未发现调制解调器` 属预期）。
+需要一台能真正看到模组的机器。原生 Linux 主机最省事；Windows 也可以，
+但要先满足 [hardware-bringup-windows.md](./hardware-bringup-windows.md) 里的前提
+（自建 WSL2 内核 + usbipd），**默认环境下设备会扫不到且不报错**。
 
 | 项 | 验证什么 |
 |----|----------|

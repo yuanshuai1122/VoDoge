@@ -178,9 +178,12 @@ bash scripts/ci.sh multiarch
 ## ⚠️ 注意事项
 
 - **设备透传**：管理模组需要访问 USB 设备，因此需要 `privileged` 与 `/dev` 挂载。
-  Windows/macOS 的 Docker Desktop 没有 USB 透传，设备相关功能不可用
-  （Windows 可尝试 WSL2 + usbipd）。
+  Windows/macOS 的 Docker Desktop 默认没有 USB 透传。Windows 上可以用 WSL2 + usbipd 补上，
+  但**还需要一个带 WWAN 驱动的内核**——微软的默认 WSL2 内核没编进 QMI/MBIM/AT 任何一个，
+  设备会扫不到且不报错。做法见 `docs/hardware-bringup-windows.md`。
 - **端口**：`network_mode: host` 时无需映射；否则需自行暴露 7575。
+  注意 Docker Desktop 的 host 网络是 `docker-desktop` 那个 WSL 发行版的命名空间，**不是** Windows 主机，
+  端口从主机访问不到；Windows 上请用仓库里的 `docker-compose.windows.yml`（发布端口 + 服务名连库）。
 
 ## 🔄 升级：API 响应结构变更（2026-08-14，破坏性）
 
