@@ -84,6 +84,7 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | 短信投递状态明细 UI | ✅ 已做 | 发送后按 `message_id` 轮询回执（`acks/parts_total`），确认完即停；AT 通道无 message_id，404 时静默不显示 |
 | weixin 通知渠道表单 | ❌ 不做 | 后端从未实现其 QR 接口；OpenAPI 里那 3 条声明已连同 schema 一并删除 |
 | USBNET 模式入口 | ✅ 已做 | 设备配置页，独立于「保存配置」；切换会重启模组并换驱动，故要求二次确认 |
+| 卸载入口（`/system/uninstall`） | ✅ 已做 | 系统设置页底部的独立危险区。要求逐字输入 `UNINSTALL` 才解锁——后端会删数据目录、配置文件与程序自身后退出，点击级别的确认挡不住手滑。成功即终态，不等轮询 |
 | E911 websheet 入口 | ✅ 已做 | 定为**新窗口**：页面不受控，CSP/X-Frame-Options 可能拒绝内嵌，且跨源观察不到完成——完成信号改由新增的 `GET /websheets/:id/status` 轮询提供 |
 
 ---

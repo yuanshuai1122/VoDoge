@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { NotificationSettingsPanel } from "@/components/settings/notification-settings";
 import { SystemPanel } from "@/components/settings/system-panel";
+import { DangerZone } from "@/components/settings/danger-zone";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -133,6 +134,9 @@ export default function SettingsPage() {
 
         <SystemPanel />
         <NotificationSettingsPanel />
+
+        {/* 放在最后：不可撤销的操作不该出现在用户随手会滑到的位置 */}
+        <DangerZone />
       </div>
     </>
   );

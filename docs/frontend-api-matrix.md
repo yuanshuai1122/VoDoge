@@ -345,7 +345,7 @@
 | `/api/settings/notifications` | GET / PUT | 通知配置 |
 | `/api/settings/notifications/webhook/test`、`/bark/test`、`/email/test` | POST | 测试发送（**仅这 3 个渠道有测试接口**） |
 | `/api/system/update/check`、`/update/apply` | GET / POST | 在线更新 |
-| `/api/system/uninstall` | POST | 卸载/自毁，**破坏性且不可撤销**；需鉴权。UI 上必须二次确认 |
+| `/api/system/uninstall` | POST | 卸载/自毁，**破坏性且不可撤销**：删数据目录 + 配置文件 + **程序自身**，随后退出。需鉴权。UI 在设置页危险区，要求逐字输入 `UNINSTALL`。PostgreSQL 数据不在删除范围内 |
 
 ### 5.9 VoWiFi / E911
 
