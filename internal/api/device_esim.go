@@ -318,7 +318,7 @@ func (s *Server) handleEsimSwitchProfile(c *gin.Context) {
 }
 
 // handleEsimDisableProfile 禁用当前启用的 Profile。
-// 对照 VoCat：当前卡可单独禁用，禁用后该 eUICC 没有活动号码，短信身份会空，直到再启用一张。
+// 当前卡可单独禁用，禁用后该 eUICC 没有活动号码，短信身份会空，直到再启用一张。
 func (s *Server) handleEsimDisableProfile(c *gin.Context) {
 	id := deviceIDParam(c)
 	var req esimSwitchRequest

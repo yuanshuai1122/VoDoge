@@ -153,11 +153,11 @@ func TestInstallURLUsesFetcherAndRejectsChecksum(t *testing.T) {
 	}
 }
 
-func TestInstallRejectsLegacyManifestName(t *testing.T) {
+func TestInstallRejectsUnknownManifestName(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	w, _ := zw.Create("vocat-plugin.json")
-	_, _ = w.Write([]byte(sidebarManifest("vocat-compat")))
+	w, _ := zw.Create("plugin.json")
+	_, _ = w.Write([]byte(sidebarManifest("unknown-manifest")))
 	w, _ = zw.Create("index.html")
 	_, _ = w.Write([]byte("ok"))
 	_ = zw.Close()
@@ -167,7 +167,7 @@ func TestInstallRejectsLegacyManifestName(t *testing.T) {
 	}
 	defer mgr.Close()
 	if _, err := mgr.InstallZip(buf.Bytes(), ""); err == nil {
-		t.Fatal("legacy vocat-plugin.json must be rejected")
+		t.Fatal("zip without vodoge-plugin.json must be rejected")
 	}
 }
 

@@ -127,7 +127,6 @@ P1 现场验证（需硬件）──► 发现的问题回流 P2
 读卡器 VoWiFi / AKA、中英界面、一键安装与 GHCR 发版已软件先行。
 真机仍要：CCID 读卡器 + `pcscd` + 能做 IMS 的卡。
 
-产品对照与分期见 [vocat-adopt-plan.md](./vocat-adopt-plan.md)。
 UFI 不承担短信验收；第 1 期真机改为 EC25-CN。
 个人入口：无硬件部分已合入（lane 分线、短信过滤、窄屏会话、PWA 壳、读卡器发现打桩）。
 第 1 期真机短信仍要 EC25-CN；第 1b 可安装 PWA 仍要 HTTPS。通知走 Telegram/Bark。

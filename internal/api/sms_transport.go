@@ -9,7 +9,7 @@ const (
 
 // smsSendPlan 决定这一条短信先走哪条通道、失败后能不能换一条。
 //
-// 对照 VoCat：国外线（EG25）在蜂窝登不上时用 IMS 补通路。
+// 国外线（EG25）在蜂窝登不上时用 IMS 补通路。
 // 国内线（EC25-CN）保持原行为：VoWiFi 开着就只走 IMS，否则只走蜂窝。
 // 软件路径已齐；EC25 蜂窝短信、EG25 IMS 出口仍要真机再跑一遍。
 type smsSendPlan struct {
