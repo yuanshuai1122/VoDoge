@@ -13,8 +13,8 @@ import (
 	qmimanager "github.com/boa-z/quectel-qmi-go/pkg/manager"
 	"github.com/boa-z/quectel-qmi-go/pkg/qmi"
 	"github.com/warthog618/sms/encoding/tpdu"
-	"github.com/yuanshuai1122/vohive/internal/modem"
-	"github.com/yuanshuai1122/vohive/pkg/smscodec"
+	"github.com/yuanshuai1122/vodog/internal/modem"
+	"github.com/yuanshuai1122/vodog/pkg/smscodec"
 )
 
 type qmiBackendSendSourceStub struct {

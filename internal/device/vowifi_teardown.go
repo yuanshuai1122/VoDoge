@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/backend"
-	"github.com/yuanshuai1122/vohive/internal/vowifihost"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/internal/backend"
+	"github.com/yuanshuai1122/vodog/internal/vowifihost"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 func (p *Pool) stopVoWiFiAppForTeardown(ctx context.Context, deviceID, reason string) bool {

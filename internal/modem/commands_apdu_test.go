@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/apduarbiter"
-	"github.com/yuanshuai1122/vohive/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodog/internal/config"
 )
 
 func newRunningTestManager(t *testing.T) *Manager {

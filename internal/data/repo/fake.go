@@ -3,7 +3,7 @@ package repo
 import (
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/db"
+	"github.com/yuanshuai1122/vodog/internal/db"
 )
 
 // 供测试注入的假实现。

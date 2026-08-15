@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/qqbot/internal/auth"
-	"github.com/yuanshuai1122/vohive/internal/qqbot/internal/dispatch"
-	"github.com/yuanshuai1122/vohive/internal/qqbot/internal/rest"
-	"github.com/yuanshuai1122/vohive/internal/qqbot/internal/stream"
+	"github.com/yuanshuai1122/vodog/internal/qqbot/internal/auth"
+	"github.com/yuanshuai1122/vodog/internal/qqbot/internal/dispatch"
+	"github.com/yuanshuai1122/vodog/internal/qqbot/internal/rest"
+	"github.com/yuanshuai1122/vodog/internal/qqbot/internal/stream"
 )
 
 type App struct {

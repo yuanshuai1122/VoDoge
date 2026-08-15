@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/internal/websheet"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/websheet"
 )
 
 func TestRespondWebsheetErrorMapsStatuses(t *testing.T) {

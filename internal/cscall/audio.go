@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 // AudioBridge PCM ↔ RTP 音频桥接器

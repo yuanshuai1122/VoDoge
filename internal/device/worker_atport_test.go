@@ -3,8 +3,8 @@ package device
 import (
 	"testing"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/internal/modem"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/modem"
 )
 
 func TestWorkerResolvedATPortPrefersConfig(t *testing.T) {

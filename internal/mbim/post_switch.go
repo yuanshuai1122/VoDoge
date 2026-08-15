@@ -7,7 +7,7 @@ import (
 
 	qmimanager "github.com/boa-z/quectel-qmi-go/pkg/manager"
 	"github.com/boa-z/quectel-qmi-go/pkg/qmi"
-	"github.com/yuanshuai1122/vohive/pkg/mbim"
+	"github.com/yuanshuai1122/vodog/pkg/mbim"
 )
 
 func isMBIMTransportFatal(err error) bool {

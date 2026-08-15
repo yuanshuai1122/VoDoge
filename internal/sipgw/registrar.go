@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 
 	"github.com/emiago/sipgo"
 	"github.com/emiago/sipgo/sip"
@@ -97,7 +97,7 @@ type Registrar struct {
 // NewRegistrar 创建 Linphone 注册服务
 func NewRegistrar(cfg Config) (*Registrar, error) {
 	ua, err := sipgo.NewUA(
-		sipgo.WithUserAgent("VoHive/1.0"),
+		sipgo.WithUserAgent("VoDog/1.0"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("创建 SIP UserAgent 失败: %w", err)

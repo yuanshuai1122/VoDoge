@@ -28,7 +28,7 @@ export function Sidebar() {
   return (
     <aside className="hidden w-56 shrink-0 border-r bg-sidebar md:flex md:flex-col">
       <div className="flex h-14 items-center gap-2 border-b px-4">
-        <span className="text-base font-semibold tracking-tight">VoHive</span>
+        <span className="text-base font-semibold tracking-tight">VoDog</span>
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 p-2">

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 校验 openapi.vohive.yaml 与后端实际注册的路由一致。
+ * 校验 openapi.vodog.yaml 与后端实际注册的路由一致。
  *
  * 这份 spec 曾严重滞后：缺 17 条真实端点、声明了 3 条并不存在的端点，
  * 以致完全不能作为前端依据（docs/frontend-api-matrix.md §7）。
@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const API_DIR = "internal/api";
-const SPEC = path.join(API_DIR, "openapi.vohive.yaml");
+const SPEC = path.join(API_DIR, "openapi.vodog.yaml");
 const ROUTES_FILE = path.join(API_DIR, "routes.go");
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];

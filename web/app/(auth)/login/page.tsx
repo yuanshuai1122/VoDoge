@@ -69,7 +69,7 @@ export default function LoginPage() {
     <div className="flex min-h-svh items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-xl">VoHive</CardTitle>
+          <CardTitle className="text-xl">VoDog</CardTitle>
           <CardDescription>登录管理后台</CardDescription>
         </CardHeader>
 

@@ -1,4 +1,4 @@
-# VoHive 部署
+# VoDog 部署
 
 面向高通 4G/LTE/5G 模组（Quectel EC20/EC25/EC21/EG25/EM20 等）的综合管理与代理服务平台。
 
@@ -44,10 +44,12 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: vohive
-      POSTGRES_PASSWORD: vohive
+      POSTGRES_PASSWORD: ${VOHIVE_POSTGRES_PASSWORD:-vohive}
       POSTGRES_DB: vohive
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vohive -d vohive"]
       interval: 5s
@@ -69,7 +71,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - CONFIG_PATH=/app/config/config.yaml
-      - VOHIVE_DB_DSN=host=127.0.0.1 user=vohive password=vohive dbname=vohive port=5432 sslmode=disable TimeZone=UTC
+      - VOHIVE_DB_DSN=host=127.0.0.1 user=vohive password=${VOHIVE_POSTGRES_PASSWORD:-vohive} dbname=vohive port=5432 sslmode=disable TimeZone=UTC
       # 可选：访问 Telegram 等外部服务的代理
       # - HTTPS_PROXY=http://proxy-ip:port
     depends_on:
@@ -85,6 +87,8 @@ docker compose up -d
 ```
 
 > `network_mode: host` 下容器与宿主共享网络，因此 DSN 用 `127.0.0.1`。
+> PostgreSQL 只发布到宿主机回环地址；生产部署请在 `.env` 中设置
+> `VOHIVE_POSTGRES_PASSWORD`，不要使用默认值。
 > 若改用端口映射（如 Windows/Docker Desktop），请把 host 改为 `postgres`
 > 并为 vohive 加上 `ports: ["7575:7575"]`。
 
@@ -112,6 +116,7 @@ bash scripts/ci.sh
 |------|--------|------|
 | `VOHIVE_DB_DSN` | — | **必需**。PostgreSQL 连接串；为空或连不上时进程退出 |
 | `DATABASE_URL` | — | `VOHIVE_DB_DSN` 未设置时的备选 |
+| `VOHIVE_POSTGRES_PASSWORD` | `vohive` | Compose 使用的 PostgreSQL 密码；生产部署必须覆盖 |
 | `CONFIG_PATH` | `/app/config/config.yaml` | 配置文件路径 |
 | `TZ` | `UTC` | 时区 |
 | `HTTPS_PROXY` | — | 外部服务代理（如 Telegram API） |
@@ -226,7 +231,7 @@ bash scripts/ci.sh multiarch
 
 ## 📖 文档
 
-完整文档见 [GitHub](https://github.com/yuanshuai1122/vohive)。
+完整文档见 [GitHub](https://github.com/yuanshuai1122/VoDog)。
 
 ## 📝 License
 

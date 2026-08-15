@@ -15,7 +15,7 @@
 |------|------|------|
 | 注册 | `server.go:newRouter()` 的 160 行 `api.METHOD(...)` | 路径 → handler |
 | SSE 凭证白名单 | `server.go:sseTokenQueryRoutes` | 哪些路径允许 `?token=` |
-| 契约 | `openapi.vohive.yaml` | 路径 → 请求/响应 |
+| 契约 | `openapi.vodog.yaml` | 路径 → 请求/响应 |
 
 本次会话就踩到过：eSIM 下载从 `GET .../download` 改成
 `GET .../download/stream` 时，白名单还指着旧路径——前端拿不到 token 认证，

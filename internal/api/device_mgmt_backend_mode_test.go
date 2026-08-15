@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/config"
 )
 
 func TestValidateDeviceBackendConfigMBIM(t *testing.T) {

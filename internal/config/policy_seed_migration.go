@@ -17,7 +17,7 @@ type LegacyDevicePolicy struct {
 }
 
 // SeedLegacyDevicePolicies 把带 ICCID 的旧策略逐条 upsert 到 card_policies。
-// upsert 由调用方注入（cmd/vohive 传 db 适配器），无 ICCID 的条目跳过。返回种子条数。
+// upsert 由调用方注入（cmd/vodog 传 db 适配器），无 ICCID 的条目跳过。返回种子条数。
 func SeedLegacyDevicePolicies(items []LegacyDevicePolicy, upsert func(iccid string, p LegacyDevicePolicy) error) (int, error) {
 	n := 0
 	for _, it := range items {

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	socks5 "github.com/things-go/go-socks5"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 const (

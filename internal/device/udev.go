@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/vishvananda/netlink/nl"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 	"golang.org/x/sys/unix"
 )
 

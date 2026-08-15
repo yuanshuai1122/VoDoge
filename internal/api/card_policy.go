@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vohive/internal/db"
+	"github.com/yuanshuai1122/vodog/internal/db"
 )
 
 // patchCardPolicyForDevice 解析设备当前 ICCID，对 card_policies 行执行原地修改并落库。

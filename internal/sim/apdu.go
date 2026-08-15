@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 // BuildUSIMAuthAPDU 构造 USIM AKA 鉴权 APDU（RAND/AUTN），用于逻辑通道下发。

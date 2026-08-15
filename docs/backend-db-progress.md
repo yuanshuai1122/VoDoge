@@ -69,4 +69,4 @@ host=127.0.0.1 user=vohive password=vohive dbname=vohive port=5432 sslmode=disab
 - **旧库以 `mode=ro` 打开**，迁移失败时它仍是可回退的那一份。
 
 依赖：`modernc.org/sqlite`（纯 Go，无需 CGO），**只被 `cmd/dbmigrate` 导入**。
-`go list -deps ./cmd/vohive | grep -i sqlite` 输出为空，生产二进制不含 SQLite 代码。
+`go list -deps ./cmd/vodog | grep -i sqlite` 输出为空，生产二进制不含 SQLite 代码。

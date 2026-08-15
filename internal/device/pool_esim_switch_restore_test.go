@@ -16,13 +16,13 @@ import (
 	qmimanager "github.com/boa-z/quectel-qmi-go/pkg/manager"
 	"github.com/boa-z/quectel-qmi-go/pkg/qmi"
 	"github.com/boa-z/vowifi-go/runtimehost"
-	"github.com/yuanshuai1122/vohive/internal/backend"
-	"github.com/yuanshuai1122/vohive/internal/cardpolicy"
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/internal/esim"
-	qmicore "github.com/yuanshuai1122/vohive/internal/qmi"
-	"github.com/yuanshuai1122/vohive/internal/vowifihost"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/internal/backend"
+	"github.com/yuanshuai1122/vodog/internal/cardpolicy"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/esim"
+	qmicore "github.com/yuanshuai1122/vodog/internal/qmi"
+	"github.com/yuanshuai1122/vodog/internal/vowifihost"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 type esimSwitchRestoreBackendStub struct {

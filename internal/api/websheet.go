@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vohive/internal/websheet"
+	"github.com/yuanshuai1122/vodog/internal/websheet"
 )
 
 // registerWebsheetRoutes 只在测试里单独用；正常启动时路由由 newRouter 统一注册。

@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	qmiq "github.com/boa-z/quectel-qmi-go/pkg/qmi"
-	"github.com/yuanshuai1122/vohive/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/config"
 )
 
 func ClientOptionsFromDeviceConfig(cfg config.DeviceConfig) qmiq.ClientOptions {

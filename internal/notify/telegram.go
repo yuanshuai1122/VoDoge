@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )

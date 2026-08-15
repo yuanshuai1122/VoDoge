@@ -1,4 +1,4 @@
-# VoHive 剩余工作
+# VoDog 剩余工作
 
 > 更新：2026-08-14（B1/B5/B7/C1/D1 完成后）
 > 相关：[known-issues.md](./known-issues.md)、[frontend-api-matrix.md](./frontend-api-matrix.md)、
@@ -120,6 +120,14 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 
 ```
 P1 现场验证（需硬件）──► 发现的问题回流 P2
+
+产品对照与分期见 [vocat-adopt-plan.md](./vocat-adopt-plan.md)。
+UFI 不承担短信验收；第 1 期真机改为 EC25-CN。
+个人入口：第 1 期手机浏览器能用短信，第 1b 轻量 PWA（HTTPS，通知仍走 Telegram/Bark）。
+
+PVE lab（VM 113 / `vodog.lab.lan`）见 [pve-lab-deploy.md](./pve-lab-deploy.md)。
+有卡那根在原厂 RNDIS/CPE 下也是紧急呼叫、没互联网（基带 `UFI103_CT`、卡 `46011`）。
+不是单 QMI 的问题。代理冒烟要换卡或换地点。切回 QMI 后有卡那根掉总线，需拔插。
 ```
 
 P2–P4、`internal/api` 重构与响应结构统一均已收口

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/internal/netprobe"
-	"github.com/yuanshuai1122/vohive/pkg/mbim"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/netprobe"
+	"github.com/yuanshuai1122/vodog/pkg/mbim"
 )
 
 const (

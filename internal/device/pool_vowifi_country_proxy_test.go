@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/db"
-	"github.com/yuanshuai1122/vohive/internal/upstreamproxy"
+	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodog/internal/upstreamproxy"
 )
 
 func loadDeviceCountryTableFixture(t *testing.T) {

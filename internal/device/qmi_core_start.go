@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 const qmiCoreStartupInlineBudget = 1500 * time.Millisecond

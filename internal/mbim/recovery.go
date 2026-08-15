@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/pkg/logger"
-	"github.com/yuanshuai1122/vohive/pkg/mbim"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/mbim"
 )
 
 // OnRecoveryExhausted registers a callback fired when host-side control-plane

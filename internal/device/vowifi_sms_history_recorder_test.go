@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/boa-z/vowifi-go/runtimehost/eventhost"
-	"github.com/yuanshuai1122/vohive/internal/db"
+	"github.com/yuanshuai1122/vodog/internal/db"
 )
 
 func TestVoWiFiSMSHistoryRecorderPersistsSentSMS(t *testing.T) {

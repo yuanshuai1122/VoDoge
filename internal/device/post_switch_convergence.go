@@ -7,9 +7,9 @@ import (
 	"time"
 
 	qmimanager "github.com/boa-z/quectel-qmi-go/pkg/manager"
-	"github.com/yuanshuai1122/vohive/internal/backend"
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/internal/backend"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 type postSwitchAction string

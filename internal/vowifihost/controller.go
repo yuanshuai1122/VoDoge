@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 type LifecycleCommandKind int

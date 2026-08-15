@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/config"
 )
 
 const DefaultFreeDeviceLimit = 5

@@ -16,15 +16,15 @@ import (
 	"time"
 
 	"github.com/boa-z/vowifi-go/runtimehost/voicehost"
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/internal/data/repo"
-	"github.com/yuanshuai1122/vohive/internal/device"
-	"github.com/yuanshuai1122/vohive/internal/notify"
-	"github.com/yuanshuai1122/vohive/internal/proxy/server"
-	proxytraffic "github.com/yuanshuai1122/vohive/internal/proxy/traffic"
-	vwebsheet "github.com/yuanshuai1122/vohive/internal/websheet"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/data/repo"
+	"github.com/yuanshuai1122/vodog/internal/device"
+	"github.com/yuanshuai1122/vodog/internal/notify"
+	"github.com/yuanshuai1122/vodog/internal/proxy/server"
+	proxytraffic "github.com/yuanshuai1122/vodog/internal/proxy/traffic"
+	vwebsheet "github.com/yuanshuai1122/vodog/internal/websheet"
 
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )

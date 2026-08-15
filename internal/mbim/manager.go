@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/apduarbiter"
-	"github.com/yuanshuai1122/vohive/internal/simaid"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
-	"github.com/yuanshuai1122/vohive/pkg/mbim"
+	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodog/internal/simaid"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/mbim"
 )
 
 const defaultMaxControlTransfer = 4096

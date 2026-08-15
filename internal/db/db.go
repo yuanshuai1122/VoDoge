@@ -40,8 +40,11 @@ func DefaultOptions(dsn string) Options {
 }
 
 // ResolveDSN returns the first non-empty DSN from env then fallback.
-// Order: VOHIVE_DB_DSN, DATABASE_URL, fallback.
+// Order: VODOG_DB_DSN, VOHIVE_DB_DSN (legacy), DATABASE_URL, fallback.
 func ResolveDSN(fallback string) string {
+	if v := strings.TrimSpace(os.Getenv("VODOG_DB_DSN")); v != "" {
+		return v
+	}
 	if v := strings.TrimSpace(os.Getenv("VOHIVE_DB_DSN")); v != "" {
 		return v
 	}
@@ -61,7 +64,7 @@ func Init(dsn string) error {
 func Open(opts Options) error {
 	dsn := strings.TrimSpace(opts.DSN)
 	if dsn == "" {
-		return fmt.Errorf("database dsn is empty: set database.dsn or VOHIVE_DB_DSN / DATABASE_URL")
+		return fmt.Errorf("database dsn is empty: set database.dsn or VODOG_DB_DSN / VOHIVE_DB_DSN / DATABASE_URL")
 	}
 	if opts.MaxOpenConns <= 0 {
 		opts.MaxOpenConns = 20

@@ -21,7 +21,7 @@ import (
 	euicchttp "github.com/damonto/euicc-go/http"
 	"github.com/damonto/euicc-go/lpa"
 	sgp22 "github.com/damonto/euicc-go/v2"
-	"github.com/yuanshuai1122/vohive/internal/backend"
+	"github.com/yuanshuai1122/vodog/internal/backend"
 	"golang.org/x/sync/singleflight"
 )
 

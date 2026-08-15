@@ -1,28 +1,28 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: vohive-postgres
+    container_name: vodog-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: vohive
-      POSTGRES_PASSWORD: vohive
-      POSTGRES_DB: vohive
+      POSTGRES_USER: vodog
+      POSTGRES_PASSWORD: ${VODOG_POSTGRES_PASSWORD:-${VOHIVE_POSTGRES_PASSWORD:-vodog}}
+      POSTGRES_DB: vodog
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vohive -d vohive"]
+      test: ["CMD-SHELL", "pg_isready -U vodog -d vodog"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  vohive:
+  vodog:
     build:
       context: .
       dockerfile: Dockerfile
-    image: vohive:latest
-    container_name: vohive
+    image: vodog:latest
+    container_name: vodog
     restart: unless-stopped
     network_mode: "host"
     privileged: true
@@ -33,7 +33,7 @@ services:
       - /dev:/dev
     environment:
       - TZ=Asia/Shanghai
-      - VOHIVE_DB_DSN=host=127.0.0.1 user=vohive password=vohive dbname=vohive port=5432 sslmode=disable TimeZone=UTC
+      - VODOG_DB_DSN=host=127.0.0.1 user=vodog password=${VODOG_POSTGRES_PASSWORD:-${VOHIVE_POSTGRES_PASSWORD:-vodog}} dbname=vodog port=5432 sslmode=disable TimeZone=UTC
     depends_on:
       postgres:
         condition: service_healthy

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/pkg/mbim"
+	"github.com/yuanshuai1122/vodog/pkg/mbim"
 )
 
 type fakeNetcfg struct {

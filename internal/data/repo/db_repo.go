@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/internal/db"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/db"
 
 	"gorm.io/gorm"
 )

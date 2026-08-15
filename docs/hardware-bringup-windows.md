@@ -3,7 +3,7 @@
 日期：2026-08-14
 状态：**环境就绪，硬件尚未接入验证**
 
-这份文档记录在 Windows 上把 VoHive 跑起来、并让它有可能看到 USB 模组所需的全部准备。
+这份文档记录在 Windows 上把 VoDog 跑起来、并让它有可能看到 USB 模组所需的全部准备。
 两件事必须分开看：**服务能跑**是一回事，**服务能看到模组**是另一回事——后者在
 Windows 上有一个默认满足不了的前提。
 
@@ -53,7 +53,7 @@ CONFIG_USBIP_VHCI_HCD=y                 ← usbip 接收端本身是有的
 ```
 
 后果：usbipd 能把设备转发进 WSL，`/dev/bus/usb` 下会出现它，但**没有任何驱动
-去认领**，于是既没有 `/dev/ttyUSB*` 也没有 `/dev/cdc-wdm*`。VoHive 的三条通路
+去认领**，于是既没有 `/dev/ttyUSB*` 也没有 `/dev/cdc-wdm*`。VoDog 的三条通路
 （QMI / MBIM / AT）全部落空，表现为设备扫不到或 degraded——很容易被误判成程序 bug。
 
 ### 已构建的自定义内核

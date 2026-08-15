@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yuanshuai1122/vohive/internal/backend"
-	"github.com/yuanshuai1122/vohive/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/backend"
+	"github.com/yuanshuai1122/vodog/internal/config"
 )
 
 func TestRequiresMBIMCore(t *testing.T) {

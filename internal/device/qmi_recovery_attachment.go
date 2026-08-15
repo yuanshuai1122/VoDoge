@@ -3,7 +3,7 @@ package device
 import (
 	"strings"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/config"
 )
 
 func (p *Pool) ResolveQMIRecoveryAttachment(cfg config.DeviceConfig) qmiRecoveryScanDecision {

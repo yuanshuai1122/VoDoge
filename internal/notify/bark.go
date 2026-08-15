@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 // BarkChannel 实现 Channel 接口的 Bark 通知渠道

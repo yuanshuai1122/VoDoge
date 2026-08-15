@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "VoHive",
+  title: "VoDog",
   description: "4G/5G 模组管理与代理平台",
 };
 

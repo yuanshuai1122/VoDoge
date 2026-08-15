@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/internal/db"
-	"github.com/yuanshuai1122/vohive/internal/modem"
-	proxytraffic "github.com/yuanshuai1122/vohive/internal/proxy/traffic"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodog/internal/modem"
+	proxytraffic "github.com/yuanshuai1122/vodog/internal/proxy/traffic"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )

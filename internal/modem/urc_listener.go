@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 
 	"go.bug.st/serial"
 )

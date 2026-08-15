@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yuanshuai1122/vohive/internal/modem"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/internal/modem"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 // 后端模式常量

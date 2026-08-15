@@ -1,6 +1,6 @@
 # Module Vendor Abstraction
 
-VoHive historically treated the managed modem as Quectel-compatible. The first
+VoDog historically treated the managed modem as Quectel-compatible. The first
 compatibility boundary is now the AT command dialect selected by
 `devices[].module_vendor`.
 

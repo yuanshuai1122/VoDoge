@@ -10,7 +10,7 @@ import (
 	"github.com/boa-z/vowifi-go/runtimehost"
 	"github.com/boa-z/vowifi-go/runtimehost/messaging"
 	"github.com/boa-z/vowifi-go/runtimehost/voicehost"
-	"github.com/yuanshuai1122/vohive/internal/db"
+	"github.com/yuanshuai1122/vodog/internal/db"
 )
 
 // ---------- 通用命令 handler（TG 和飞书共用） ----------

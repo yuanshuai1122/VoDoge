@@ -23,7 +23,7 @@ export function Header() {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b px-4">
       <div className="flex items-center gap-2 md:hidden">
-        <span className="font-semibold">VoHive</span>
+        <span className="font-semibold">VoDog</span>
       </div>
 
       <div className="flex flex-1 items-center justify-end gap-2">

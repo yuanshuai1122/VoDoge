@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/boa-z/vowifi-go/runtimehost/carrier"
-	"github.com/yuanshuai1122/vohive/internal/modem"
+	"github.com/yuanshuai1122/vodog/internal/modem"
 )
 
 func SetupAvailable(status modem.DeviceStatus) bool {

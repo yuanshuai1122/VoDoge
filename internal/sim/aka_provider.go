@@ -8,7 +8,7 @@ import (
 	"time"
 
 	swusim "github.com/boa-z/vowifi-go/engine/sim"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 // ATModem 定义 simauth 所需的 Modem 能力接口。

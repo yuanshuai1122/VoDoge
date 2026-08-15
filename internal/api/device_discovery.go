@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/internal/device"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/device"
 
 	"github.com/gin-gonic/gin"
 )

@@ -824,7 +824,7 @@ func firstValue(values url.Values, keys ...string) string {
 }
 
 func callbackHTML() string {
-	return `<!doctype html><html><body><script>try{window.parent.postMessage({type:"vohive-websheet-callback"},"*")}catch(_){}</script>Carrier flow returned to VoHive.</body></html>`
+	return `<!doctype html><html><body><script>try{window.parent.postMessage({type:"vohive-websheet-callback"},"*")}catch(_){}</script>Carrier flow returned to VoDog.</body></html>`
 }
 
 func jsString(value string) string {

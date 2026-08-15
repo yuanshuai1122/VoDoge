@@ -3,7 +3,7 @@ package e911
 import (
 	"testing"
 
-	"github.com/yuanshuai1122/vohive/internal/modem"
+	"github.com/yuanshuai1122/vodog/internal/modem"
 )
 
 func TestSetupAvailableUsesNativePLMN(t *testing.T) {

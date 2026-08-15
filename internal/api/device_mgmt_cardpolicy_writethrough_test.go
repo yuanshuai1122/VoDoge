@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/internal/db"
-	"github.com/yuanshuai1122/vohive/internal/device"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodog/internal/device"
 )
 
 // 这个测试**故意**用真库：它验的是"保存设备配置不会覆写 card_policies"这条

@@ -33,7 +33,7 @@ const submitButton = () =>
 
 describe("DangerZone", () => {
   beforeEach(() => {
-    localStorage.setItem("vohive.token", "tok");
+    localStorage.setItem("vodog.token", "tok");
   });
   afterEach(() => vi.clearAllMocks());
 
@@ -81,7 +81,7 @@ describe("DangerZone", () => {
       expect(screen.getByText(/卸载指令已下发/)).toBeInTheDocument(),
     );
     expect(screen.getByText(/本页面不再可用/)).toBeInTheDocument();
-    expect(localStorage.getItem("vohive.token")).toBeNull();
+    expect(localStorage.getItem("vodog.token")).toBeNull();
   });
 
   // 失败后确认词要清空：不能让上一次的输入继续处于"待发射"状态。
@@ -95,6 +95,6 @@ describe("DangerZone", () => {
     await waitFor(() => expect(submitButton()).toBeDisabled());
     expect(screen.getByLabelText(/确认请输入/)).toHaveValue("");
     // 凭证不该被清掉——服务还活着
-    expect(localStorage.getItem("vohive.token")).toBe("tok");
+    expect(localStorage.getItem("vodog.token")).toBe("tok");
   });
 });

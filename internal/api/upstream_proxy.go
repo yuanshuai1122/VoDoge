@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vohive/internal/db"
-	"github.com/yuanshuai1122/vohive/internal/upstreamproxy"
+	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodog/internal/upstreamproxy"
 )
 
 // ── 前置代理管理 API（主服务） ──

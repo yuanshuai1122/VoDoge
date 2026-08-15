@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 var qmiIdentityConvergenceTimeout = 2 * time.Minute

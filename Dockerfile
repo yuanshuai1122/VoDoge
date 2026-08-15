@@ -43,7 +43,6 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY pkg ./pkg
-COPY engine ./engine
 
 # 复制构建好的前端资源到 internal/web/dist 以便嵌入
 # 必须在 go build 之前完成
@@ -58,7 +57,7 @@ RUN BUILD_TIME=$(date "+%Y-%m-%d %H:%M:%S") && \
     # GOARM 只在 GOARCH=arm 时有意义；armv7 的 TARGETVARIANT 是 "v7"，去掉前缀即可
     if [ "$TARGETARCH" = "arm" ]; then export GOARM="${TARGETVARIANT#v}"; fi && \
     CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
-    go build -trimpath -buildvcs=false -tags "with_utls nomsgpack" -ldflags "-s -w -X 'github.com/yuanshuai1122/vohive/internal/global.Version=${VERSION}' -X 'github.com/yuanshuai1122/vohive/internal/global.BuildTime=${BUILD_TIME}'" -o /app/vo-hive ./cmd/vohive
+    go build -trimpath -buildvcs=false -tags "with_utls nomsgpack" -ldflags "-s -w -X 'github.com/yuanshuai1122/vodog/internal/global.Version=${VERSION}' -X 'github.com/yuanshuai1122/vodog/internal/global.BuildTime=${BUILD_TIME}'" -o /app/vodog ./cmd/vodog
 
 # 运行阶段 (Runtime)
 FROM alpine:latest
@@ -69,7 +68,7 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
 
 # 复制二进制文件
-COPY --from=backend-builder /app/vo-hive .
+COPY --from=backend-builder /app/vodog .
 
 # 创建配置和数据目录
 RUN mkdir -p config data logs
@@ -81,5 +80,5 @@ EXPOSE 7575
 ENV CONFIG_PATH=/app/config/config.yaml
 
 # 入口点
-ENTRYPOINT ["./vo-hive"]
+ENTRYPOINT ["./vodog"]
 CMD ["-c", "/app/config/config.yaml"]

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
-	"github.com/yuanshuai1122/vohive/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/config"
 )
 
 func TestResolveIPv4WithTCPDNS(t *testing.T) {

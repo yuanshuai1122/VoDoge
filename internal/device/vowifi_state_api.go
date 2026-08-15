@@ -6,7 +6,7 @@ import (
 
 	"github.com/boa-z/vowifi-go/runtimehost"
 	"github.com/boa-z/vowifi-go/runtimehost/messaging"
-	"github.com/yuanshuai1122/vohive/pkg/smscodec"
+	"github.com/yuanshuai1122/vodog/pkg/smscodec"
 )
 
 func (p *Pool) GetVoWiFiApp() *runtimehost.Instance {

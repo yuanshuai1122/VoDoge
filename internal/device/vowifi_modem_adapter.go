@@ -8,9 +8,9 @@ import (
 
 	"github.com/boa-z/vowifi-go/runtimehost"
 	"github.com/boa-z/vowifi-go/runtimehost/identity"
-	"github.com/yuanshuai1122/vohive/internal/apduarbiter"
-	"github.com/yuanshuai1122/vohive/internal/backend"
-	"github.com/yuanshuai1122/vohive/internal/modem"
+	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodog/internal/backend"
+	"github.com/yuanshuai1122/vodog/internal/modem"
 )
 
 func newVoWiFiModemInterface(w *Worker, deviceID string) (runtimehost.Modem, error) {

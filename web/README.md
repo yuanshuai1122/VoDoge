@@ -1,9 +1,9 @@
-# VoHive 前端
+# VoDog 前端
 
 Next.js 16（App Router）+ React 19 + TypeScript + Tailwind 4 + shadcn/ui。
 
 接口依据是 [`docs/frontend-api-matrix.md`](../docs/frontend-api-matrix.md)，
-**不是** `openapi.vohive.yaml`——后者缺 17 个真实端点且声明了 3 个不存在的端点。
+**不是** `openapi.vodog.yaml`——后者缺 17 个真实端点且声明了 3 个不存在的端点。
 
 ## 开发
 
@@ -19,7 +19,7 @@ npm run dev
 
 ```bash
 docker compose up -d postgres
-go run ./cmd/vohive -c config/config.yaml
+go run ./cmd/vodog -c config/config.yaml
 ```
 
 ## 构建

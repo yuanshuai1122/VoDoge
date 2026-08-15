@@ -8,11 +8,13 @@ go.work
 **/*.sqlite
 **/*.sqlite3
 
-logs
-data
-config
-tmp
-dist
+# 只排除仓库根上的运行时目录。写成 /data 而不是 data，
+# 否则会连 internal/data 一起丢掉，镜像里 go build 会找不到 repo 包。
+/logs
+/data
+/config
+/tmp
+/dist
 
 web/node_modules
 web/dist

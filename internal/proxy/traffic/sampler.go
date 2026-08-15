@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/boa-z/quectel-qmi-go/pkg/qmi"
-	"github.com/yuanshuai1122/vohive/internal/db"
-	"github.com/yuanshuai1122/vohive/internal/device"
-	"github.com/yuanshuai1122/vohive/internal/proxy/server"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodog/internal/device"
+	"github.com/yuanshuai1122/vodog/internal/proxy/server"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 const (

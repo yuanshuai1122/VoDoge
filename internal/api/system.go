@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/internal/updater"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/updater"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 var errNotFound = errors.New("not found")

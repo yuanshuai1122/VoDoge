@@ -64,7 +64,7 @@ func TestVoWiFiHostImportsExternalRuntimehostOnly(t *testing.T) {
 	}
 
 	if len(offenders) > 0 {
-		t.Fatalf("VoHive must import only approved vowifi-go runtimehost public packages:\n%s", strings.Join(offenders, "\n"))
+		t.Fatalf("VoDog must import only approved vowifi-go runtimehost public packages:\n%s", strings.Join(offenders, "\n"))
 	}
 }
 

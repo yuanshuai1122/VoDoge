@@ -1,4 +1,4 @@
-module github.com/yuanshuai1122/vohive
+module github.com/yuanshuai1122/vodog
 
 go 1.26.3
 

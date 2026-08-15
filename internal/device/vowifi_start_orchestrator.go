@@ -10,13 +10,13 @@ import (
 	"github.com/boa-z/vowifi-go/runtimehost"
 	"github.com/boa-z/vowifi-go/runtimehost/carrier"
 	"github.com/boa-z/vowifi-go/runtimehost/identity"
-	"github.com/yuanshuai1122/vohive/internal/backend"
-	"github.com/yuanshuai1122/vohive/internal/db"
-	innersim "github.com/yuanshuai1122/vohive/internal/sim"
-	"github.com/yuanshuai1122/vohive/internal/upstreamproxy"
-	"github.com/yuanshuai1122/vohive/internal/vowifihost"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
-	"github.com/yuanshuai1122/vohive/pkg/mbim"
+	"github.com/yuanshuai1122/vodog/internal/backend"
+	"github.com/yuanshuai1122/vodog/internal/db"
+	innersim "github.com/yuanshuai1122/vodog/internal/sim"
+	"github.com/yuanshuai1122/vodog/internal/upstreamproxy"
+	"github.com/yuanshuai1122/vodog/internal/vowifihost"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodog/pkg/mbim"
 )
 
 type voWiFiStartContext struct {

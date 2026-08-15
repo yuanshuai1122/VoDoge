@@ -15,14 +15,18 @@ func envEnabled(name string) bool {
 	return v == "1" || v == "true" || v == "yes" || v == "on"
 }
 
+func envEnabledPrefixed(suffix string) bool {
+	return envEnabled("VODOG_"+suffix) || envEnabled("VOHIVE_"+suffix)
+}
+
 // ShouldLogSIPRaw 返回是否允许输出 SIP 原文。
 func ShouldLogSIPRaw() bool {
-	return envEnabled("VOHIVE_SIP_LOG_RAW")
+	return envEnabledPrefixed("SIP_LOG_RAW")
 }
 
 // ShouldLogSMSContent 返回是否允许输出短信明文。
 func ShouldLogSMSContent() bool {
-	return envEnabled("VOHIVE_SMS_LOG_CONTENT")
+	return envEnabledPrefixed("SMS_LOG_CONTENT")
 }
 
 // RedactSIPRaw 对 SIP 原文做脱敏。

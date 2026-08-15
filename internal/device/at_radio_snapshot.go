@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/modem"
+	"github.com/yuanshuai1122/vodog/internal/modem"
 )
 
 // ATRadioQuerier 定义了通过 AT 通道查询射频及网络信息的接口

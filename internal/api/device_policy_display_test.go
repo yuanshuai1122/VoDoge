@@ -3,8 +3,8 @@ package api
 import (
 	"testing"
 
-	"github.com/yuanshuai1122/vohive/internal/data/repo"
-	"github.com/yuanshuai1122/vohive/internal/db"
+	"github.com/yuanshuai1122/vodog/internal/data/repo"
+	"github.com/yuanshuai1122/vodog/internal/db"
 )
 
 // 这两个测试原本要 db.OpenTestDB(t)：起容器、清空全库、往 devices 和 card_policies

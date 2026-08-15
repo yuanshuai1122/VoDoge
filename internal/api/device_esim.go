@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/apduarbiter"
-	"github.com/yuanshuai1122/vohive/internal/device"
-	"github.com/yuanshuai1122/vohive/internal/esim"
+	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodog/internal/device"
+	"github.com/yuanshuai1122/vodog/internal/esim"
 
 	"github.com/gin-gonic/gin"
 )

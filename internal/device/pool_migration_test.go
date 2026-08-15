@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/yuanshuai1122/vohive/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/config"
 )
 
 // 空-IMEI 老配置:按 USB 路径迁移认回硬件 → 回填 IMEI 到 config(仅此一次写),

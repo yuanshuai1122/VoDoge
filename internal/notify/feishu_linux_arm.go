@@ -5,7 +5,7 @@ package notify
 import (
 	"fmt"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
+	"github.com/yuanshuai1122/vodog/internal/config"
 )
 
 // FeishuChannel is unavailable on linux/arm because the upstream Feishu SDK does

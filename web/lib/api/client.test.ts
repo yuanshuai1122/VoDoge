@@ -107,7 +107,7 @@ describe("apiFetch", () => {
     fetchMock.mockResolvedValue(errResponse(401, "unauthorized", "未授权"));
 
     await expect(apiFetch("/devices")).rejects.toBeInstanceOf(ApiError);
-    expect(localStorage.getItem("vohive.token")).toBeNull();
+    expect(localStorage.getItem("vodog.token")).toBeNull();
   });
 
   // 登录页自己的请求 401 时不能触发登出，否则会打断正在输入的用户
@@ -118,7 +118,7 @@ describe("apiFetch", () => {
     await expect(
       apiFetch("/auth/login", { skipAuthRedirect: true }),
     ).rejects.toBeInstanceOf(ApiError);
-    expect(localStorage.getItem("vohive.token")).not.toBeNull();
+    expect(localStorage.getItem("vodog.token")).not.toBeNull();
   });
 
   it("网络失败归一为 httpStatus 0", async () => {

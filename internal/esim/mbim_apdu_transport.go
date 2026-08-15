@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/yuanshuai1122/vohive/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
 )
 
 type uiccTransport interface {

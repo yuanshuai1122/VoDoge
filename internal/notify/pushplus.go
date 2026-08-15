@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/yuanshuai1122/vohive/internal/config"
-	"github.com/yuanshuai1122/vohive/pkg/logger"
+	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodog/pkg/logger"
 )
 
 type PushplusChannel struct {

@@ -11,7 +11,7 @@
 
 - 目标 PostgreSQL 已就绪，且**是空的**（工具默认拒绝往非空库里导，见 §3）
 - 旧 `.db` 文件可读。工具以 `mode=ro` 打开，**不会修改它**——迁移失败时旧数据仍是可回退的那一份
-- VoHive 服务**已停止**。边写边迁会漏掉迁移开始之后产生的短信与流量
+- VoDog 服务**已停止**。边写边迁会漏掉迁移开始之后产生的短信与流量
 
 ---
 
@@ -97,8 +97,8 @@ go run ./cmd/dbmigrate --sqlite ./data/vohive.db --postgres "host=127.0.0.1 user
 ## 6. 迁移工具为什么不影响主程序
 
 `cmd/dbmigrate` 用 `modernc.org/sqlite`（纯 Go，无需 CGO）读旧库。
-它**只被这个命令导入**，`./cmd/vohive` 的依赖图里没有任何 SQLite 代码——
-可以用 `go list -deps ./cmd/vohive | grep -i sqlite` 自行确认，输出为空。
+它**只被这个命令导入**，`./cmd/vodog` 的依赖图里没有任何 SQLite 代码——
+可以用 `go list -deps ./cmd/vodog | grep -i sqlite` 自行确认，输出为空。
 
 运行时不支持 SQLite 是明确决策（`docs/backend-db-decisions.md`），
 这个工具的存在不改变那一点。
