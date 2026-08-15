@@ -121,9 +121,19 @@ type FakeSMS struct {
 	RecentFn              func(limit int) ([]db.SMS, error)
 	DeleteByIDFn          func(id uint) (bool, string, string, error)
 	DeleteThreadByICCIDFn func(iccid, peer string) (int64, error)
+	ReserveSendFn         func(limit int, deviceID, recipient string) (db.SMSRateStatus, error)
+	RateStatusFn          func(limit int) (db.SMSRateStatus, error)
 
 	// Saved 记录所有落库的短信
 	Saved []db.SMS
+	// Reserved 记录占额调用（含限额检查本身）
+	Reserved []SMSReserveCall
+}
+
+type SMSReserveCall struct {
+	Limit     int
+	DeviceID  string
+	Recipient string
 }
 
 func (f *FakeSMS) Save(imsi, localPhone, sender, recipient, content string, smsType, status int, timestamp time.Time) error {
@@ -187,6 +197,21 @@ func (f *FakeSMS) DeleteThreadByICCID(iccid, peer string) (int64, error) {
 	return 0, db.ErrSMSNotFound
 }
 
+func (f *FakeSMS) ReserveSend(limit int, deviceID, recipient string) (db.SMSRateStatus, error) {
+	f.Reserved = append(f.Reserved, SMSReserveCall{Limit: limit, DeviceID: deviceID, Recipient: recipient})
+	if f.ReserveSendFn != nil {
+		return f.ReserveSendFn(limit, deviceID, recipient)
+	}
+	return db.NewSMSRateStatus(limit, 0), nil
+}
+
+func (f *FakeSMS) RateStatus(limit int) (db.SMSRateStatus, error) {
+	if f.RateStatusFn != nil {
+		return f.RateStatusFn(limit)
+	}
+	return db.NewSMSRateStatus(limit, 0), nil
+}
+
 type FakeTraffic struct {
 	LatestMinuteDeltasFn      func(resource, tag string) (time.Time, int64, int64, error)
 	LatestMinuteDeltasBatchFn func(resource string, tags []string) (map[string]db.LatestMinuteDeltas, error)
@@ -215,13 +240,19 @@ func (f *FakeTraffic) AnalysisWithChart(rangeName, deviceID string, now time.Tim
 }
 
 type FakeUpstreamProxy struct {
-	ListFn              func() ([]db.UpstreamProxy, error)
-	GetFn               func(id string) (*db.UpstreamProxy, error)
-	UpsertFn            func(p db.UpstreamProxy) error
-	DeleteFn            func(id string) error
-	ListCountryRulesFn  func() ([]db.UpstreamProxyCountryRule, error)
-	UpsertCountryRuleFn func(rule db.UpstreamProxyCountryRule) error
-	DeleteCountryRuleFn func(countryCode string) error
+	ListFn                 func() ([]db.UpstreamProxy, error)
+	GetFn                  func(id string) (*db.UpstreamProxy, error)
+	UpsertFn               func(p db.UpstreamProxy) error
+	DeleteFn               func(id string) error
+	ListCountryRulesFn     func() ([]db.UpstreamProxyCountryRule, error)
+	UpsertCountryRuleFn    func(rule db.UpstreamProxyCountryRule) error
+	DeleteCountryRuleFn    func(countryCode string) error
+	ListProfileBindingsFn  func() ([]db.UpstreamProxyProfileBinding, error)
+	GetProfileBindingFn    func(iccid string) (*db.UpstreamProxyProfileBinding, error)
+	UpsertProfileBindingFn func(b db.UpstreamProxyProfileBinding) error
+	DeleteProfileBindingFn func(iccid string) error
+
+	ProfileBindings []db.UpstreamProxyProfileBinding
 }
 
 func (f *FakeUpstreamProxy) List() ([]db.UpstreamProxy, error) {
@@ -271,6 +302,55 @@ func (f *FakeUpstreamProxy) DeleteCountryRule(countryCode string) error {
 		return f.DeleteCountryRuleFn(countryCode)
 	}
 	return nil
+}
+
+func (f *FakeUpstreamProxy) ListProfileBindings() ([]db.UpstreamProxyProfileBinding, error) {
+	if f.ListProfileBindingsFn != nil {
+		return f.ListProfileBindingsFn()
+	}
+	out := make([]db.UpstreamProxyProfileBinding, len(f.ProfileBindings))
+	copy(out, f.ProfileBindings)
+	return out, nil
+}
+
+func (f *FakeUpstreamProxy) GetProfileBinding(iccid string) (*db.UpstreamProxyProfileBinding, error) {
+	if f.GetProfileBindingFn != nil {
+		return f.GetProfileBindingFn(iccid)
+	}
+	for i := range f.ProfileBindings {
+		if f.ProfileBindings[i].ICCID == iccid {
+			b := f.ProfileBindings[i]
+			return &b, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *FakeUpstreamProxy) UpsertProfileBinding(b db.UpstreamProxyProfileBinding) error {
+	if f.UpsertProfileBindingFn != nil {
+		return f.UpsertProfileBindingFn(b)
+	}
+	for i := range f.ProfileBindings {
+		if f.ProfileBindings[i].ICCID == b.ICCID {
+			f.ProfileBindings[i] = b
+			return nil
+		}
+	}
+	f.ProfileBindings = append(f.ProfileBindings, b)
+	return nil
+}
+
+func (f *FakeUpstreamProxy) DeleteProfileBinding(iccid string) error {
+	if f.DeleteProfileBindingFn != nil {
+		return f.DeleteProfileBindingFn(iccid)
+	}
+	for i := range f.ProfileBindings {
+		if f.ProfileBindings[i].ICCID == iccid {
+			f.ProfileBindings = append(f.ProfileBindings[:i], f.ProfileBindings[i+1:]...)
+			return nil
+		}
+	}
+	return db.ErrProfileBindingNotFound
 }
 
 // NewFakeStore 返回一个各域都是假实现的 Store。

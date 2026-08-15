@@ -82,6 +82,9 @@ type SMSRepository interface {
 	// DeleteByID 返回 (会话是否已空, imsi, peer, err)——会话空了前端要把它从列表里去掉。
 	DeleteByID(id uint) (bool, string, string, error)
 	DeleteThreadByICCID(iccid, peer string) (int64, error)
+	// ReserveSend 在滚动 1 小时窗口里占 1 条全局发送额度。超限返回 *db.SMSRateLimitedError。
+	ReserveSend(limit int, deviceID, recipient string) (db.SMSRateStatus, error)
+	RateStatus(limit int) (db.SMSRateStatus, error)
 }
 
 // TrafficRepository 流量采样与聚合。
@@ -100,6 +103,10 @@ type UpstreamProxyRepository interface {
 	ListCountryRules() ([]db.UpstreamProxyCountryRule, error)
 	UpsertCountryRule(rule db.UpstreamProxyCountryRule) error
 	DeleteCountryRule(countryCode string) error
+	ListProfileBindings() ([]db.UpstreamProxyProfileBinding, error)
+	GetProfileBinding(iccid string) (*db.UpstreamProxyProfileBinding, error)
+	UpsertProfileBinding(b db.UpstreamProxyProfileBinding) error
+	DeleteProfileBinding(iccid string) error
 }
 
 // ---- 实现：转发到 internal/db ----
@@ -157,6 +164,12 @@ func (smsRepo) DeleteByID(id uint) (bool, string, string, error) {
 func (smsRepo) DeleteThreadByICCID(iccid, peer string) (int64, error) {
 	return db.DeleteSMSByICCIDAndPeer(iccid, peer)
 }
+func (smsRepo) ReserveSend(limit int, deviceID, recipient string) (db.SMSRateStatus, error) {
+	return db.ReserveSMSSend(limit, deviceID, recipient)
+}
+func (smsRepo) RateStatus(limit int) (db.SMSRateStatus, error) {
+	return db.GetSMSRateStatus(limit)
+}
 
 type trafficRepo struct{}
 
@@ -186,6 +199,18 @@ func (upstreamProxyRepo) UpsertCountryRule(rule db.UpstreamProxyCountryRule) err
 }
 func (upstreamProxyRepo) DeleteCountryRule(countryCode string) error {
 	return db.DeleteUpstreamProxyCountryRule(countryCode)
+}
+func (upstreamProxyRepo) ListProfileBindings() ([]db.UpstreamProxyProfileBinding, error) {
+	return db.ListProfileBindings()
+}
+func (upstreamProxyRepo) GetProfileBinding(iccid string) (*db.UpstreamProxyProfileBinding, error) {
+	return db.GetProfileBinding(iccid)
+}
+func (upstreamProxyRepo) UpsertProfileBinding(b db.UpstreamProxyProfileBinding) error {
+	return db.UpsertProfileBinding(b)
+}
+func (upstreamProxyRepo) DeleteProfileBinding(iccid string) error {
+	return db.DeleteProfileBinding(iccid)
 }
 
 // 确保实现满足接口（编译期检查，改签名时立刻失败而不是运行期）

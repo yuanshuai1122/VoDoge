@@ -2029,6 +2029,27 @@ func TestFindNotificationWithWaitReturnsFirstNewNotification(t *testing.T) {
 	}
 }
 
+func TestDeleteProfileRejectsEnabledProfileFromCache(t *testing.T) {
+	mgr := newTestManagerWithOverviewLoader(nil)
+	mgr.overviewCache = &EsimOverview{
+		Profiles: []EUICCProfiles{{
+			EID:    "eid-a",
+			AIDHex: "A000",
+			Profiles: []ProfileItem{
+				{ICCID: "8986000000000000001", State: 1, StateText: "已启用"},
+			},
+		}},
+	}
+
+	_, err := mgr.DeleteProfile("8986000000000000001", "")
+	if err == nil {
+		t.Fatal("DeleteProfile() error=nil, want enabled-profile error")
+	}
+	if !IsProfileEnabled(err) {
+		t.Fatalf("error=%v want PROFILE_ENABLED", err)
+	}
+}
+
 func TestDeleteProfileReturnsZeroWarningResultForInvalidICCID(t *testing.T) {
 	mgr := newTestManagerWithOverviewLoader(nil)
 

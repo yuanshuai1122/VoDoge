@@ -1,6 +1,6 @@
 # VoDog 剩余工作
 
-> 更新：2026-08-14（B1/B5/B7/C1/D1 完成后）
+> 更新：2026-08-15（读卡器 APDU / 插件体系已合入）
 > 相关：[known-issues.md](./known-issues.md)、[frontend-api-matrix.md](./frontend-api-matrix.md)、
 > [frontend-react-progress.md](./frontend-react-progress.md)
 
@@ -123,7 +123,17 @@ P1 现场验证（需硬件）──► 发现的问题回流 P2
 
 产品对照与分期见 [vocat-adopt-plan.md](./vocat-adopt-plan.md)。
 UFI 不承担短信验收；第 1 期真机改为 EC25-CN。
-个人入口：第 1 期手机浏览器能用短信，第 1b 轻量 PWA（HTTPS，通知仍走 Telegram/Bark）。
+个人入口：无硬件部分已合入（lane 分线、短信过滤、窄屏会话、PWA 壳、读卡器发现打桩）。
+第 1 期真机短信仍要 EC25-CN；第 1b 可安装 PWA 仍要 HTTPS。通知走 Telegram/Bark。
+第 2 期国外线软件已先行（当前 profile、禁用、切卡错误码）；EG25-G 到货只验证。
+第 3 期读卡器软件已先行（加设备、互斥、eSIM 页、pcscd APDU）；插卡只验证。
+第 4 期软件已先行（国外线 IMS 补通路、国内线不出国代理）。
+第 4b 期软件已先行（全局滚动 1 小时发送限额，接收不限）。
+第 4c 期软件已先行（按 ICCID 绑前置代理，国内线仍直连）。
+第 4d 期软件已先行（设备配额默认 5、可调 1–10）。
+第 4e 期软件已先行（本机自签 HTTPS，同一端口 HTTP/TLS）。
+第 4f 期软件已先行（默认仅内网可打开管理面）。
+插件体系软件已先行（zip 安装/启停/卸载、侧栏 iframe、本机后端）。硬件支持表见 [hardware-support.md](./hardware-support.md)。
 
 PVE lab（VM 113 / `vodog.lab.lan`）见 [pve-lab-deploy.md](./pve-lab-deploy.md)。
 有卡那根在原厂 RNDIS/CPE 下也是紧急呼叫、没互联网（基带 `UFI103_CT`、卡 `46011`）。

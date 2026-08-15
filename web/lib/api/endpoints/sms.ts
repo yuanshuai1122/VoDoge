@@ -21,6 +21,7 @@ export interface ContactsCursor {
 export async function listContacts(params: {
   device_id?: string;
   imsi?: string;
+  lane?: string;
   limit?: number;
   cursor?: ContactsCursor;
 }): Promise<SMSContact[]> {
@@ -28,6 +29,7 @@ export async function listContacts(params: {
     query: {
       device_id: params.device_id,
       imsi: params.imsi,
+      lane: params.lane,
       limit: params.limit ?? SMS_PAGE_SIZE,
       before_ts: params.cursor?.before_ts,
       before_peer: params.cursor?.before_peer,
@@ -91,6 +93,8 @@ export interface SendSMSResult {
   /** 长短信被拆成的分片数 */
   parts_total: number;
   delivery_state: string;
+  /** cellular | ims */
+  transport?: string;
 }
 
 export async function sendSMS(input: {

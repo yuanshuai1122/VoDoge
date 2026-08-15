@@ -160,3 +160,42 @@ export async function deleteCountryRule(code: string): Promise<void> {
     `/upstream-proxy-country-rules/${encodeURIComponent(code)}`,
   );
 }
+
+/** 对齐 internal/db.UpstreamProxyProfileBinding */
+export interface ProfileProxyBinding {
+  iccid: string;
+  device_id: string;
+  profile_name: string;
+  upstream_proxy_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProfileProxyBindingInput {
+  device_id: string;
+  iccid: string;
+  profile_name?: string;
+}
+
+/** GET /api/upstream-proxy-profile-bindings */
+export async function listProfileBindings(): Promise<ProfileProxyBinding[]> {
+  return (await api.get<ProfileProxyBinding[]>("/upstream-proxy-profile-bindings")).data;
+}
+
+/** POST /api/upstream-proxy-profile-bindings */
+export async function createProfileBindings(input: {
+  upstream_proxy_id: string;
+  bindings: ProfileProxyBindingInput[];
+}): Promise<ProfileProxyBinding[]> {
+  return (
+    await api.post<ProfileProxyBinding[]>("/upstream-proxy-profile-bindings", input)
+  ).data;
+}
+
+/** DELETE /api/upstream-proxy-profile-bindings */
+export async function deleteProfileBindings(input: {
+  upstream_proxy_id?: string;
+  iccids: string[];
+}): Promise<void> {
+  await api.delete("/upstream-proxy-profile-bindings", { json: input });
+}

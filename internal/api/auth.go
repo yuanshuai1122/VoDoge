@@ -101,6 +101,7 @@ func (s *Server) handleLogin(c *gin.Context) {
 		}
 		logger.Info("登录成功", "ip", clientIP, "username", req.Username)
 
+		s.attachSessionCookie(c, token)
 		respondOK(c, gin.H{
 			"token":      token,
 			"expires_at": exp.Format(time.RFC3339),
@@ -237,7 +238,22 @@ func (s *Server) requestSessionToken(c *gin.Context) string {
 	if _, ok := s.sseTokenPaths()[c.FullPath()]; ok {
 		return strings.TrimSpace(c.Query("token"))
 	}
+
+	// 插件 iframe 和 /plugin-assets 带不了 Authorization，登录时写下的 cookie 补这一段。
+	if ck, err := c.Request.Cookie(sessionCookieName); err == nil {
+		return strings.TrimSpace(ck.Value)
+	}
 	return ""
+}
+
+const sessionCookieName = "vodog_session"
+
+func (s *Server) attachSessionCookie(c *gin.Context, token string) {
+	if c == nil || strings.TrimSpace(token) == "" {
+		return
+	}
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(sessionCookieName, token, int((30 * 24 * time.Hour).Seconds()), "/", "", c.Request.TLS != nil, true)
 }
 
 // sseTokenPaths 惰性求值一次并缓存：每个请求都要查它，不能每次重建路由表。
@@ -262,6 +278,7 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		}
 
 		if s.isAuthenticatedRequest(c, time.Now()) {
+			s.attachSessionCookie(c, s.requestSessionToken(c))
 			c.Next()
 			return
 		}

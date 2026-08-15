@@ -38,16 +38,41 @@ export async function getChipInfo(
   ).data;
 }
 
+export interface SwitchProfileResult {
+  message: string;
+  target_iccid: string;
+  switch_accepted: boolean;
+  recovery_pending: boolean;
+  degraded_reason?: string;
+  sim_reload_warning?: string;
+}
+
 export async function switchProfile(
   deviceId: string,
   input: { iccid: string; aid_hex?: string },
-): Promise<void> {
+): Promise<SwitchProfileResult> {
   // 后端固定 30s 超时并等待生效，客户端需留出余量
-  await api.post(
+  const { data } = await api.post<SwitchProfileResult>(
     `/devices/${encodeURIComponent(deviceId)}/esim/actions/switch`,
     input,
     { timeoutMs: 60_000 },
   );
+  return data;
+}
+
+export async function disableProfile(
+  deviceId: string,
+  input: { iccid: string; aid_hex?: string },
+): Promise<{ target_iccid: string; message?: string }> {
+  const { data, meta } = await api.post<{ target_iccid?: string }>(
+    `/devices/${encodeURIComponent(deviceId)}/esim/actions/disable`,
+    input,
+    { timeoutMs: 60_000 },
+  );
+  return {
+    target_iccid: data?.target_iccid ?? input.iccid,
+    message: typeof meta.message === "string" ? meta.message : undefined,
+  };
 }
 
 export async function renameProfile(
@@ -77,10 +102,14 @@ export interface DeleteProfileResult {
 export async function deleteProfile(
   deviceId: string,
   iccid: string,
+  aidHex?: string,
 ): Promise<DeleteProfileResult> {
   const { meta } = await api.delete(
     `/devices/${encodeURIComponent(deviceId)}/esim/profiles/${encodeURIComponent(iccid)}`,
-    { timeoutMs: 120_000 },
+    {
+      timeoutMs: 120_000,
+      query: { aid_hex: aidHex },
+    },
   );
   return {
     message: typeof meta.message === "string" ? meta.message : undefined,

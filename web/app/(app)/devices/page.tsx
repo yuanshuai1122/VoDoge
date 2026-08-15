@@ -8,6 +8,7 @@ import { RefreshCw, RotateCw, Trash2, Plus } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, ErrorState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -30,6 +31,7 @@ import {
 import { ApiError } from "@/lib/api/errors";
 import { Sensitive } from "@/components/common/sensitive";
 import { AddDeviceDialog } from "@/components/devices/add-device-dialog";
+import { LaneBadge } from "@/components/common/lane-badge";
 
 export default function DevicesPage() {
   const queryClient = useQueryClient();
@@ -141,14 +143,22 @@ export default function DevicesPage() {
               {devices.map((d) => (
                 <TableRow key={d.id}>
                   <TableCell>
-                    <Link
-                      href={`/devices/detail?id=${encodeURIComponent(d.id)}`}
-                      className="font-medium hover:underline"
-                    >
-                      {d.name || d.id}
-                    </Link>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Link
+                        href={`/devices/detail?id=${encodeURIComponent(d.id)}`}
+                        className="font-medium hover:underline"
+                      >
+                        {d.name || d.id}
+                      </Link>
+                      <LaneBadge lane={d.lane} />
+                      {d.device_backend === "pcsc" && (
+                        <Badge variant="outline">读卡器</Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      {d.interface || d.control_device || d.id}
+                      {d.active_esim_profile_name
+                        ? `当前卡 ${d.active_esim_profile_name}`
+                        : d.interface || d.control_device || d.id}
                     </p>
                   </TableCell>
 

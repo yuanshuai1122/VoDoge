@@ -21,6 +21,7 @@
 | [ufi103s-qmi-host.md](./ufi103s-qmi-host.md) | **UFI103S 原厂 QMI 接入**：单根验收、Debian 主机与多棒部署边界 |
 | [pve-lab-deploy.md](./pve-lab-deploy.md) | **PVE lab 落点**：VM 113 / `192.168.2.80`、xHCI 直通、两根棒子台账与当日验收 |
 | [vocat-adopt-plan.md](./vocat-adopt-plan.md) | **对照 VoCat 的抄作业计划**：国内/国外短信中枢、个人 PWA 入口、抄什么不抄什么、分期验收 |
+| [hardware-support.md](./hardware-support.md) | **支持硬件**：EC20/EC25/EG25、真短信、读卡器 APDU、IMS 出口、插件 |
 | [backend-api-refactor-plan.md](./backend-api-refactor-plan.md) | `internal/api` 重构方案与验收记录（路由表 / 统一错误 / 分域拆文件 / repository 层） |
 | [api-envelope-design.md](./api-envelope-design.md) | **响应结构统一方案**（`{data, meta, request_id}`），含破坏性变更清单 |
 

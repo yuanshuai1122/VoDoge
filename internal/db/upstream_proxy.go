@@ -2,6 +2,7 @@ package db
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -32,6 +33,45 @@ type UpstreamProxyCountryRule struct {
 
 func (UpstreamProxyCountryRule) TableName() string {
 	return "upstream_proxy_country_rules"
+}
+
+// UpstreamProxyProfileBinding 把一张 SIM / 一个 eSIM Profile（ICCID）绑到指定前置代理。
+// ICCID 全局唯一，一张卡只能绑一个代理；一个代理可以服务多张卡。
+type UpstreamProxyProfileBinding struct {
+	ICCID           string    `gorm:"column:iccid;primaryKey" json:"iccid"`
+	DeviceID        string    `gorm:"column:device_id;index" json:"device_id"`
+	ProfileName     string    `gorm:"column:profile_name" json:"profile_name"`
+	UpstreamProxyID string    `gorm:"column:upstream_proxy_id;index" json:"upstream_proxy_id"`
+	CreatedAt       time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt       time.Time `gorm:"column:updated_at" json:"updated_at"`
+}
+
+func (UpstreamProxyProfileBinding) TableName() string {
+	return "upstream_proxy_profile_bindings"
+}
+
+var ErrProfileBindingNotFound = errors.New("profile proxy binding not found")
+
+const (
+	profileBindingICCIDMin = 18
+	profileBindingICCIDMax = 22
+)
+
+func NormalizeProfileBindingICCID(in string) string {
+	return strings.TrimSpace(in)
+}
+
+func ValidProfileBindingICCID(in string) bool {
+	s := NormalizeProfileBindingICCID(in)
+	if len(s) < profileBindingICCIDMin || len(s) > profileBindingICCIDMax {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // ── UpstreamProxy CRUD ──
@@ -80,6 +120,9 @@ func DeleteUpstreamProxy(id string) error {
 		return errors.New("empty id")
 	}
 	if err := DB.Delete(&UpstreamProxyCountryRule{}, "upstream_proxy_id = ?", id).Error; err != nil {
+		return err
+	}
+	if err := DB.Delete(&UpstreamProxyProfileBinding{}, "upstream_proxy_id = ?", id).Error; err != nil {
 		return err
 	}
 	return DB.Delete(&UpstreamProxy{}, "id = ?", id).Error
@@ -146,4 +189,82 @@ func GetHomeMCCUpstreamProxy(homeMCC string) (*UpstreamProxy, string, error) {
 	}
 	proxy, err := GetCountryUpstreamProxy(countryCode)
 	return proxy, countryCode, err
+}
+
+func ListProfileBindings() ([]UpstreamProxyProfileBinding, error) {
+	var out []UpstreamProxyProfileBinding
+	if err := DB.Order("device_id asc, profile_name asc, iccid asc").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func GetProfileBinding(iccid string) (*UpstreamProxyProfileBinding, error) {
+	iccid = NormalizeProfileBindingICCID(iccid)
+	if iccid == "" {
+		return nil, errors.New("empty iccid")
+	}
+	var out UpstreamProxyProfileBinding
+	err := DB.First(&out, "iccid = ?", iccid).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &out, nil
+}
+
+func UpsertProfileBinding(b UpstreamProxyProfileBinding) error {
+	b.ICCID = NormalizeProfileBindingICCID(b.ICCID)
+	b.DeviceID = strings.TrimSpace(b.DeviceID)
+	b.ProfileName = strings.TrimSpace(b.ProfileName)
+	b.UpstreamProxyID = strings.TrimSpace(b.UpstreamProxyID)
+	if !ValidProfileBindingICCID(b.ICCID) {
+		return fmt.Errorf("invalid iccid")
+	}
+	if b.DeviceID == "" {
+		return errors.New("empty device_id")
+	}
+	if b.UpstreamProxyID == "" {
+		return errors.New("empty upstream_proxy_id")
+	}
+	now := time.Now()
+	if b.CreatedAt.IsZero() {
+		b.CreatedAt = now
+	}
+	b.UpdatedAt = now
+	return DB.Save(&b).Error
+}
+
+func DeleteProfileBinding(iccid string) error {
+	iccid = NormalizeProfileBindingICCID(iccid)
+	if iccid == "" {
+		return errors.New("empty iccid")
+	}
+	res := DB.Delete(&UpstreamProxyProfileBinding{}, "iccid = ?", iccid)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrProfileBindingNotFound
+	}
+	return nil
+}
+
+// GetProfileUpstreamProxy 按 ICCID 取已启用的前置代理；未绑定或代理停用时返回 nil。
+func GetProfileUpstreamProxy(iccid string) (*UpstreamProxy, error) {
+	iccid = NormalizeProfileBindingICCID(iccid)
+	if iccid == "" {
+		return nil, nil
+	}
+	binding, err := GetProfileBinding(iccid)
+	if err != nil || binding == nil || strings.TrimSpace(binding.UpstreamProxyID) == "" {
+		return nil, err
+	}
+	proxy, err := GetUpstreamProxyByID(binding.UpstreamProxyID)
+	if err != nil || proxy == nil || !proxy.Enabled {
+		return nil, err
+	}
+	return proxy, nil
 }

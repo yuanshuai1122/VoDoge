@@ -49,6 +49,7 @@ func deviceConfigRequiresRestart(old config.DeviceConfig, next config.DeviceConf
 	if qmiProxyConfigChanged(old, next) {
 		return true
 	}
+	// lane 只是人工分线标签，改它不必重建 Worker
 	return false
 }
 

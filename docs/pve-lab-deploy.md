@@ -33,7 +33,7 @@ PVE 宿主机 192.168.2.50
 | 用户 | `ops`（sudo；**不在** `docker` 组，docker 命令要 sudo） |
 | USB | `hostpci0: 0000:00:14.0`（整颗 Intel 8 Series xHCI） |
 | 启动 | `onboot=1`，`startup: order=2,up=20`（跟在 jumpserver 后面） |
-| 代码 | `/opt/vohive`（rsync 上去的，没有 `.git`） |
+| 代码 | 本机克隆 `Documents/local/vodog`；虚机上仍是 `/opt/vohive`（compose 工作目录，未改以免断挂载） |
 
 两根同型号棒子必须按控制器直通或按口绑定，不能 `host=05c6:90b4`。
 
@@ -122,6 +122,7 @@ curl -sS http://127.0.0.1:7575/ping
 ```
 
 访问：`http://vodog.lab.lan:7575` 或 `http://192.168.2.80:7575`。  
+装 PWA 可在系统设置打开「本机自签 HTTPS」（同一端口，先下载并信任证书）。  
 `network_mode: host` + `privileged` + `/dev`，一个实例独占这台机器上的全部棒子。
 
 发现页必须显示 QMI，用 IMEI 添加，不要把 `cdc-wdmN` / `wwanN` 写进配置。  

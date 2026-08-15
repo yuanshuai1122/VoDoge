@@ -10,7 +10,7 @@ import (
 func TestVoWiFiVoiceLifecycleIsNotHostReadyCallbackGlue(t *testing.T) {
 	root := filepath.Join("..", "..")
 	files := []string{
-		filepath.Join(root, "cmd", "vohive", "main.go"),
+		filepath.Join(root, "cmd", "vodog", "main.go"),
 		filepath.Join("pool.go"),
 		filepath.Join("pool_vowifi_runtime.go"),
 		filepath.Join("pool_vowifi_wiring.go"),

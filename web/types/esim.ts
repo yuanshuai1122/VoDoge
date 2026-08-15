@@ -40,3 +40,17 @@ export interface EsimDownloadEvent {
 export function isProfileEnabled(p: ProfileItem): boolean {
   return p.state === PROFILE_STATE_ENABLED;
 }
+
+export function currentProfile(
+  groups: EUICCProfiles[] | undefined,
+): { profile: ProfileItem; aid_hex: string; eid: string } | null {
+  if (!groups) return null;
+  for (const group of groups) {
+    for (const profile of group.profiles) {
+      if (isProfileEnabled(profile)) {
+        return { profile, aid_hex: group.aid_hex, eid: group.eid };
+      }
+    }
+  }
+  return null;
+}

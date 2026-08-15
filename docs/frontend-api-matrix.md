@@ -251,13 +251,15 @@
 
 | 端点 | 方法 | 用途 |
 |------|------|------|
-| `/api/devices` | GET / POST | 列表（含 `device_limit`）/ 添加 |
+| `/api/devices` | GET / POST | 列表（含 `device_limit`、`lane`）/ 添加 |
 | `/api/devices/discovered` | GET | 已发现硬件 |
 | `/api/devices/actions/rescan` | POST | 重扫描 |
 | `/api/devices/:id` | PUT / DELETE | 更新 / 删除 |
 | `/api/devices/:id/overview` | GET | 详情（**返回 `{devices:[1]}`**） |
 | `/api/devices/:id/overview/stream` | GET SSE | 实时详情 |
-| `/api/devices/:id/config` | GET | 设备配置 |
+| `/api/devices/:id/config` | GET | 设备配置（含 `lane`: 空/`cn`/`intl`） |
+| `/api/readers` | GET | PC/SC 读卡器发现。`data.daemon` 为 `running`/`missing`/`error`；已添加的读卡器带 `claimed_id`。pcscd 没起来也是 200 |
+| `/api/devices` POST `device_backend=pcsc` | POST | 把读卡器加成设备，必填 `reader_name`，不需要 IMEI |
 | `/api/devices/:id/status` | GET | 单设备状态 |
 | `/api/devices/:id/actions/refresh`、`/reboot` | POST | 刷新缓存 / 重启模组 |
 | `/api/devices/:id/actions/at` | POST | AT 命令 → `{status:"ok", response}` |
@@ -286,7 +288,8 @@
 | `/api/devices/:id/esim/profiles/:iccid` | PATCH / DELETE | 改名（`{name, aid_hex}`）/ 删除 |
 | `/api/devices/:id/esim/actions/download` | POST | 发起下载，返回 `task_id`（见 §3.3） |
 | `/api/devices/:id/esim/actions/download/stream` | GET SSE | 按 `task_id` 订阅下载进度 |
-| `/api/devices/:id/esim/actions/switch` | POST | 切换 |
+| `/api/devices/:id/esim/actions/switch` | POST | 切换（失败带稳定错误码，不装成成功） |
+| `/api/devices/:id/esim/actions/disable` | POST | 禁用当前 Profile。禁用后该卡槽没有活动号码 |
 | `/api/devices/:id/esim/eids`、`/chip-info` | GET | EID / 芯片信息 |
 | `/api/devices/:id/esim/notifications` | GET | 通知列表 |
 | `/api/devices/:id/esim/notifications/:seq/actions/retry` | POST | 重试通知 |
@@ -301,9 +304,9 @@
 
 | 端点 | 方法 | 用途 |
 |------|------|------|
-| `/api/sms/contacts?device_id=&imsi=&limit=&before_ts=&before_peer=` | GET | 会话列表（**裸数组**） |
+| `/api/sms/contacts?device_id=&imsi=&lane=&limit=&before_ts=&before_peer=` | GET | 会话列表（**裸数组**）。`lane=cn\|intl` 只留下该线设备的会话；非法值 400 |
 | `/api/sms/thread?peer=&device_id=&imsi=&limit=&before_ts=&before_id=` | GET | 会话详情（**裸数组**，`peer` 必填） |
-| `/api/sms/send` | POST | 发送（自动选 AT 或 VoWiFi 通道） |
+| `/api/sms/send` | POST | 发送。`data.transport` 为 `cellular` 或 `ims`。国外线未驻网时先 IMS，已驻网先蜂窝、失败再 IMS。超限 429 `sms_rate_limited` |
 | `/api/sms/delivery/:message_id` | GET | 投递状态 |
 | `/api/sms/messages/:id` | DELETE | 删单条 |
 | `/api/sms/thread` | DELETE | 删会话 |
@@ -327,6 +330,7 @@
 | `/api/upstream-proxy-countries` | GET | 可选国家 |
 | `/api/upstream-proxy-country-rules` | GET | 国家规则列表 |
 | `/api/upstream-proxy-country-rules/:code` | PUT / DELETE | 保存 / 删除规则 |
+| `/api/upstream-proxy-profile-bindings` | GET / POST / DELETE | 按 ICCID 绑前置代理。POST `{upstream_proxy_id,bindings[]}`；DELETE `{iccids[],upstream_proxy_id?}`。409：`profile_already_bound` / `upstream_proxy_disabled` |
 | `/api/rotateip` | POST | 换 IP（**无鉴权**） |
 
 ### 5.7 卡策略
@@ -342,10 +346,21 @@
 |------|------|------|
 | `/api/logs/stream?level=` | GET SSE | `level`: debug/info/warn/error |
 | `/api/logs/history` | GET | 历史日志 |
+| `/api/settings/sms` | GET / PUT | 全局短信发送限额（滚动 1 小时，所有设备共用；`hourly_limit=0` 不限制） |
+| `/api/settings/devices` | GET / PUT | 设备配额（`limit` 1–10，默认 5；`used` 为已配置台数。调低不删设备） |
+| `/api/settings/https` | GET / PUT | 本机自签 HTTPS。`enabled`；返回指纹与 http/https URL。开启后 HTTP 308，本接口仍可走明文 |
+| `/api/settings/https/certificate` | GET | 下载 PEM（`application/x-pem-file`，不套信封） |
+| `/api/settings/security` | GET / PUT | 网络访问策略。`mode=internal|public`，`allowed_cidrs`，`trust_proxy_headers`。403 `network_access_denied` |
 | `/api/settings/notifications` | GET / PUT | 通知配置 |
 | `/api/settings/notifications/webhook/test`、`/bark/test`、`/email/test` | POST | 测试发送（**仅这 3 个渠道有测试接口**） |
 | `/api/system/update/check`、`/update/apply` | GET / POST | 在线更新 |
 | `/api/system/uninstall` | POST | 卸载/自毁，**破坏性且不可撤销**：删数据目录 + 配置文件 + **程序自身**，随后退出。需鉴权。UI 在设置页危险区，要求逐字输入 `UNINSTALL`。PostgreSQL 数据不在删除范围内 |
+| `/api/extensions` | GET | 已安装插件 |
+| `/api/extensions/install-url` | POST | `{url, sha256?}`，仅 HTTPS，拒绝内网 |
+| `/api/extensions/upload` | POST | multipart 字段 `package` |
+| `/api/extensions/:id` | PUT / DELETE | `{enabled}` / 卸载 |
+| `/api/extensions/:id/backend[/*]` | 反代 | 插件本机后端；不入 OpenAPI |
+| `/plugin-assets/:id/*` | GET | 插件静态页（鉴权：Bearer 或登录 cookie） |
 
 ### 5.9 VoWiFi / E911
 

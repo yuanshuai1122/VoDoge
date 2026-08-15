@@ -11,6 +11,7 @@ import (
 	"github.com/boa-z/vowifi-go/runtimehost/carrier"
 	"github.com/boa-z/vowifi-go/runtimehost/identity"
 	"github.com/yuanshuai1122/vodog/internal/backend"
+	"github.com/yuanshuai1122/vodog/internal/config"
 	"github.com/yuanshuai1122/vodog/internal/db"
 	innersim "github.com/yuanshuai1122/vodog/internal/sim"
 	"github.com/yuanshuai1122/vodog/internal/upstreamproxy"
@@ -264,7 +265,7 @@ func (p *Pool) prepareVoWiFiStartContext(deviceID, traceID, runtimeEPDGOverride 
 		}
 	}
 
-	startCtx.Proxy = resolveVoWiFiCountryProxy(startProfile.MCC, traceID, deviceID)
+	startCtx.Proxy = resolveVoWiFiCountryProxy(w.Config.Lane, startProfile.MCC, strings.TrimSpace(currentStatus.ICCID), traceID, deviceID)
 
 	startCtx.NetworkMode = modemIface.GetNetworkMode()
 	startCtx.StartupState = newVoWiFiSIMReadyStartupState(deviceID, swu.DataplaneModeUserspace, startCtx.NetworkMode, time.Now())
@@ -272,7 +273,37 @@ func (p *Pool) prepareVoWiFiStartContext(deviceID, traceID, runtimeEPDGOverride 
 	return startCtx, nil
 }
 
-func resolveVoWiFiCountryProxy(homeMCC, traceID, deviceID string) *runtimehost.ProxyConfig {
+func resolveVoWiFiCountryProxy(lane, homeMCC, iccid, traceID, deviceID string) *runtimehost.ProxyConfig {
+	if config.NormalizeLane(lane) == config.DeviceLaneCN {
+		logger.Info("国内线忽略前置代理，走模组出口",
+			"trace_id", traceID,
+			"device", deviceID,
+			"home_mcc", strings.TrimSpace(homeMCC),
+			"iccid", strings.TrimSpace(iccid),
+			"proxy_route", "lane_cn_direct")
+		return nil
+	}
+	if proxy, err := db.GetProfileUpstreamProxy(iccid); err != nil {
+		logger.Warn("VoWiFi 启动前读取 Profile 前置代理失败",
+			"trace_id", traceID,
+			"device", deviceID,
+			"iccid", strings.TrimSpace(iccid),
+			"err", err)
+	} else if proxy != nil {
+		logger.Info("VoWiFi Profile 前置代理已命中",
+			"trace_id", traceID,
+			"device", deviceID,
+			"iccid", strings.TrimSpace(iccid),
+			"upstream_proxy_id", proxy.ID,
+			"proxy_route", "profile_binding")
+		return &runtimehost.ProxyConfig{
+			ID:       proxy.ID,
+			Addr:     proxy.Addr,
+			Username: proxy.Username,
+			Password: proxy.Password,
+			Enabled:  proxy.Enabled,
+		}
+	}
 	proxy, countryCode, err := db.GetHomeMCCUpstreamProxy(homeMCC)
 	if err != nil {
 		logger.Warn("VoWiFi 启动前读取国家前置代理配置失败",
@@ -287,6 +318,7 @@ func resolveVoWiFiCountryProxy(homeMCC, traceID, deviceID string) *runtimehost.P
 			"trace_id", traceID,
 			"device", deviceID,
 			"home_mcc", strings.TrimSpace(homeMCC),
+			"iccid", strings.TrimSpace(iccid),
 			"proxy_country_code", countryCode,
 			"mcc_table_ready", upstreamproxy.CountryTableReady(),
 			"proxy_route", "direct")

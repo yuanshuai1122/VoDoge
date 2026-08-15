@@ -48,6 +48,8 @@ export interface SMSContact {
   device_name: string;
   /** 本机号码，来自订阅信息 */
   local_phone: string;
+  /** 所属设备线路；设备离线或未分线时可能为空 */
+  lane?: string;
 }
 
 export function isInbound(m: Pick<SMSMessage, "type">): boolean {
@@ -56,4 +58,13 @@ export function isInbound(m: Pick<SMSMessage, "type">): boolean {
 
 export function isSendFailed(m: Pick<SMSMessage, "status">): boolean {
   return m.status === SMS_STATUS_FAILED;
+}
+
+/** 对齐 GET/PUT /api/settings/sms 的 data。 */
+export interface SMSSettings {
+  hourly_limit: number;
+  used: number;
+  remaining: number;
+  window_seconds: number;
+  unlimited: boolean;
 }

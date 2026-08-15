@@ -70,6 +70,10 @@ func (m *Manager) handleCmdSendSMS(cmdCtx CommandContext, args []string) string 
 	}
 	isVoWiFi := m.pool.IsVoWiFiActive(deviceID)
 
+	if reason := smsSendBlockedByRate(m.smsHourlyLimit(), deviceID, phone); reason != "" {
+		return fmt.Sprintf("发送短信 / 失败\n设备    %s\n号码    %s\n原因    %s", displayName, phone, reason)
+	}
+
 	// /send 是用户的显式操作，不能因 notifyPool 满载被丢弃。
 	// 这里使用独立 goroutine，确保命令被执行并回执结果。
 	go func() {
@@ -104,6 +108,16 @@ func (m *Manager) handleCmdSendSMS(cmdCtx CommandContext, args []string) string 
 		channel = "VoWiFi"
 	}
 	return fmt.Sprintf("发送短信 / 已受理\n设备    %s\n号码    %s\n通道    %s", displayName, phone, channel)
+}
+
+func smsSendBlockedByRate(limit int, deviceID, phone string) string {
+	if _, err := db.ReserveSMSSend(limit, deviceID, phone); err != nil {
+		if db.IsSMSRateLimited(err) {
+			return err.Error()
+		}
+		return "检查发送限额失败: " + err.Error()
+	}
+	return ""
 }
 
 func summarizeVoWiFiReady(st runtimehost.State) string {

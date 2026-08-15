@@ -1,6 +1,12 @@
 server:
   debug: false
   port: 7575
+  max_devices: 5
+  self_signed_https: false
+  access:
+    mode: internal
+    allowed_cidrs: []
+    trust_proxy_headers: false
 
 # 本服务仅支持 PostgreSQL，不再内置文件数据库。
 # 必须改成一个实际可达的实例，否则进程启动时会直接退出。
@@ -15,6 +21,10 @@ database:
 web:
   username: admin
   password: admin
+
+# 全局短信发送限额：滚动 1 小时，所有设备共用。0 表示不限制。
+sms:
+  hourly_limit: 20
 
 devices: []
 

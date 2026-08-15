@@ -25,6 +25,7 @@ import {
 } from "@/lib/api/endpoints/devices";
 import { ApiError } from "@/lib/api/errors";
 import type { DeviceConfigDTO } from "@/types/device-config";
+import { DEVICE_LANES, type DeviceLane } from "@/lib/lane";
 
 const ESIM_TRANSPORTS = ["", "at", "qmi", "mbim"];
 const BACKENDS = ["", "qmi", "mbim", "at"];
@@ -117,6 +118,28 @@ function ConfigForm({
           value={String(draft.proxy_port ?? 0)}
           onChange={(e) => patch({ proxy_port: Number(e.target.value) || 0 })}
         />
+      </Field>
+
+      <Field
+        id="lane"
+        label="线路"
+        hint="人工分线，用来过滤短信。不根据 SIM 的 MCC 自动判断。"
+      >
+        <Select
+          value={draft.lane || ""}
+          onValueChange={(v) => patch({ lane: (v ?? "") as DeviceLane })}
+        >
+          <SelectTrigger id="lane">
+            <SelectValue placeholder="未分线" />
+          </SelectTrigger>
+          <SelectContent>
+            {DEVICE_LANES.map((opt) => (
+              <SelectItem key={opt.value || "none"} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </Field>
 
       <Field id="esim_transport" label="eSIM 通道">

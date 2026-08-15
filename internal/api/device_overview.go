@@ -233,6 +233,7 @@ type deviceMgmtOverviewLiteItem struct {
 	Interface              string             `json:"interface,omitempty"`
 	ControlDevice          string             `json:"control_device,omitempty"`
 	ESIMTransport          string             `json:"esim_transport,omitempty"`
+	Lane                   string             `json:"lane,omitempty"`
 	ATPort                 string             `json:"at_port,omitempty"`
 	USBPath                string             `json:"usb_path,omitempty"`
 	AudioDevice            string             `json:"audio_device,omitempty"`
@@ -287,6 +288,9 @@ type deviceMgmtListItem struct {
 	PublicIPv6             string              `json:"public_ipv6,omitempty"`
 	Interface              string              `json:"interface,omitempty"`
 	ESIMTransport          string              `json:"esim_transport,omitempty"`
+	Lane                   string              `json:"lane,omitempty"`
+	ActiveESIMProfileName  string              `json:"active_esim_profile_name,omitempty"`
+	DeviceBackend          string              `json:"device_backend,omitempty"`
 	SMSEnabled             bool                `json:"sms_enabled"`
 	NetworkEnabled         bool                `json:"network_enabled"`
 	VoWiFiEnabled          bool                `json:"vowifi_enabled"`
@@ -458,6 +462,7 @@ func (s *Server) buildOverviewLiteItemFromWorkerWithModem(w *device.Worker, cfg 
 		Interface:              cfg.Interface,
 		ControlDevice:          cfg.ControlDevice,
 		ESIMTransport:          config.NormalizeESIMTransport(cfg.ESIMTransport),
+		Lane:                   config.NormalizeLane(cfg.Lane),
 		ATPort:                 w.ResolvedATPort(),
 		USBPath:                cfg.USBPath,
 		AudioDevice:            cfg.AudioDevice,
@@ -473,6 +478,9 @@ func (s *Server) buildOverviewLiteItemFromWorkerWithModem(w *device.Worker, cfg 
 		NetworkConnected:       w.NetworkConnected(),
 		RegistrationStateLabel: registrationStateLabel(status.RegStatus),
 		BackendMode: func() string {
+			if config.IsPCSCBackend(cfg.DeviceBackend) {
+				return config.DeviceBackendPCSC
+			}
 			if w.Backend != nil {
 				return w.Backend.Mode()
 			}
@@ -594,6 +602,7 @@ func (s *Server) handleDeviceMgmtOverviewLite(c *gin.Context) {
 				Interface:              dc.Interface,
 				ControlDevice:          dc.ControlDevice,
 				ESIMTransport:          config.NormalizeESIMTransport(dc.ESIMTransport),
+				Lane:                   config.NormalizeLane(dc.Lane),
 				ATPort:                 dc.ATPort,
 				USBPath:                dc.USBPath,
 				SMSEnabled:             pol.SMSEnabled,
@@ -660,6 +669,7 @@ func (s *Server) handleDeviceMgmtOverviewLite(c *gin.Context) {
 			Interface:              dc.Interface,
 			ControlDevice:          dc.ControlDevice,
 			ESIMTransport:          config.NormalizeESIMTransport(dc.ESIMTransport),
+			Lane:                   config.NormalizeLane(dc.Lane),
 			ATPort:                 dc.ATPort,
 			SMSEnabled:             true, // SMS 恒开（系统不变量）
 			NetworkEnabled:         dc.NetworkEnabled,

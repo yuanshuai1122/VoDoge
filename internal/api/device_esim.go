@@ -15,6 +15,7 @@ import (
 	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
 	"github.com/yuanshuai1122/vodog/internal/device"
 	"github.com/yuanshuai1122/vodog/internal/esim"
+	"github.com/yuanshuai1122/vodog/internal/pcsc"
 
 	"github.com/gin-gonic/gin"
 )
@@ -83,12 +84,59 @@ func esimDeleteHTTPStatus(err error) int {
 	switch {
 	case isEsimBusyError(err) || esim.IsDeleteProfileBusy(err):
 		return http.StatusConflict
+	case esim.IsProfileEnabled(err):
+		return http.StatusConflict
 	case esim.IsDeleteProfileInvalidInput(err):
 		return http.StatusBadRequest
 	case esim.IsDeleteProfileNotFound(err):
 		return http.StatusNotFound
 	default:
 		return http.StatusInternalServerError
+	}
+}
+
+// esimWriteHTTPStatus 给切换/禁用用。删 profile 的结构化错误也会从 findAID 冒上来。
+func esimWriteHTTPStatus(err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	if isEsimBusyError(err) {
+		return http.StatusConflict
+	}
+	if errors.Is(err, pcsc.ErrInUse) {
+		return http.StatusConflict
+	}
+	if errors.Is(err, pcsc.ErrAPDUUnavailable) || errors.Is(err, pcsc.ErrNoCard) {
+		return http.StatusServiceUnavailable
+	}
+	if esim.IsDeleteProfileInvalidInput(err) {
+		return http.StatusBadRequest
+	}
+	if esim.IsDeleteProfileNotFound(err) {
+		return http.StatusNotFound
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "无效的 ICCID") || strings.Contains(msg, "无效的 AID") {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
+func esimWriteErrorCode(err error) string {
+	switch {
+	case isEsimBusyError(err):
+		return "ESIM_BUSY"
+	case esim.IsDeleteProfileInvalidInput(err):
+		return "INVALID_INPUT"
+	case esim.IsDeleteProfileNotFound(err):
+		return "PROFILE_NOT_FOUND"
+	case esim.IsProfileEnabled(err):
+		return "PROFILE_ENABLED"
+	default:
+		if esimWriteHTTPStatus(err) == http.StatusBadRequest {
+			return "INVALID_INPUT"
+		}
+		return ""
 	}
 }
 
@@ -208,6 +256,17 @@ func (s *Server) handleEsimRetryNotification(c *gin.Context) {
 	respondOKWith(c, nil, gin.H{"message": "通知重试发送成功"})
 }
 
+func (s *Server) holdModemESIM(c *gin.Context, worker *device.Worker) bool {
+	if s.pool == nil || worker == nil {
+		return true
+	}
+	if err := s.pool.HoldModemESIM(worker.ID, worker.CurrentICCID()); err != nil {
+		fail(c, http.StatusConflict, "ESIM_IN_USE", err.Error())
+		return false
+	}
+	return true
+}
+
 // handleEsimSwitchProfile 切换 eSIM Profile
 func (s *Server) handleEsimSwitchProfile(c *gin.Context) {
 	id := deviceIDParam(c)
@@ -222,6 +281,10 @@ func (s *Server) handleEsimSwitchProfile(c *gin.Context) {
 		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
 		return
 	}
+	if !s.holdModemESIM(c, worker) {
+		return
+	}
+	defer s.pool.ReleaseESIMHold(worker.ID)
 
 	// Profile 切换：EnableProfile 后等待目标 profile 生效；切卡后按 Ready+Delay 门控执行后处理（不等待搜网）
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -233,7 +296,8 @@ func (s *Server) handleEsimSwitchProfile(c *gin.Context) {
 			respondEsimBusy(c, "switch_profile", err)
 			return
 		}
-		fail(c, http.StatusInternalServerError, "", "esim配置切换失败: "+err.Error())
+		status := esimWriteHTTPStatus(err)
+		fail(c, status, esimWriteErrorCode(err), "切换 Profile 失败: "+err.Error())
 		return
 	}
 
@@ -251,7 +315,46 @@ func (s *Server) handleEsimSwitchProfile(c *gin.Context) {
 		SIMReloadOK:        result.PowerCycleAttempt && result.SIMReloadWarning == "",
 		SIMReloadWarning:   result.SIMReloadWarning,
 	})
+}
 
+// handleEsimDisableProfile 禁用当前启用的 Profile。
+// 对照 VoCat：当前卡可单独禁用，禁用后该 eUICC 没有活动号码，短信身份会空，直到再启用一张。
+func (s *Server) handleEsimDisableProfile(c *gin.Context) {
+	id := deviceIDParam(c)
+	var req esimSwitchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "", err.Error())
+		return
+	}
+
+	worker := s.pool.GetWorker(id)
+	if worker == nil || worker.EsimMgr == nil {
+		fail(c, http.StatusNotFound, "", "设备或esim管理器未找到")
+		return
+	}
+	if !s.holdModemESIM(c, worker) {
+		return
+	}
+	defer s.pool.ReleaseESIMHold(worker.ID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := worker.EsimMgr.DisableProfile(ctx, req.ICCID, req.AIDHex); err != nil {
+		if isEsimBusyError(err) {
+			respondEsimBusy(c, "disable_profile", err)
+			return
+		}
+		status := esimWriteHTTPStatus(err)
+		fail(c, status, esimWriteErrorCode(err), "禁用 Profile 失败: "+err.Error())
+		return
+	}
+
+	respondOKWith(c, gin.H{
+		"target_iccid": strings.TrimSpace(req.ICCID),
+	}, gin.H{
+		"message": "eSIM Profile 已禁用。该卡槽现在没有活动号码，短信会停到重新启用一张为止。",
+	})
 }
 
 // handleEsimGetEID 获取所有 eUICC 的 EID 列表
@@ -378,6 +481,11 @@ func (s *Server) handleEsimDeleteProfile(c *gin.Context) {
 	}
 
 	aidHex := strings.TrimSpace(c.Query("aid_hex"))
+
+	if !s.holdModemESIM(c, worker) {
+		return
+	}
+	defer s.pool.ReleaseESIMHold(worker.ID)
 
 	result, err := esimDeleteExec(worker.EsimMgr.DeleteProfile, iccid, aidHex)
 	if err != nil {

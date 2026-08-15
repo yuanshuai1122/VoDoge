@@ -348,6 +348,54 @@ func (w *Worker) getPhoneNumberWithContext(ctx context.Context) string {
 	return ""
 }
 
+func (w *Worker) shouldDeferSMSPoll() bool {
+	if w == nil {
+		return false
+	}
+	if w.Modem != nil && (w.Modem.IsBusy() || w.Modem.APDUBusy()) {
+		return true
+	}
+	if w.APDUArbiter != nil && !w.APDUArbiter.IsIdle() {
+		return true
+	}
+	if w.EsimMgr != nil && w.EsimMgr.WriteInProgress() {
+		return true
+	}
+	return false
+}
+
+func (w *Worker) TakeCellularSubmitRefs() []int {
+	if w == nil || w.Modem == nil {
+		return nil
+	}
+	return w.Modem.TakeLastSubmitRefs()
+}
+
+func (w *Worker) RecordCellularSubmit(phone, message string, refs []int) string {
+	if w == nil || len(refs) == 0 {
+		return ""
+	}
+	id := fmt.Sprintf("cell-%s-%d", w.ID, time.Now().UnixNano())
+	_ = db.CreateSMSDelivery(id, w.GetIMSI(), w.ID, phone, message, len(refs), time.Now())
+	for i, mr := range refs {
+		_ = db.UpsertSMSDeliveryPart(id, i+1, "", mr, db.SMSDeliveryPartStatePending, time.Now())
+	}
+	return id
+}
+
+func (w *Worker) applyCellularStatusReport(mr int, status byte, recipient string) {
+	if w == nil {
+		return
+	}
+	state := db.SMSDeliveryPartStateAcked
+	if !smscodec.StatusReportDelivered(status) {
+		state = db.SMSDeliveryPartStateFailed
+	}
+	if _, err := db.MarkSMSDeliveryPartReport("", "", w.ID, mr, state, 0, int(status), recipient, time.Now()); err != nil {
+		logger.Debug(fmt.Sprintf("[%s] 蜂窝回执未匹配到发送记录", w.ID), "mr", mr, "status", status, "err", err)
+	}
+}
+
 func (w *Worker) SendSMS(phone, message string) error {
 	return w.SendSMSWithOptions(phone, message, smscodec.SubmitOptions{})
 }

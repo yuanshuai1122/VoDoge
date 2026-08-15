@@ -100,14 +100,31 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 		return
 	}
 
+	if !s.reserveSMSSend(c, deviceID, req.Phone) {
+		return
+	}
+
 	// 获取 IMSI 用于入库
 	imsi = worker.GetIMSI()
 	messageID := ""
 	partsTotal := 1
 	deliveryState := "acked"
+	usedTransport := ""
 
-	if s.pool.IsVoWiFiActive(deviceID) {
-		// VoWiFi 模式下使用 IMS Core 发送；短信历史由宿主侧 runtime event / failure recorder 入库。
+	lane := ""
+	if worker != nil {
+		lane = worker.Config.Lane
+	}
+	vowifiActive := s.pool.IsVoWiFiActive(deviceID)
+	plan := planSMSSend(lane, vowifiActive, radioRegistered(worker.GetCachedDeviceStatus().RegStatus))
+	logger.Debug("短信通道计划",
+		"device", deviceID,
+		"lane", lane,
+		"primary", plan.Primary,
+		"fallback", plan.Fallback,
+		"reason", plan.Reason)
+
+	sendIMS := func() error {
 		outcome, err := s.pool.SendVoWiFiSMSWithOptions(c.Request.Context(), deviceID, req.Phone, req.Message, sendOpts)
 		if outcome.PartsTotal > 0 {
 			partsTotal = outcome.PartsTotal
@@ -116,42 +133,80 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 			deliveryState = strings.TrimSpace(outcome.DeliveryState)
 		}
 		messageID = strings.TrimSpace(outcome.MessageID)
-		if err != nil {
-			_ = device.RecordVoWiFiSMSSendFailure(s.pool, deviceID, req.Phone, req.Message, time.Now())
-			failWith(c, http.StatusInternalServerError, "", "VoWiFi 短信发送失败: "+err.Error(), gin.H{
-				"device":         deviceID,
-				"phone":          req.Phone,
-				"message_id":     messageID,
-				"parts_total":    partsTotal,
-				"delivery_state": deliveryState,
-			})
-			return
-		}
-	} else {
-		// 普通模式使用 AT 发送
-		if err := worker.SendSMSWithOptions(req.Phone, req.Message, sendOpts); err != nil {
-			// 发送失败，入库记录（status=3）
-			if imsi != "" {
-				_ = s.data().SMS.Save(imsi, "", worker.ID, req.Phone, req.Message, 2, 3, time.Now())
+		return err
+	}
+	sendCellular := func() error {
+		err := worker.SendSMSWithOptions(req.Phone, req.Message, sendOpts)
+		if refs := worker.TakeCellularSubmitRefs(); len(refs) > 0 {
+			partsTotal = len(refs)
+			if id := worker.RecordCellularSubmit(req.Phone, req.Message, refs); id != "" {
+				messageID = id
+				deliveryState = "pending"
 			}
-			failWith(c, http.StatusInternalServerError, "", "发送失败: "+err.Error(), gin.H{
-				"device": deviceID,
-				"phone":  req.Phone,
-			})
-			return
 		}
-		// 发送成功，入库记录（status=2）
-		if imsi != "" {
-			_ = s.data().SMS.Save(imsi, "", worker.ID, req.Phone, req.Message, 2, 2, time.Now())
+		return err
+	}
+
+	try := func(transport string) error {
+		switch transport {
+		case smsTransportIMS:
+			return sendIMS()
+		case smsTransportCellular:
+			return sendCellular()
+		default:
+			return fmt.Errorf("未知短信通道: %s", transport)
 		}
 	}
 
+	err = try(plan.Primary)
+	usedTransport = plan.Primary
+	if err != nil && plan.Fallback != "" {
+		if fallbackErr := try(plan.Fallback); fallbackErr == nil {
+			err = nil
+			usedTransport = plan.Fallback
+		} else {
+			err = fmt.Errorf("%s 失败: %v；%s 也失败: %v", plan.Primary, err, plan.Fallback, fallbackErr)
+		}
+	}
+
+	if err != nil {
+		if usedTransport == smsTransportIMS || plan.Primary == smsTransportIMS {
+			_ = device.RecordVoWiFiSMSSendFailure(s.pool, deviceID, req.Phone, req.Message, time.Now())
+		}
+		if imsi != "" && usedTransport != smsTransportIMS {
+			_ = s.data().SMS.Save(imsi, "", worker.ID, req.Phone, req.Message, 2, 3, time.Now())
+		}
+		failWith(c, http.StatusInternalServerError, "", "发送失败: "+err.Error(), gin.H{
+			"device":         deviceID,
+			"phone":          req.Phone,
+			"transport":      usedTransport,
+			"message_id":     messageID,
+			"parts_total":    partsTotal,
+			"delivery_state": deliveryState,
+		})
+		return
+	}
+
+	if usedTransport == smsTransportCellular && imsi != "" {
+		_ = s.data().SMS.Save(imsi, "", worker.ID, req.Phone, req.Message, 2, 2, time.Now())
+	}
+
+	outcome := "accepted_unconfirmed"
+	if usedTransport == smsTransportIMS && deliveryState == "acked" {
+		outcome = "delivered"
+	}
+	if usedTransport == smsTransportCellular && messageID == "" {
+		outcome = "accepted_unconfirmed"
+	}
 	respondOKWith(c, gin.H{
 		"device":         deviceID,
 		"phone":          req.Phone,
 		"message_id":     messageID,
 		"parts_total":    partsTotal,
 		"delivery_state": deliveryState,
+		"transport":      usedTransport,
+		"outcome":        outcome,
+		"retry_safe":     true,
 	}, gin.H{
 		"message": "短信发送成功",
 	})
@@ -352,6 +407,7 @@ type SMSContactWithDevice struct {
 	DeviceID   string `json:"device_id"`
 	DeviceName string `json:"device_name"`
 	LocalPhone string `json:"local_phone"` // 本机号码（收件人手机号），来自订阅手机号
+	Lane       string `json:"lane,omitempty"`
 }
 
 func (s *Server) resolveSMSIMSI(deviceID, imsi string) (string, int, string) {
@@ -401,6 +457,12 @@ func (s *Server) resolveSMSICCID(deviceID, imsi string) (string, int, string) {
 func (s *Server) handleGetSMSContacts(c *gin.Context) {
 	deviceID := c.Query("device_id")
 	imsi := c.Query("imsi")
+	lane := strings.TrimSpace(c.Query("lane"))
+	if err := config.ValidateLane(lane); err != nil {
+		fail(c, http.StatusBadRequest, "", "无效的 lane，允许 cn|intl 或空")
+		return
+	}
+	lane = config.NormalizeLane(lane)
 
 	limitStr := c.DefaultQuery("limit", "50")
 	var limit int
@@ -477,15 +539,52 @@ func (s *Server) handleGetSMSContacts(c *gin.Context) {
 	enriched := make([]SMSContactWithDevice, 0, len(contacts))
 	for _, ct := range contacts {
 		info := iccidDevice[ct.ICCID]
+		laneVal := ""
+		if cfg, ok := cfgByID[info.id]; ok {
+			laneVal = config.NormalizeLane(cfg.Lane)
+		}
 		enriched = append(enriched, SMSContactWithDevice{
 			SMSContact: ct,
 			DeviceID:   info.id,
 			DeviceName: info.name,
 			LocalPhone: imsiPhone[ct.IMSI],
+			Lane:       laneVal,
 		})
 	}
 
+	if lane != "" {
+		enriched = filterSMSContactsByLane(enriched, lane, cfgByID)
+	}
+
 	respondOK(c, enriched)
+}
+
+// filterSMSContactsByLane 留下属于该线路设备的会话。
+// 优先看 enrich 后的 Lane；否则用 DeviceID 对照设备配置。
+func filterSMSContactsByLane(contacts []SMSContactWithDevice, lane string, cfgByID map[string]config.DeviceConfig) []SMSContactWithDevice {
+	lane = config.NormalizeLane(lane)
+	if lane == "" {
+		return contacts
+	}
+	allowedID := make(map[string]struct{}, len(cfgByID))
+	for id, cfg := range cfgByID {
+		if config.NormalizeLane(cfg.Lane) == lane {
+			allowedID[id] = struct{}{}
+		}
+	}
+	out := make([]SMSContactWithDevice, 0, len(contacts))
+	for _, ct := range contacts {
+		if config.NormalizeLane(ct.Lane) == lane {
+			out = append(out, ct)
+			continue
+		}
+		if ct.DeviceID != "" {
+			if _, ok := allowedID[ct.DeviceID]; ok {
+				out = append(out, ct)
+			}
+		}
+	}
+	return out
 }
 
 func (s *Server) handleGetSMSThread(c *gin.Context) {

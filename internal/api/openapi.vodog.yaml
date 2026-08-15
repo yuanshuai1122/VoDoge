@@ -21,9 +21,11 @@ tags:
   - name: sms
     description: 短信收发与会话
   - name: settings
-    description: 系统信息、密码与通知设置
+    description: 系统信息、密码、短信限额与通知设置
   - name: devices
     description: 设备配置、控制与运维
+  - name: readers
+    description: USB CCID 读卡器发现（写卡第 3 期）
   - name: proxy-instances
     description: 本地代理实例管理
   - name: upstream-proxies
@@ -34,6 +36,8 @@ tags:
     description: VoWiFi 控制
   - name: logs
     description: 日志历史与实时流
+  - name: extensions
+    description: 插件安装、启停与卸载
 paths:
   /docs:
     get:
@@ -285,6 +289,12 @@ paths:
           $ref: '#/components/responses/ErrorMessage'
         '404':
           $ref: '#/components/responses/ErrorMessage'
+        '429':
+          description: 全局发送限额已满（code=sms_rate_limited）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
         '500':
           $ref: '#/components/responses/ErrorMessage'
 
@@ -342,6 +352,12 @@ paths:
           name: before_peer
           schema:
             type: string
+        - in: query
+          name: lane
+          description: 按设备线路过滤会话。空或不传表示全部；仅允许 cn 或 intl。
+          schema:
+            type: string
+            enum: [cn, intl]
       responses:
         '200':
           description: 联系人列表
@@ -598,6 +614,359 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorMessage'
 
+  /settings/sms:
+    get:
+      tags: [settings]
+      summary: 获取全局短信发送限额
+      description: |
+        滚动 1 小时窗口，所有设备共用。`hourly_limit=0` 表示不限制发送。
+        接收短信不占用额度。
+      responses:
+        '200':
+          description: 当前限额与窗口用量
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SMSSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [settings]
+      summary: 更新全局短信发送限额
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSMSSettingsRequest'
+      responses:
+        '200':
+          description: 更新后的限额与窗口用量
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SMSSettings'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /settings/devices:
+    get:
+      tags: [settings]
+      summary: 获取设备配额
+      description: 当前允许配置的设备上限。调低不会删除已有设备。
+      responses:
+        '200':
+          description: 配额与已用数量
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeviceQuota'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [settings]
+      summary: 更新设备配额
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDeviceQuotaRequest'
+      responses:
+        '200':
+          description: 更新后的配额
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeviceQuota'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /settings/https:
+    get:
+      tags: [settings]
+      summary: 获取本机自签 HTTPS 状态
+      description: |
+        关闭时也返回证书指纹，方便先下载并信任再打开开关。
+        开启后 HTTP 会 308 到 HTTPS；本接口与证书下载仍可走明文，以免锁死。
+      responses:
+        '200':
+          description: 当前开关与证书指纹
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/HTTPSSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ErrorMessage'
+    put:
+      tags: [settings]
+      summary: 开关本机自签 HTTPS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateHTTPSSettingsRequest'
+      responses:
+        '200':
+          description: 更新后的状态
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/HTTPSSettings'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ErrorMessage'
+        '503':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /settings/https/certificate:
+    get:
+      tags: [settings]
+      summary: 下载本机自签证书
+      responses:
+        '200':
+          description: PEM 证书
+          content:
+            application/x-pem-file:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /settings/security:
+    get:
+      tags: [settings]
+      summary: 获取网络访问策略
+      description: |
+        默认 `internal`：只放行内网网段。`public` 不限制来源。
+        `client_ip` / `client_allowed` 反映这次请求的判定结果。
+      responses:
+        '200':
+          description: 当前策略与本次连接判定
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SecuritySettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [settings]
+      summary: 更新网络访问策略
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSecuritySettingsRequest'
+      responses:
+        '200':
+          description: 更新后的策略
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SecuritySettings'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /extensions:
+    get:
+      tags: [extensions]
+      summary: 已安装插件
+      responses:
+        '200':
+          description: 插件列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/InstalledPlugin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /extensions/install-url:
+    post:
+      tags: [extensions]
+      summary: 从 HTTPS URL 安装插件
+      description: |
+        只接受 HTTPS，且解析后的地址不能是内网 / 回环。
+        `sha256` 可选，给出时必须与包内容一致。
+        插件以当前管理员权限运行，只安装完全信任的包。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstallPluginURLRequest'
+      responses:
+        '201':
+          description: 已安装并启用
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/InstalledPlugin'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /extensions/upload:
+    post:
+      tags: [extensions]
+      summary: 上传插件包
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [package]
+              properties:
+                package:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: 已安装并启用
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/InstalledPlugin'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /extensions/{id}:
+    put:
+      tags: [extensions]
+      summary: 启用或禁用插件
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePluginRequest'
+      responses:
+        '200':
+          description: 更新后的插件
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/InstalledPlugin'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+    delete:
+      tags: [extensions]
+      summary: 卸载插件
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 已卸载
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+
   /system/info:
     get:
       tags: [settings]
@@ -667,6 +1036,28 @@ paths:
           $ref: '#/components/responses/ErrorMessage'
         '500':
           $ref: '#/components/responses/ErrorMessage'
+
+  /readers:
+    get:
+      tags: [readers]
+      summary: 列出本机 PC/SC 读卡器
+      description: |
+        pcscd 未运行时仍返回 200，`data.daemon` 为 `missing` 并带说明。
+        不要把读卡器一行藏掉。本版本只发现，不添加、不写卡。
+      responses:
+        '200':
+          description: 读卡器与 pcscd 状态
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ReadersStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /devices/discovered:
     get:
@@ -1399,6 +1790,86 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorMessage'
 
+  /upstream-proxy-profile-bindings:
+    get:
+      tags: [upstream-proxies]
+      summary: 列出 SIM / eSIM Profile 的前置代理绑定
+      description: |
+        一张卡（ICCID）只能绑一个前置代理。国外线 / 未分线的 VoWiFi 启动时，
+        当前 ICCID 的绑定优先于国家规则。国内线忽略绑定，走模组出口。
+      responses:
+        '200':
+          description: 绑定列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/UpstreamProxyProfileBinding'
+    post:
+      tags: [upstream-proxies]
+      summary: 绑定 Profile 到前置代理
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProfileProxyBindingsRequest'
+      responses:
+        '200':
+          description: 已保存的绑定
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/UpstreamProxyProfileBinding'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+        '409':
+          description: |
+            `upstream_proxy_disabled` 代理未启用；
+            `profile_already_bound` 该 ICCID 已绑到别的代理。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      tags: [upstream-proxies]
+      summary: 解除 Profile 前置代理绑定
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteProfileProxyBindingsRequest'
+      responses:
+        '200':
+          description: 已解除
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+        '409':
+          $ref: '#/components/responses/ErrorMessage'
+
   /devices/{device_id}/esim:
     get:
       tags: [esim]
@@ -1554,6 +2025,40 @@ paths:
         '400':
           $ref: '#/components/responses/ErrorMessage'
         '404':
+          $ref: '#/components/responses/ErrorMessage'
+        '409':
+          $ref: '#/components/responses/ErrorMessage'
+        '500':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /devices/{device_id}/esim/actions/disable:
+    post:
+      tags: [esim]
+      summary: 禁用当前 eSIM Profile
+      description: |
+        禁用指定 ICCID。禁用后该 eUICC 没有活动号码，蜂窝/短信会中断，直到再启用一张。
+        卡或模组拒绝时返回错误，不装成成功。
+      parameters:
+        - $ref: '#/components/parameters/DeviceIDPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EsimSwitchRequest'
+      responses:
+        '200':
+          description: 禁用已提交
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+        '409':
           $ref: '#/components/responses/ErrorMessage'
         '500':
           $ref: '#/components/responses/ErrorMessage'
@@ -3059,6 +3564,10 @@ components:
           type: string
         local_phone:
           type: string
+        lane:
+          type: string
+          enum: [cn, intl]
+          description: 会话所属设备的线路；设备未在线或未分线时可能为空
 
     TelegramSettings:
       type: object
@@ -3186,6 +3695,115 @@ components:
             type: string
 
 
+    SMSSettings:
+      type: object
+      required: [hourly_limit, used, remaining, window_seconds, unlimited]
+      properties:
+        hourly_limit:
+          type: integer
+          minimum: 0
+          maximum: 200
+          description: 滚动 1 小时内允许发出的条数；0 表示不限制
+        used:
+          type: integer
+          description: 当前窗口内已占用的发送次数
+        remaining:
+          type: integer
+          description: 剩余额度；不限制时为 0
+        window_seconds:
+          type: integer
+          description: 窗口长度，固定 3600
+        unlimited:
+          type: boolean
+
+    UpdateSMSSettingsRequest:
+      type: object
+      required: [hourly_limit]
+      properties:
+        hourly_limit:
+          type: integer
+          minimum: 0
+          maximum: 200
+
+    DeviceQuota:
+      type: object
+      required: [limit, used, default_limit, max_limit]
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 10
+        used:
+          type: integer
+        default_limit:
+          type: integer
+        max_limit:
+          type: integer
+
+    UpdateDeviceQuotaRequest:
+      type: object
+      required: [limit]
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 10
+
+    HTTPSSettings:
+      type: object
+      required: [enabled, http_url, https_url]
+      properties:
+        enabled:
+          type: boolean
+        http_url:
+          type: string
+        https_url:
+          type: string
+        fingerprint:
+          type: string
+        not_after:
+          type: string
+          format: date-time
+
+    UpdateHTTPSSettingsRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+
+    SecuritySettings:
+      type: object
+      required: [mode, allowed_cidrs, trust_proxy_headers, client_ip, client_allowed]
+      properties:
+        mode:
+          type: string
+          enum: [internal, public]
+        allowed_cidrs:
+          type: array
+          items:
+            type: string
+        trust_proxy_headers:
+          type: boolean
+        client_ip:
+          type: string
+        client_allowed:
+          type: boolean
+
+    UpdateSecuritySettingsRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [internal, public]
+        allowed_cidrs:
+          type: array
+          items:
+            type: string
+        trust_proxy_headers:
+          type: boolean
+
     ChangePasswordRequest:
       type: object
       required: [old_password, new_password, confirm_password]
@@ -3243,10 +3861,38 @@ components:
           type: boolean
         device_backend:
           type: string
-          enum: [at, qmi, mbim]
+          enum: [at, qmi, mbim, pcsc]
         module_vendor:
           type: string
           enum: [quectel, simcom]
+        lane:
+          type: string
+          enum: [cn, intl]
+          description: 人工分线。空表示未分线，不按 MCC 推断。
+        reader_name:
+          type: string
+          description: PC/SC 读卡器名。device_backend=pcsc 时必填。
+
+    ReadersStatus:
+      type: object
+      properties:
+        daemon:
+          type: string
+          enum: [running, missing, error]
+        message:
+          type: string
+        socket:
+          type: string
+        readers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PCSCReader'
+
+    PCSCReader:
+      type: object
+      properties:
+        name:
+          type: string
 
     DeviceMgmtListModem:
       type: object
@@ -3299,6 +3945,9 @@ components:
           type: string
         esim_transport:
           type: string
+        lane:
+          type: string
+          enum: [cn, intl]
         sms_enabled:
           type: boolean
         network_enabled:
@@ -3338,6 +3987,9 @@ components:
           type: string
         esim_transport:
           type: string
+        lane:
+          type: string
+          enum: [cn, intl]
         at_port:
           type: string
         audio_device:
@@ -3671,6 +4323,59 @@ components:
           type: string
         enabled:
           type: boolean
+
+    UpstreamProxyProfileBinding:
+      type: object
+      required: [iccid, device_id, upstream_proxy_id]
+      properties:
+        iccid:
+          type: string
+        device_id:
+          type: string
+        profile_name:
+          type: string
+        upstream_proxy_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateProfileProxyBindingsRequest:
+      type: object
+      required: [upstream_proxy_id, bindings]
+      properties:
+        upstream_proxy_id:
+          type: string
+        bindings:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            required: [device_id, iccid]
+            properties:
+              device_id:
+                type: string
+              iccid:
+                type: string
+              profile_name:
+                type: string
+
+    DeleteProfileProxyBindingsRequest:
+      type: object
+      required: [iccids]
+      properties:
+        upstream_proxy_id:
+          type: string
+        iccids:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: string
 
     UpstreamProxyProbeResult:
       type: object
@@ -4131,3 +4836,75 @@ components:
           type: boolean
         release_notes:
           type: string
+
+    PluginContribution:
+      type: object
+      required: [id, label, location, entry]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        label_zh:
+          type: string
+        location:
+          type: string
+          enum: [sidebar, proxy]
+        after:
+          type: string
+        entry:
+          type: string
+
+    InstalledPlugin:
+      type: object
+      required: [id, name, version, contributions, enabled, backend_available, backend_running, installed_at, sha256]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+        author:
+          type: string
+        homepage:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        contributions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PluginContribution'
+        enabled:
+          type: boolean
+        backend_available:
+          type: boolean
+        backend_running:
+          type: boolean
+        backend_error:
+          type: string
+        installed_at:
+          type: string
+          format: date-time
+        sha256:
+          type: string
+
+    InstallPluginURLRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+        sha256:
+          type: string
+
+    UpdatePluginRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean

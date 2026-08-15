@@ -74,6 +74,14 @@ func TestDeviceConfigRequiresRestartIgnoresIMEIFormatOnly(t *testing.T) {
 	}
 }
 
+func TestDeviceConfigLaneChangeDoesNotRequireRestart(t *testing.T) {
+	old := config.DeviceConfig{ID: "dev1", Lane: "cn"}
+	next := config.DeviceConfig{ID: "dev1", Lane: "intl"}
+	if deviceConfigRequiresRestart(old, next) {
+		t.Fatal("changing lane must not require restart")
+	}
+}
+
 func TestDeviceConfigMBIMManagedNetworkChangesRequiresRebuild(t *testing.T) {
 	base := config.DeviceConfig{
 		APN:           "internet",

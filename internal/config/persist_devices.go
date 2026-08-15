@@ -42,6 +42,16 @@ func UpdateDeviceInFile(path string, deviceID string, newDevice DeviceConfig) er
 		} else {
 			deleteMapKey(n, "module_vendor")
 		}
+		if lane := NormalizeLane(newDevice.Lane); lane != "" {
+			setMapScalar(n, "lane", lane)
+		} else {
+			deleteMapKey(n, "lane")
+		}
+		if name := strings.TrimSpace(newDevice.ReaderName); name != "" {
+			setMapScalar(n, "reader_name", name)
+		} else {
+			deleteMapKey(n, "reader_name")
+		}
 		if newDevice.QMIUseProxy {
 			setMapBool(n, "qmi_use_proxy", true)
 		} else {
@@ -181,6 +191,12 @@ func deviceConfigToNode(d DeviceConfig) *yaml.Node {
 	}
 	if strings.TrimSpace(d.ModuleVendor) != "" && NormalizeModuleVendor(d.ModuleVendor) != ModuleVendorQuectel {
 		appendMapScalar(m, "module_vendor", NormalizeModuleVendor(d.ModuleVendor))
+	}
+	if lane := NormalizeLane(d.Lane); lane != "" {
+		appendMapScalar(m, "lane", lane)
+	}
+	if name := strings.TrimSpace(d.ReaderName); name != "" {
+		appendMapScalar(m, "reader_name", name)
 	}
 	if d.QMIUseProxy {
 		appendMapBool(m, "qmi_use_proxy", true)

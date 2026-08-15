@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
 )
@@ -113,6 +114,171 @@ func UpdateWebCredentialsInFile(path string, username, password string) error {
 		"username": username,
 		"password": password,
 	}
+
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return fmt.Errorf("序列化配置文件失败: %w", err)
+	}
+
+	tmp := path + ".tmp"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("创建配置目录失败: %w", err)
+	}
+	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+		return fmt.Errorf("写入临时配置文件失败: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("替换配置文件失败: %w", err)
+	}
+	return nil
+}
+
+// UpdateSMSHourlyLimitInFile 只改 sms.hourly_limit，其它键原样保留。
+func UpdateSMSHourlyLimitInFile(path string, limit int) error {
+	if err := ValidateSMSHourlyLimit(limit); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("读取配置文件失败: %w", err)
+	}
+
+	root := make(map[string]any)
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return fmt.Errorf("解析配置文件失败: %w", err)
+	}
+
+	smsNode, _ := root["sms"].(map[string]any)
+	if smsNode == nil {
+		smsNode = map[string]any{}
+	}
+	smsNode["hourly_limit"] = limit
+	root["sms"] = smsNode
+
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return fmt.Errorf("序列化配置文件失败: %w", err)
+	}
+
+	tmp := path + ".tmp"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("创建配置目录失败: %w", err)
+	}
+	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+		return fmt.Errorf("写入临时配置文件失败: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("替换配置文件失败: %w", err)
+	}
+	return nil
+}
+
+// UpdateDeviceLimitInFile 只改 server.max_devices，其它键原样保留。
+func UpdateDeviceLimitInFile(path string, limit int) error {
+	if err := ValidateDeviceLimit(limit); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("读取配置文件失败: %w", err)
+	}
+
+	root := make(map[string]any)
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return fmt.Errorf("解析配置文件失败: %w", err)
+	}
+
+	serverNode, _ := root["server"].(map[string]any)
+	if serverNode == nil {
+		serverNode = map[string]any{}
+	}
+	serverNode["max_devices"] = limit
+	root["server"] = serverNode
+
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return fmt.Errorf("序列化配置文件失败: %w", err)
+	}
+
+	tmp := path + ".tmp"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("创建配置目录失败: %w", err)
+	}
+	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+		return fmt.Errorf("写入临时配置文件失败: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("替换配置文件失败: %w", err)
+	}
+	return nil
+}
+
+// UpdateSelfSignedHTTPSInFile 只改 server.self_signed_https。
+func UpdateSelfSignedHTTPSInFile(path string, enabled bool) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("读取配置文件失败: %w", err)
+	}
+
+	root := make(map[string]any)
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return fmt.Errorf("解析配置文件失败: %w", err)
+	}
+
+	serverNode, _ := root["server"].(map[string]any)
+	if serverNode == nil {
+		serverNode = map[string]any{}
+	}
+	serverNode["self_signed_https"] = enabled
+	root["server"] = serverNode
+
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return fmt.Errorf("序列化配置文件失败: %w", err)
+	}
+
+	tmp := path + ".tmp"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("创建配置目录失败: %w", err)
+	}
+	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+		return fmt.Errorf("写入临时配置文件失败: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("替换配置文件失败: %w", err)
+	}
+	return nil
+}
+
+// UpdateAccessPolicyInFile 只改 server.access。
+func UpdateAccessPolicyInFile(path string, policy AccessPolicy) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("读取配置文件失败: %w", err)
+	}
+
+	root := make(map[string]any)
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return fmt.Errorf("解析配置文件失败: %w", err)
+	}
+
+	serverNode, _ := root["server"].(map[string]any)
+	if serverNode == nil {
+		serverNode = map[string]any{}
+	}
+	cidrs := make([]string, 0, len(policy.AllowedCIDRs))
+	for _, c := range policy.AllowedCIDRs {
+		c = strings.TrimSpace(c)
+		if c != "" {
+			cidrs = append(cidrs, c)
+		}
+	}
+	serverNode["access"] = map[string]any{
+		"mode":                policy.Mode,
+		"allowed_cidrs":       cidrs,
+		"trust_proxy_headers": policy.TrustProxyHeaders,
+	}
+	root["server"] = serverNode
 
 	out, err := yaml.Marshal(root)
 	if err != nil {

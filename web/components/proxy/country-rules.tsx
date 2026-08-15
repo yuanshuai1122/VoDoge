@@ -116,6 +116,12 @@ export function CountryRules() {
 
   return (
     <div className="flex flex-col gap-3">
+      <Alert>
+        <AlertDescription>
+          这些规则只作用于国外线（lane=intl）和未分线设备。国内线始终走模组自己的出口，不会出国
+          IP。同一张卡若在「Profile 绑定」里指定了代理，绑定优先于国家规则。
+        </AlertDescription>
+      </Alert>
       {proxyOptions.length === 0 && (
         <Alert>
           <AlertDescription>

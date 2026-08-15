@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Send, Trash2 } from "lucide-react";
+import { ArrowLeft, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,7 +23,13 @@ import { cn } from "@/lib/utils";
 import type { ContactKey } from "./contact-list";
 import { DeliveryStatus } from "./delivery-status";
 
-export function ThreadView({ contact }: { contact: ContactKey }) {
+export function ThreadView({
+  contact,
+  onBack,
+}: {
+  contact: ContactKey;
+  onBack?: () => void;
+}) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
   // 仅 VoWiFi 通道会返回 message_id，用它追踪刚发出那条的回执
@@ -59,12 +65,22 @@ export function ThreadView({ contact }: { contact: ContactKey }) {
       // 长短信会被拆成多条分片，按条计费，值得告知
       const parts =
         result?.parts_total > 1 ? `（拆分为 ${result.parts_total} 条）` : "";
-      toast.success(`短信已发送${parts}`);
+      const via =
+        result?.transport === "ims"
+          ? "（IMS）"
+          : result?.transport === "cellular"
+            ? "（蜂窝）"
+            : "";
+      toast.success(`短信已发送${via}${parts}`);
       setTrackedMessageId(result?.message_id || null);
       queryClient.invalidateQueries({ queryKey: threadKey });
       queryClient.invalidateQueries({ queryKey: ["sms", "contacts"] });
     },
     onError: (e) => {
+      if (e instanceof ApiError && e.isRateLimited) {
+        toast.error(e.message || "发送过于频繁，请稍后再试");
+        return;
+      }
       toast.error(e instanceof ApiError ? e.message : "发送失败");
     },
   });
@@ -80,6 +96,7 @@ export function ThreadView({ contact }: { contact: ContactKey }) {
       toast.success("会话已删除");
       queryClient.invalidateQueries({ queryKey: ["sms", "contacts"] });
       queryClient.removeQueries({ queryKey: threadKey });
+      onBack?.();
     },
     onError: (e) => {
       toast.error(e instanceof ApiError ? e.message : "删除失败");
@@ -97,13 +114,26 @@ export function ThreadView({ contact }: { contact: ContactKey }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2.5">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{contact.peer}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {contact.device_name || "设备未在线"}
-            {contact.local_phone && ` · 本机 ${contact.local_phone}`}
-          </p>
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2.5 md:px-4">
+        <div className="flex min-w-0 items-center gap-1">
+          {onBack && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              aria-label="返回会话列表"
+              onClick={onBack}
+            >
+              <ArrowLeft className="size-4" />
+            </Button>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{contact.peer}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {contact.device_name || "设备未在线"}
+              {contact.local_phone && ` · 本机 ${contact.local_phone}`}
+            </p>
+          </div>
         </div>
 
         <Button

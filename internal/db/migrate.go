@@ -16,6 +16,9 @@ import (
 )
 
 func runMigrations(tx *gorm.DB) error {
+	if err := migrateProfileBindingICCIDColumn(tx); err != nil {
+		return fmt.Errorf("migrate profile binding iccid: %w", err)
+	}
 	if err := tx.AutoMigrate(
 		&Device{},
 		&CardPolicy{},
@@ -25,10 +28,12 @@ func runMigrations(tx *gorm.DB) error {
 		&ProxyInstance{},
 		&UpstreamProxy{},
 		&UpstreamProxyCountryRule{},
+		&UpstreamProxyProfileBinding{},
 		&SMS{},
 		&SMSContact{},
 		&SMSDelivery{},
 		&SMSDeliveryPart{},
+		&SMSSendAttempt{},
 		&TrafficMinute{},
 		&TrafficHour{},
 		&TrafficDay{},
@@ -45,6 +50,18 @@ func runMigrations(tx *gorm.DB) error {
 	}
 	if err := RunICCIDReKeyMigration(tx); err != nil {
 		return fmt.Errorf("iccid rekey migration: %w", err)
+	}
+	return nil
+}
+
+// GORM 默认命名会把 ICCID 拆成 ic_cid；绑定表必须用 iccid。
+func migrateProfileBindingICCIDColumn(tx *gorm.DB) error {
+	if tx == nil || !tx.Migrator().HasTable("upstream_proxy_profile_bindings") {
+		return nil
+	}
+	// 首版误用 GORM 默认命名建成 icc_id 主键。表是新功能、无生产数据，丢掉重建。
+	if tx.Migrator().HasColumn("upstream_proxy_profile_bindings", "icc_id") {
+		return tx.Exec(`DROP TABLE IF EXISTS upstream_proxy_profile_bindings`).Error
 	}
 	return nil
 }

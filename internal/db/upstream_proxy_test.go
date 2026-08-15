@@ -82,3 +82,40 @@ func TestUpstreamProxyCountryRuleDirectWhenUnknownMCCOrMissingProxy(t *testing.T
 		t.Fatalf("missing proxy proxy=%+v country=%q err=%v, want nil/US/nil", proxy, country, err)
 	}
 }
+
+func TestProfileBindingCRUDAndCascade(t *testing.T) {
+	openTestDB(t)
+	now := time.Now()
+	if err := UpsertUpstreamProxy(UpstreamProxy{ID: "route-1", Addr: "127.0.0.1:1080", Enabled: true, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("UpsertUpstreamProxy() error=%v", err)
+	}
+	iccid := "89441000400128014257"
+	if err := UpsertProfileBinding(UpstreamProxyProfileBinding{
+		ICCID: iccid, DeviceID: "ec20", ProfileName: "Vodafone", UpstreamProxyID: "route-1",
+	}); err != nil {
+		t.Fatalf("UpsertProfileBinding() error=%v", err)
+	}
+	got, err := GetProfileUpstreamProxy(iccid)
+	if err != nil || got == nil || got.ID != "route-1" {
+		t.Fatalf("GetProfileUpstreamProxy()=%+v err=%v", got, err)
+	}
+	if err := DeleteUpstreamProxy("route-1"); err != nil {
+		t.Fatalf("DeleteUpstreamProxy() error=%v", err)
+	}
+	left, err := ListProfileBindings()
+	if err != nil {
+		t.Fatalf("ListProfileBindings() error=%v", err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("bindings after proxy delete=%+v", left)
+	}
+}
+
+func TestValidProfileBindingICCID(t *testing.T) {
+	if !ValidProfileBindingICCID("89441000400128014257") {
+		t.Fatal("valid 20-digit rejected")
+	}
+	if ValidProfileBindingICCID("123") || ValidProfileBindingICCID("8944100040012801425a") {
+		t.Fatal("invalid ICCID accepted")
+	}
+}

@@ -14,6 +14,8 @@ import {
 import type { SMSContact } from "@/types/sms";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/format";
+import { LaneBadge } from "@/components/common/lane-badge";
+import type { DeviceLane } from "@/lib/lane";
 
 export interface ContactKey {
   peer: string;
@@ -26,14 +28,17 @@ export interface ContactKey {
 export function ContactList({
   selected,
   onSelect,
+  lane = "",
 }: {
   selected: ContactKey | null;
   onSelect: (c: ContactKey) => void;
+  lane?: DeviceLane;
 }) {
   // 后端无短信 SSE，只能轮询；会话列表变化频率低，15s 足够
   const query = useInfiniteQuery({
-    queryKey: ["sms", "contacts"],
-    queryFn: ({ pageParam }) => listContacts({ cursor: pageParam }),
+    queryKey: ["sms", "contacts", lane],
+    queryFn: ({ pageParam }) =>
+      listContacts({ cursor: pageParam, lane: lane || undefined }),
     initialPageParam: undefined as ContactsCursor | undefined,
     getNextPageParam: (lastPage) => nextContactsCursor(lastPage, SMS_PAGE_SIZE),
     refetchInterval: 15_000,
@@ -137,6 +142,7 @@ function ContactRow({
             {contact.device_name}
           </span>
         )}
+        <LaneBadge lane={contact.lane} className="h-4 px-1.5 text-[10px]" />
         {contact.unread_count > 0 && (
           <Badge variant="default" className="h-4 px-1.5 text-[10px]">
             {contact.unread_count}

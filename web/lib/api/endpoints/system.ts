@@ -1,5 +1,6 @@
 import { api } from "../client";
 import type { LogEntry } from "../../../types/log";
+import type { SMSSettings } from "../../../types/sms";
 
 export interface SystemInfo {
   [key: string]: unknown;
@@ -23,6 +24,105 @@ export async function getTrafficAnalysis(params: {
 
 export async function getNotificationSettings(): Promise<unknown> {
   return (await api.get("/settings/notifications")).data;
+}
+
+/** GET /api/settings/sms */
+export async function getSMSSettings(): Promise<SMSSettings> {
+  return (await api.get<SMSSettings>("/settings/sms")).data;
+}
+
+/** PUT /api/settings/sms */
+export async function updateSMSSettings(input: {
+  hourly_limit: number;
+}): Promise<SMSSettings> {
+  return (await api.put<SMSSettings>("/settings/sms", input)).data;
+}
+
+export interface DeviceQuota {
+  limit: number;
+  used: number;
+  default_limit: number;
+  max_limit: number;
+}
+
+/** GET /api/settings/devices */
+export async function getDeviceQuota(): Promise<DeviceQuota> {
+  return (await api.get<DeviceQuota>("/settings/devices")).data;
+}
+
+/** PUT /api/settings/devices */
+export async function updateDeviceQuota(input: {
+  limit: number;
+}): Promise<DeviceQuota> {
+  return (await api.put<DeviceQuota>("/settings/devices", input)).data;
+}
+
+export interface HTTPSSettings {
+  enabled: boolean;
+  http_url: string;
+  https_url: string;
+  fingerprint?: string;
+  not_after?: string;
+}
+
+/** GET /api/settings/https */
+export async function getHTTPSSettings(): Promise<HTTPSSettings> {
+  return (await api.get<HTTPSSettings>("/settings/https")).data;
+}
+
+/** PUT /api/settings/https */
+export async function updateHTTPSSettings(input: {
+  enabled: boolean;
+}): Promise<HTTPSSettings> {
+  return (await api.put<HTTPSSettings>("/settings/https", input)).data;
+}
+
+export interface SecuritySettings {
+  mode: "internal" | "public" | string;
+  allowed_cidrs: string[];
+  trust_proxy_headers: boolean;
+  client_ip: string;
+  client_allowed: boolean;
+}
+
+/** GET /api/settings/security */
+export async function getSecuritySettings(): Promise<SecuritySettings> {
+  return (await api.get<SecuritySettings>("/settings/security")).data;
+}
+
+/** PUT /api/settings/security */
+export async function updateSecuritySettings(input: {
+  mode: string;
+  allowed_cidrs: string[];
+  trust_proxy_headers: boolean;
+}): Promise<SecuritySettings> {
+  return (await api.put<SecuritySettings>("/settings/security", input)).data;
+}
+
+/** GET /api/settings/https/certificate —— PEM，不走 JSON 信封 */
+export async function downloadHTTPSCertificate(): Promise<void> {
+  const { getToken } = await import("../../auth/token");
+  const { parseApiError } = await import("../errors");
+  const token = getToken();
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch("/api/settings/https/certificate", { headers });
+  if (!res.ok) {
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      body = undefined;
+    }
+    throw parseApiError(res.status, body);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "vodog-selfsigned.crt";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export async function updateNotificationSettings(input: unknown): Promise<void> {

@@ -19,6 +19,10 @@ export interface DeviceConfigDTO {
   vowifi_enabled: boolean;
   device_backend?: string;
   module_vendor?: string;
+  /** cn | intl | 空。人工分线，不按 MCC 推断。 */
+  lane?: string;
+  /** PC/SC 读卡器名；device_backend=pcsc 时必填 */
+  reader_name?: string;
 }
 
 /** 对齐 internal/api 的 discoveredDevice。 */

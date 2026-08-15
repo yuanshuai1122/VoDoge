@@ -98,3 +98,15 @@ type SMSContact struct {
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
+
+// SMSSendAttempt 是发送限额的独立计数表。
+//
+// 不跟 sms 历史混用：删会话/改状态不能回补额度。所有设备共用一条滚动窗口。
+type SMSSendAttempt struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	DeviceID  string    `gorm:"column:device_id;index" json:"device_id"`
+	Recipient string    `gorm:"column:recipient" json:"recipient"`
+	CreatedAt time.Time `gorm:"column:created_at;index:idx_sms_send_attempts_created,sort:desc" json:"created_at"`
+}
+
+func (SMSSendAttempt) TableName() string { return "sms_send_attempts" }

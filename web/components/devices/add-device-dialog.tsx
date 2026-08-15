@@ -24,12 +24,21 @@ import {
   listDiscoveredDevices,
   addDeviceWithConfig,
 } from "@/lib/api/endpoints/devices";
+import { listReaders } from "@/lib/api/endpoints/readers";
 import { ApiError } from "@/lib/api/errors";
 import {
   configFromDiscovered,
   type DiscoveredDevice,
 } from "@/types/device-config";
 import { cn } from "@/lib/utils";
+import { DEVICE_LANES, type DeviceLane } from "@/lib/lane";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * 从已发现的硬件中挑一个加入管理。
@@ -46,7 +55,9 @@ export function AddDeviceDialog({
 }) {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<DiscoveredDevice | null>(null);
+  const [selectedReader, setSelectedReader] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [lane, setLane] = useState<DeviceLane>("");
 
   const query = useQuery({
     queryKey: ["devices", "discovered"],
@@ -54,9 +65,17 @@ export function AddDeviceDialog({
     enabled: open,
   });
 
+  const readers = useQuery({
+    queryKey: ["readers"],
+    queryFn: listReaders,
+    enabled: open,
+  });
+
   const add = useMutation({
     mutationFn: (d: DiscoveredDevice) =>
-      addDeviceWithConfig(configFromDiscovered(d, { name: name.trim() })),
+      addDeviceWithConfig(
+        configFromDiscovered(d, { name: name.trim(), lane: lane || undefined }),
+      ),
     onSuccess: (result) => {
       // 配置写入成功但运行时启动失败也会返回 200，这时必须把 warning 说清楚
       if (result.warning) {
@@ -67,7 +86,47 @@ export function AddDeviceDialog({
       queryClient.invalidateQueries({ queryKey: ["devices"] });
       onOpenChange(false);
       setSelected(null);
+      setSelectedReader(null);
       setName("");
+      setLane("");
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiError ? e.message : "添加失败"),
+  });
+
+  const addReader = useMutation({
+    mutationFn: (readerName: string) => {
+      const slug = readerName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40);
+      return addDeviceWithConfig({
+        id: `reader-${slug || "ccid"}`,
+        name: name.trim() || readerName,
+        modem_imei: "",
+        usb_path: "",
+        at_port: "",
+        proxy_port: 0,
+        interface: "",
+        sms_enabled: true,
+        network_enabled: false,
+        vowifi_enabled: false,
+        device_backend: "pcsc",
+        reader_name: readerName,
+        lane: lane || undefined,
+      });
+    },
+    onSuccess: (result) => {
+      if (result.warning) toast.warning(result.warning);
+      else toast.success("读卡器已添加，可在设备详情里写卡");
+      queryClient.invalidateQueries({ queryKey: ["devices"] });
+      queryClient.invalidateQueries({ queryKey: ["readers"] });
+      onOpenChange(false);
+      setSelected(null);
+      setSelectedReader(null);
+      setName("");
+      setLane("");
     },
     onError: (e) =>
       toast.error(e instanceof ApiError ? e.message : "添加失败"),
@@ -114,23 +173,59 @@ export function AddDeviceDialog({
                   key={d.discovery_key}
                   device={d}
                   active={selected?.discovery_key === d.discovery_key}
-                  onSelect={() => setSelected(d)}
+                  onSelect={() => {
+                    setSelected(d);
+                    setSelectedReader(null);
+                  }}
                 />
               ))}
             </div>
           )}
 
-          {selected && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="device_name">设备名称（可选）</Label>
-              <Input
-                id="device_name"
-                value={name}
-                placeholder="留空则使用 IMEI"
-                onChange={(e) => setName(e.target.value)}
-              />
+          {(selected || selectedReader) && (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="device_name">设备名称（可选）</Label>
+                <Input
+                  id="device_name"
+                  value={name}
+                  placeholder="留空则使用 IMEI"
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="add_lane">线路</Label>
+                <Select
+                  value={lane}
+                  onValueChange={(v) => setLane((v ?? "") as DeviceLane)}
+                >
+                  <SelectTrigger id="add_lane">
+                    <SelectValue placeholder="未分线" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DEVICE_LANES.map((opt) => (
+                      <SelectItem key={opt.value || "none"} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  国内线或国外线。不根据 SIM 的 MCC 自动判断，添加后可再改。
+                </p>
+              </div>
             </div>
           )}
+
+          <ReadersPicker
+            status={readers.data}
+            loading={readers.isPending}
+            selectedName={selectedReader}
+            onSelect={(n) => {
+              setSelectedReader(n);
+              setSelected(null);
+            }}
+          />
 
           {selected?.degraded && (
             <Alert variant="destructive">
@@ -148,18 +243,105 @@ export function AddDeviceDialog({
           </Button>
           <Button
             disabled={
-              !selected ||
-              selected.degraded ||
-              selected.configured ||
-              add.isPending
+              add.isPending ||
+              addReader.isPending ||
+              (!selectedReader &&
+                (!selected || selected.degraded || selected.configured))
             }
-            onClick={() => selected && add.mutate(selected)}
+            onClick={() => {
+              if (selectedReader) addReader.mutate(selectedReader);
+              else if (selected) add.mutate(selected);
+            }}
           >
-            {add.isPending ? "添加中…" : "添加"}
+            {add.isPending || addReader.isPending ? "添加中…" : "添加"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ReadersPicker({
+  status,
+  loading,
+  selectedName,
+  onSelect,
+}: {
+  status?: {
+    daemon: string;
+    message: string;
+    readers: { name: string; claimed_id?: string }[];
+  };
+  loading: boolean;
+  selectedName: string | null;
+  onSelect: (name: string) => void;
+}) {
+  if (loading && !status) {
+    return (
+      <p className="text-xs text-muted-foreground">正在探测 USB 读卡器…</p>
+    );
+  }
+  if (!status) return null;
+
+  if (status.daemon === "missing" || status.daemon === "error") {
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>
+          读卡器：{status.message || "未检测到 pcscd"}。写卡需要先启动 pcscd。
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  const list = status.readers.filter((r) => r.name);
+  if (list.length === 0) {
+    return (
+      <Alert>
+        <AlertDescription>
+          读卡器：pcscd 在运行，当前没有读卡器。
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm font-medium">USB 读卡器</p>
+      <div className="rounded-lg border">
+        {list.map((r) => {
+          const claimed = Boolean(r.claimed_id);
+          return (
+            <button
+              key={r.name}
+              type="button"
+              disabled={claimed}
+              onClick={() => onSelect(r.name)}
+              className={cn(
+                "flex w-full flex-col gap-0.5 border-b px-3 py-2.5 text-left last:border-b-0",
+                selectedName === r.name && "bg-accent",
+                claimed
+                  ? "cursor-not-allowed opacity-60"
+                  : "hover:bg-accent/50",
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{r.name}</span>
+                {claimed ? (
+                  <Badge variant="secondary">已添加</Badge>
+                ) : (
+                  <Badge variant="outline">读卡器</Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {claimed
+                  ? `已作为设备 ${r.claimed_id} 接入`
+                  : "添加后可在设备详情写 profile，不要和模组同时占同一张卡"}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

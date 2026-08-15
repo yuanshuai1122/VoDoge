@@ -9,6 +9,7 @@ const (
 	DeleteProfileErrorInvalidICCID    DeleteProfileErrorCode = "INVALID_ICCID"
 	DeleteProfileErrorInvalidAIDHex   DeleteProfileErrorCode = "INVALID_AID_HEX"
 	DeleteProfileErrorProfileNotFound DeleteProfileErrorCode = "PROFILE_NOT_FOUND"
+	DeleteProfileErrorProfileEnabled  DeleteProfileErrorCode = "PROFILE_ENABLED"
 	DeleteProfileErrorEUICCNotFound   DeleteProfileErrorCode = "EUICC_NOT_FOUND"
 	DeleteProfileErrorBusy            DeleteProfileErrorCode = "BUSY"
 	DeleteProfileErrorInternal        DeleteProfileErrorCode = "INTERNAL"
@@ -80,4 +81,8 @@ func IsDeleteProfileNotFound(err error) bool {
 
 func IsDeleteProfileBusy(err error) bool {
 	return ClassifyDeleteProfileError(err) == DeleteProfileErrorBusy
+}
+
+func IsProfileEnabled(err error) bool {
+	return ClassifyDeleteProfileError(err) == DeleteProfileErrorProfileEnabled
 }

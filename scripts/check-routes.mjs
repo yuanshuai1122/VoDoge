@@ -40,6 +40,7 @@ const INTERNAL_ROUTE_PATTERNS = [
   /^\/websheets\/:id\/callback$/,
   /^\/websheets\/:id\/done$/,
   /^\/docs\/assets\//,
+  /^\/extensions\/:id\/backend/,
 ];
 
 function isInternal(p) {

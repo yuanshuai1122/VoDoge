@@ -7,8 +7,13 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { NotificationSettingsPanel } from "@/components/settings/notification-settings";
+import { SMSRateLimitCard } from "@/components/settings/sms-rate-limit";
+import { DeviceQuotaCard } from "@/components/settings/device-quota";
+import { HTTPSCard } from "@/components/settings/https-card";
+import { NetworkAccessCard } from "@/components/settings/network-access";
 import { SystemPanel } from "@/components/settings/system-panel";
 import { DangerZone } from "@/components/settings/danger-zone";
+import { PluginsCard } from "@/components/settings/plugins-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,7 +68,7 @@ export default function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="系统设置" description="账号与通知配置" />
+      <PageHeader title="系统设置" description="账号、配额、短信限额与通知配置" />
 
       <div className="flex max-w-2xl flex-col gap-6">
         <Card>
@@ -132,6 +137,11 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        <DeviceQuotaCard />
+        <HTTPSCard />
+        <NetworkAccessCard />
+        <SMSRateLimitCard />
+        <PluginsCard />
         <SystemPanel />
         <NotificationSettingsPanel />
 

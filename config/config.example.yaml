@@ -10,6 +10,15 @@
 server:
   port: 7575
   debug: false
+  # 最多可添加的设备数（模组 + 读卡器）。默认 5，允许 1–10。也可在网页「系统设置」里改。
+  max_devices: 5
+  # 本机自签 HTTPS，与 HTTP 共用同一端口。证书在 data/tls/。也可在网页「系统设置」里开关。
+  self_signed_https: false
+  # 管理面来源限制。internal=只放行内网；public=不限制。也可在网页「系统设置」里改。
+  access:
+    mode: internal
+    allowed_cidrs: []
+    trust_proxy_headers: false
 
 # 持久化：仅支持 PostgreSQL，无 SQLite 回退路径。
 # DSN 为空或连接失败时进程直接退出。
@@ -26,3 +35,13 @@ database:
 web:
   username: admin
   password: admin123
+
+# 全局短信发送限额：滚动 1 小时窗口，所有设备共用。
+# 0 表示不限制。接收不占用额度。也可在网页「系统设置」里改。
+sms:
+  hourly_limit: 20
+
+# 设备由网页「添加设备」写入。lane 是人工分线，不按 MCC 推断：
+#   lane: cn    # 国内线
+#   lane: intl  # 国外线
+# 留空表示未分线。改 lane 不必重启模组。

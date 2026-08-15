@@ -77,7 +77,7 @@ func (s *Server) handleStatic(c *gin.Context) {
 	}
 
 	// 设置缓存头
-	if filePath == "index.html" {
+	if filePath == "index.html" || filePath == "sw.js" {
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Pragma", "no-cache")
 		c.Header("Expires", "0")
@@ -98,6 +98,8 @@ func (s *Server) handleStatic(c *gin.Context) {
 		contentType = "application/javascript; charset=utf-8"
 	} else if strings.HasSuffix(filePath, ".json") {
 		contentType = "application/json; charset=utf-8"
+	} else if strings.HasSuffix(filePath, ".webmanifest") {
+		contentType = "application/manifest+json; charset=utf-8"
 	} else if strings.HasSuffix(filePath, ".svg") {
 		contentType = "image/svg+xml"
 	} else if strings.HasSuffix(filePath, ".png") {

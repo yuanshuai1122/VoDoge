@@ -16,8 +16,23 @@ const (
 	MBIMTransportAuto          = "auto"
 	MBIMTransportProxy         = "proxy"
 	MBIMTransportDirect        = "direct"
+	DeviceLaneCN               = "cn"
+	DeviceLaneIntl             = "intl"
+	DeviceBackendPCSC          = "pcsc"
 	DefaultWebhookTextTemplate = "{{device_label}} {{text}}"
+	// DefaultSMSHourlyLimit 是未配置时的全局发送上限（滚动 1 小时）。
+	DefaultSMSHourlyLimit = 20
+	// MaxSMSHourlyLimit 是设置页允许写入的上限；0 表示不限制。
+	MaxSMSHourlyLimit = 200
+	// DefaultDeviceLimit 是未配置时最多可添加的设备数。
+	DefaultDeviceLimit = 5
+	// MaxDeviceLimit 是设置页允许写入的上限。
+	MaxDeviceLimit = 10
 )
+
+func IsPCSCBackend(in string) bool {
+	return strings.ToLower(strings.TrimSpace(in)) == DeviceBackendPCSC
+}
 
 func NormalizeESIMTransport(in string) string {
 	switch strings.ToLower(strings.TrimSpace(in)) {
@@ -59,6 +74,84 @@ func ValidateModuleVendor(in string) error {
 	default:
 		return fmt.Errorf("invalid module vendor: %q", strings.TrimSpace(in))
 	}
+}
+
+// NormalizeLane 把设备线路标归一成空 / cn / intl。
+// 空表示未分线；不根据 MCC 推断。
+func NormalizeLane(in string) string {
+	switch strings.ToLower(strings.TrimSpace(in)) {
+	case "", "none", "unset", "-":
+		return ""
+	case DeviceLaneCN, "domestic", "china":
+		return DeviceLaneCN
+	case DeviceLaneIntl, "international", "global", "overseas":
+		return DeviceLaneIntl
+	default:
+		return strings.ToLower(strings.TrimSpace(in))
+	}
+}
+
+func ValidateLane(in string) error {
+	switch NormalizeLane(in) {
+	case "", DeviceLaneCN, DeviceLaneIntl:
+		return nil
+	default:
+		return fmt.Errorf("invalid lane: %q (允许 cn|intl 或空)", strings.TrimSpace(in))
+	}
+}
+
+func LaneLabel(in string) string {
+	switch NormalizeLane(in) {
+	case DeviceLaneCN:
+		return "国内"
+	case DeviceLaneIntl:
+		return "国外"
+	default:
+		return ""
+	}
+}
+
+// NormalizeSMSHourlyLimit 把发送限额夹到合法区间。0 表示不限制。
+func NormalizeSMSHourlyLimit(n int) int {
+	if n < 0 {
+		return 0
+	}
+	if n > MaxSMSHourlyLimit {
+		return MaxSMSHourlyLimit
+	}
+	return n
+}
+
+func ValidateSMSHourlyLimit(n int) error {
+	if n < 0 || n > MaxSMSHourlyLimit {
+		return fmt.Errorf("invalid sms.hourly_limit: %d (允许 0–%d，0 表示不限制)", n, MaxSMSHourlyLimit)
+	}
+	return nil
+}
+
+// NormalizeDeviceLimit 把设备配额夹到 1–MaxDeviceLimit；0 / 负数回落到默认 5。
+func NormalizeDeviceLimit(n int) int {
+	if n <= 0 {
+		return DefaultDeviceLimit
+	}
+	if n > MaxDeviceLimit {
+		return MaxDeviceLimit
+	}
+	return n
+}
+
+func ValidateDeviceLimit(n int) error {
+	if n < 1 || n > MaxDeviceLimit {
+		return fmt.Errorf("invalid server.max_devices: %d (允许 1–%d)", n, MaxDeviceLimit)
+	}
+	return nil
+}
+
+func ResolveDeviceLimit(cfg *Config) int {
+	if cfg == nil {
+		return DefaultDeviceLimit
+	}
+	return NormalizeDeviceLimit(cfg.Server.MaxDevices)
 }
 
 func NormalizeMBIMTransport(in string) string {
@@ -104,6 +197,13 @@ type Config struct {
 	Web      WebConfig      `mapstructure:"web"`
 	Proxy    ProxyConfig    `mapstructure:"proxy"`
 	VoWiFi   VoWiFiConfig   `mapstructure:"vowifi"`
+	SMS      SMSConfig      `mapstructure:"sms"`
+}
+
+// SMSConfig 是全局短信发送限额。接收不限；发送按滚动 1 小时窗口、所有设备共用。
+type SMSConfig struct {
+	// HourlyLimit 是滚动 1 小时内允许发出的条数。0 表示不限制。
+	HourlyLimit int `mapstructure:"hourly_limit"`
 }
 
 // DatabaseConfig is PostgreSQL-only connection settings.
@@ -274,8 +374,18 @@ type WebConfig struct {
 }
 
 type ServerConfig struct {
-	Port  string `mapstructure:"port"`
-	Debug bool   `mapstructure:"debug"`
+	Port            string       `mapstructure:"port"`
+	Debug           bool         `mapstructure:"debug"`
+	MaxDevices      int          `mapstructure:"max_devices"`
+	SelfSignedHTTPS bool         `mapstructure:"self_signed_https"`
+	Access          AccessPolicy `mapstructure:"access"`
+}
+
+// AccessPolicy 是管理面的来源网段策略。
+type AccessPolicy struct {
+	Mode              string   `mapstructure:"mode"`
+	AllowedCIDRs      []string `mapstructure:"allowed_cidrs"`
+	TrustProxyHeaders bool     `mapstructure:"trust_proxy_headers"`
 }
 
 type ESIMSwitchConfig struct {
@@ -313,6 +423,8 @@ type DeviceConfig struct {
 	ESIMTransport      string `mapstructure:"esim_transport"` // eSIM 传输通道: at|qmi|mbim，默认 at
 	DeviceBackend      string `mapstructure:"device_backend"` // 设备后端模式: at|qmi|mbim|auto，默认 at
 	ModuleVendor       string `mapstructure:"module_vendor"`  // AT 方言: quectel|simcom，默认 quectel 以保持兼容
+	Lane               string `mapstructure:"lane"`           // 线路: cn|intl|空，人工分线，不按 MCC 推断
+	ReaderName         string `mapstructure:"reader_name"`    // PC/SC 读卡器名；device_backend=pcsc 时必填
 	USBNetMode         *int   `mapstructure:"usbnet_mode"`    // 可选：用于校验/设置厂商 USB 网络模式
 	// ESIMSwitch controls deterministic eSIM switch behavior. Zero values preserve current behavior.
 	ESIMSwitch ESIMSwitchConfig `mapstructure:"esim_switch"`
@@ -432,6 +544,10 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("database.auto_migrate", true)
 	viper.SetDefault("vowifi.enabled", false)
 	viper.SetDefault("vowifi.mode", "vowifi")
+	viper.SetDefault("sms.hourly_limit", DefaultSMSHourlyLimit)
+	viper.SetDefault("server.max_devices", DefaultDeviceLimit)
+	viper.SetDefault("server.self_signed_https", false)
+	viper.SetDefault("server.access.mode", "internal")
 	viper.SetDefault("imscore.use_sipgo_udp", false)
 
 	// 官方默认推送秘钥与用户 (留空则不执行 Push)
@@ -460,6 +576,17 @@ func Load(path string) (*Config, error) {
 	// 兼容 server.port 格式 (例如: 7575 和 :7575)
 	if cfg.Server.Port != "" && !strings.Contains(cfg.Server.Port, ":") {
 		cfg.Server.Port = ":" + cfg.Server.Port
+	}
+
+	cfg.SMS.HourlyLimit = NormalizeSMSHourlyLimit(cfg.SMS.HourlyLimit)
+	cfg.Server.MaxDevices = NormalizeDeviceLimit(cfg.Server.MaxDevices)
+	switch strings.ToLower(strings.TrimSpace(cfg.Server.Access.Mode)) {
+	case "", "lan", "private":
+		cfg.Server.Access.Mode = "internal"
+	case "open", "any":
+		cfg.Server.Access.Mode = "public"
+	default:
+		cfg.Server.Access.Mode = strings.ToLower(strings.TrimSpace(cfg.Server.Access.Mode))
 	}
 
 	return &cfg, nil

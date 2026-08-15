@@ -21,6 +21,7 @@ import (
 	"github.com/yuanshuai1122/vodog/internal/esim"
 	mbimcore "github.com/yuanshuai1122/vodog/internal/mbim"
 	"github.com/yuanshuai1122/vodog/internal/modem"
+	"github.com/yuanshuai1122/vodog/internal/pcsc"
 	"github.com/yuanshuai1122/vodog/internal/proxy/server"
 	qmicore "github.com/yuanshuai1122/vodog/internal/qmi"
 	"github.com/yuanshuai1122/vodog/internal/sipgw"
@@ -207,9 +208,10 @@ type Pool struct {
 	vowifiUSSDSubs map[string]map[uint64]chan VoWiFiUSSDEvent
 
 	// 热插拔监听
-	udevWatcher    *UdevWatcher
-	startOnce      sync.Once
-	policyResolver cardpolicy.Resolver
+	udevWatcher     *UdevWatcher
+	startOnce       sync.Once
+	policyResolver  cardpolicy.Resolver
+	readerOccupancy *pcsc.Occupancy
 }
 
 func NewPool(cfg *config.Config) *Pool {
@@ -232,6 +234,7 @@ func NewPool(cfg *config.Config) *Pool {
 		switchTokens:          make(map[string]uint64),
 		vowifiUSSDSubs:        make(map[string]map[uint64]chan VoWiFiUSSDEvent),
 		lifecycle:             newLifecycleCoordinator(),
+		readerOccupancy:       pcsc.NewOccupancy(),
 	}
 	p.transportRecovery = NewTransportRecoveryController(p)
 	p.voWiFiHost().ConfigureAdapter(p)
@@ -1011,6 +1014,7 @@ func (p *Pool) RemoveWorker(deviceID string) error {
 	if worker == nil {
 		return fmt.Errorf("设备未找到")
 	}
+	p.ReleaseESIMHold(deviceID)
 	if !alreadyRebuilding {
 		defer func() {
 			p.mu.Lock()
@@ -1296,10 +1300,10 @@ func (p *Pool) StartAll() error {
 	devices := append([]config.DeviceConfig(nil), p.cfg.Devices...)
 	for i := range devices {
 		devCfg := devices[i]
-		if !FreeDeviceLimitAllowsConfiguredDevice(devices, devCfg.ID) {
-			logger.Warn("当前版本设备数量限制，跳过启动配置设备",
+		if !DeviceLimitAllowsConfiguredDevice(devices, devCfg.ID, p.deviceLimit()) {
+			logger.Warn("设备数量限制，跳过启动配置设备",
 				"device", devCfg.ID,
-				"limit", DefaultFreeDeviceLimit)
+				"limit", p.deviceLimit())
 			continue
 		}
 		go p.startConfiguredDeviceBootstrap(devCfg, "start_all")
@@ -1377,10 +1381,10 @@ func (p *Pool) startAllSynchronousLegacy() error {
 	for i := range p.cfg.Devices {
 		// 使用指针以便修改配置
 		devCfg := &p.cfg.Devices[i]
-		if !FreeDeviceLimitAllowsConfiguredDevice(p.cfg.Devices, devCfg.ID) {
-			logger.Warn("当前版本设备数量限制，跳过启动配置设备",
+		if !DeviceLimitAllowsConfiguredDevice(p.cfg.Devices, devCfg.ID, p.deviceLimit()) {
+			logger.Warn("设备数量限制，跳过启动配置设备",
 				"device", devCfg.ID,
-				"limit", DefaultFreeDeviceLimit)
+				"limit", p.deviceLimit())
 			continue
 		}
 		var matchedModem *QMIDevice
@@ -1670,6 +1674,9 @@ func (p *Pool) startAllSynchronousLegacy() error {
 			m.SetSMSCallback(func(sender, content string, timestamp time.Time) {
 				w.processSMS(sender, content, timestamp)
 			})
+			m.SetStatusReportHandler(func(mr int, status byte, recipient string) {
+				w.applyCellularStatusReport(mr, status, recipient)
+			})
 		}
 		logger.Info(fmt.Sprintf("[%s] 短信模式已配置", w.ID), "sms_mode", w.smsMode.String(), "backend", bMode)
 
@@ -1770,7 +1777,13 @@ func (p *Pool) startAllSynchronousLegacy() error {
 				case <-ticker.C:
 					switch worker.smsMode {
 					case smsModeAT:
-						// AT 模式：完全依赖 URC，不轮询
+						if worker.shouldDeferSMSPoll() {
+							logger.Debug(fmt.Sprintf("[%s] APDU/发送占用中，暂缓 CMGL", worker.ID))
+							continue
+						}
+						if worker.Modem != nil {
+							worker.Modem.CheckAllSMS()
+						}
 					case smsModeQMI:
 						// QMI 模式：只走 QMI 轮询，不 fallback AT
 						if worker.QMICore != nil {
@@ -1965,10 +1978,10 @@ func (p *Pool) rescanAndReconnect(opts rescanReconnectOptions) error {
 
 	for _, pair := range resolved.Matched {
 		md := pair.Config
-		if !FreeDeviceLimitAllowsConfiguredDevice(managed, md.ID) {
-			logger.Warn("当前版本设备数量限制，跳过启动配置设备",
+		if !DeviceLimitAllowsConfiguredDevice(managed, md.ID, p.deviceLimit()) {
+			logger.Warn("设备数量限制，跳过启动配置设备",
 				"device", md.ID,
-				"limit", DefaultFreeDeviceLimit)
+				"limit", p.deviceLimit())
 			continue
 		}
 
@@ -2142,7 +2155,7 @@ func (p *Pool) rescanAndReconnect(opts rescanReconnectOptions) error {
 	}
 
 	for _, md := range resolved.Offline {
-		if !FreeDeviceLimitAllowsConfiguredDevice(managed, md.ID) {
+		if !DeviceLimitAllowsConfiguredDevice(managed, md.ID, p.deviceLimit()) {
 			continue
 		}
 		worker := p.GetWorker(md.ID)
@@ -2182,8 +2195,8 @@ func (p *Pool) RebuildWorker(deviceID string) error {
 	if err != nil || cfg == nil {
 		return fmt.Errorf("读取设备 %s 配置失败: %w", deviceID, err)
 	}
-	if !FreeDeviceLimitAllowsConfiguredDevice(config.ListDevices(), cfg.ID) {
-		return fmt.Errorf("%s", FreeDeviceWorkerLimitMessage())
+	if !DeviceLimitAllowsConfiguredDevice(config.ListDevices(), cfg.ID, p.deviceLimit()) {
+		return fmt.Errorf("%s", DeviceWorkerLimitMessage(p.deviceLimit()))
 	}
 
 	// 先停止 VoWiFi（如有），并让任何正在启动中的旧实例失效。

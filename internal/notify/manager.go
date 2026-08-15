@@ -15,6 +15,7 @@ import (
 type Manager struct {
 	pool     *device.Pool
 	channels []Channel // 所有已启用的通知渠道
+	cfg      *config.Config
 }
 
 type NotificationContext struct {
@@ -48,6 +49,7 @@ type contextualChannel interface {
 func NewManager(cfg *config.Config, pool *device.Pool) (*Manager, error) {
 	m := &Manager{
 		pool: pool,
+		cfg:  cfg,
 	}
 
 	// 初始化所有通知渠道
@@ -194,9 +196,19 @@ func (m *Manager) UpdateConfig(cfg *config.Config) error {
 	// 关闭现有渠道
 	m.Close()
 	m.channels = nil
+	if cfg != nil {
+		m.cfg = cfg
+	}
 
 	// 重新初始化所有渠道
 	return m.initChannels(cfg)
+}
+
+func (m *Manager) smsHourlyLimit() int {
+	if m == nil || m.cfg == nil {
+		return config.DefaultSMSHourlyLimit
+	}
+	return config.NormalizeSMSHourlyLimit(m.cfg.SMS.HourlyLimit)
 }
 
 // NotifySMS 实现 device.Notifier 接口 — 收到短信通知

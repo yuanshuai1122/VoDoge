@@ -49,3 +49,42 @@ func TestHandleCMTIUsesIndicatedStorageForReadAndDelete(t *testing.T) {
 		t.Fatalf("commands=%#v want %#v", got, want)
 	}
 }
+
+func TestCheckAllSMSSweepsSMthenME(t *testing.T) {
+	m := newRunningTestManager(t)
+	done := make(chan []string, 1)
+	go func() {
+		done <- respondToCommands(t, m, 6, func(req commandRequest) {
+			switch req.cmd {
+			case "AT+CPMS?":
+				req.respChan <- "\r\n+CPMS: \"SM\",0,10,\"SM\",0,10,\"SM\",0,10\r\n\r\nOK\r\n"
+			case `AT+CPMS="ME","ME","ME"`:
+				req.respChan <- "OK"
+			case "AT+CMGL=4":
+				req.respChan <- "OK"
+			case `AT+CPMS="SM","SM","SM"`:
+				req.respChan <- "OK"
+			default:
+				req.respChan <- "OK"
+			}
+		})
+	}()
+	m.CheckAllSMS()
+	var got []string
+	select {
+	case got = <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out")
+	}
+	want := []string{
+		"AT+CPMS?",
+		"AT+CMGL=4",
+		"AT+CPMS?",
+		`AT+CPMS="ME","ME","ME"`,
+		"AT+CMGL=4",
+		`AT+CPMS="SM","SM","SM"`,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("commands=%#v want %#v", got, want)
+	}
+}

@@ -87,6 +87,7 @@ export interface DeviceOverview {
   interface?: string;
   control_device?: string;
   esim_transport?: string;
+  lane?: string;
   at_port?: string;
   usb_path?: string;
   audio_device?: string;
@@ -104,6 +105,7 @@ export interface DeviceOverview {
   traffic_raw?: Record<string, number>;
   traffic_meta?: DeviceTrafficMeta;
   backend_mode: string;
+  device_backend?: string;
   network_connected: boolean;
   registration_state_label: string;
 }

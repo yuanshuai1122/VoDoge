@@ -23,8 +23,8 @@ func TestPoolAddWorkerFromConfigRejectsFourthWorkerBeforeHardwareInit(t *testing
 	if err == nil {
 		t.Fatal("AddWorkerFromConfig() error = nil, want device limit error")
 	}
-	if !strings.Contains(err.Error(), FreeDeviceWorkerLimitMessage()) {
-		t.Fatalf("AddWorkerFromConfig() error = %q, want %q", err.Error(), FreeDeviceWorkerLimitMessage())
+	if !strings.Contains(err.Error(), DeviceWorkerLimitMessage(DefaultFreeDeviceLimit)) {
+		t.Fatalf("AddWorkerFromConfig() error = %q, want %q", err.Error(), DeviceWorkerLimitMessage(DefaultFreeDeviceLimit))
 	}
 	if len(p.workers) != DefaultFreeDeviceLimit {
 		t.Fatalf("worker count = %d, want %d", len(p.workers), DefaultFreeDeviceLimit)
@@ -60,6 +60,19 @@ func TestFreeDeviceLimitAllowsRebuildAfterRemovingWorker(t *testing.T) {
 	}
 	if FreeDeviceLimitReached(len(p.workers)) {
 		t.Fatalf("FreeDeviceLimitReached(%d) = true, want false after removal", len(p.workers))
+	}
+}
+
+func TestPoolHonorsConfiguredDeviceLimit(t *testing.T) {
+	p := NewPool(&config.Config{Server: config.ServerConfig{MaxDevices: 2}})
+	p.workers["dev1"] = &Worker{ID: "dev1", Config: config.DeviceConfig{ID: "dev1"}}
+	p.workers["dev2"] = &Worker{ID: "dev2", Config: config.DeviceConfig{ID: "dev2"}}
+	_, err := p.AddWorkerFromConfig(config.DeviceConfig{ID: "dev3"})
+	if err == nil {
+		t.Fatal("want limit error at max_devices=2")
+	}
+	if !strings.Contains(err.Error(), DeviceWorkerLimitMessage(2)) {
+		t.Fatalf("error=%q", err.Error())
 	}
 }
 

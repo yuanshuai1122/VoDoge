@@ -7,9 +7,13 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -19,7 +23,11 @@ import (
 	"github.com/yuanshuai1122/vodog/internal/config"
 	"github.com/yuanshuai1122/vodog/internal/data/repo"
 	"github.com/yuanshuai1122/vodog/internal/device"
+	"github.com/yuanshuai1122/vodog/internal/extensions"
+	"github.com/yuanshuai1122/vodog/internal/httpsmode"
+	"github.com/yuanshuai1122/vodog/internal/netaccess"
 	"github.com/yuanshuai1122/vodog/internal/notify"
+	"github.com/yuanshuai1122/vodog/internal/pcsc"
 	"github.com/yuanshuai1122/vodog/internal/proxy/server"
 	proxytraffic "github.com/yuanshuai1122/vodog/internal/proxy/traffic"
 	vwebsheet "github.com/yuanshuai1122/vodog/internal/websheet"
@@ -45,6 +53,8 @@ type Server struct {
 	// hardware 是硬件枚举/探测的边界（见 device_discovery.go）。
 	// nil 时用真实实现；测试注入假实现，无需 /dev 下真有 QMI 设备。
 	hardware hardwareProbe
+	// pcsc 是读卡器发现。nil 时用系统 pcscd 套接字探测。
+	pcsc pcsc.Backend
 	// esimNotificationsFor 决定某设备的 eSIM 通知从哪儿来（见 device_esim.go）。
 	// nil 时用设备自己的 *esim.Manager，它要走 APDU 摸真卡。
 	esimNotificationsFor func(*device.Worker) esimNotificationSource
@@ -54,8 +64,17 @@ type Server struct {
 	notifyMgr            *notify.Manager
 	websheets            *vwebsheet.Broker
 
+	https *httpsmode.Manager
+
+	extensions *extensions.Manager
+
+	accessMu sync.RWMutex
+	access   netaccess.Parsed
+
 	httpSrvMu sync.Mutex
 	httpSrv   *http.Server
+	httpsSrv  *http.Server
+	httpsMux  *httpsmode.Multiplexer
 
 	loginMu       sync.Mutex
 	loginAttempts map[string]loginAttempt
@@ -103,6 +122,20 @@ func New(cfg *config.Config, pool *device.Pool, fs http.FileSystem, proxyMgr *se
 		shutdownCh:    make(chan struct{}),
 		esimDownloads: newEsimDownloadRegistry(),
 	}
+	httpsMgr, err := httpsmode.New(filepath.Join("data", "tls"), cfg.Server.Port, cfg.Server.SelfSignedHTTPS)
+	if err != nil {
+		logger.Error("初始化本机自签 HTTPS 失败", "err", err)
+	} else {
+		s.https = httpsMgr
+	}
+	s.loadAccessPolicyFromConfig()
+
+	extMgr, err := extensions.Open(filepath.Join("data", "plugins"))
+	if err != nil {
+		logger.Error("初始化插件目录失败", "err", err)
+	} else {
+		s.extensions = extMgr
+	}
 
 	return s
 }
@@ -145,23 +178,91 @@ func accessLogFormatter(p gin.LogFormatterParams) string {
 	)
 }
 
-func (s *Server) Run() error {
-	r := s.newRouter()
-
-	srv := &http.Server{
-		Addr:              s.cfg.Port,
-		Handler:           r,
+func newAPIHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       120 * time.Second,
 		WriteTimeout:      120 * time.Second,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
+}
+
+func listenAddr(port string) string {
+	port = strings.TrimSpace(port)
+	if port == "" {
+		return ":7575"
+	}
+	if !strings.Contains(port, ":") {
+		return ":" + port
+	}
+	return port
+}
+
+func (s *Server) Run() error {
+	r := s.newRouter()
+	addr := listenAddr(s.cfg.Port)
+	handler := s.wrapHTTPSRedirect(r)
+
+	if s.https == nil {
+		srv := newAPIHTTPServer(addr, handler)
+		s.httpSrvMu.Lock()
+		s.httpSrv = srv
+		s.httpSrvMu.Unlock()
+		logger.Info("启动 API 服务器", "port", addr, "self_signed_https", false)
+		return srv.ListenAndServe()
+	}
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	mux := httpsmode.NewMultiplexer(ln, s.https)
+	httpSrv := newAPIHTTPServer(addr, handler)
+	httpsSrv := newAPIHTTPServer(addr, r)
+	httpsSrv.TLSConfig = s.https.TLSConfig()
+
 	s.httpSrvMu.Lock()
-	s.httpSrv = srv
+	s.httpSrv = httpSrv
+	s.httpsSrv = httpsSrv
+	s.httpsMux = mux
 	s.httpSrvMu.Unlock()
-	logger.Info("启动 API 服务器", "port", s.cfg.Port)
-	return srv.ListenAndServe()
+
+	logger.Info("启动 API 服务器",
+		"port", addr,
+		"self_signed_https", s.https.Enabled())
+
+	errCh := make(chan error, 2)
+	go func() { errCh <- httpSrv.Serve(mux.Plain()) }()
+	go func() { errCh <- httpsSrv.Serve(tls.NewListener(mux.TLS(), s.https.TLSConfig())) }()
+	err = <-errCh
+	_ = mux.Close()
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}
+
+func (s *Server) wrapHTTPSRedirect(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s != nil && s.https != nil && s.https.Enabled() && r.TLS == nil && !httpsRedirectExempt(r.URL.Path) {
+			target := "https://" + r.Host + r.URL.RequestURI()
+			http.Redirect(w, r, target, http.StatusPermanentRedirect)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func httpsRedirectExempt(path string) bool {
+	switch strings.TrimSpace(path) {
+	case "/api/settings/https", "/api/settings/https/certificate":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
@@ -173,12 +274,25 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	s.httpSrvMu.Lock()
-	srv := s.httpSrv
+	httpSrv := s.httpSrv
+	httpsSrv := s.httpsSrv
+	mux := s.httpsMux
 	s.httpSrvMu.Unlock()
-	if srv == nil {
-		return nil
+
+	var errs []error
+	if httpSrv != nil {
+		errs = append(errs, httpSrv.Shutdown(ctx))
 	}
-	return srv.Shutdown(ctx)
+	if httpsSrv != nil {
+		errs = append(errs, httpsSrv.Shutdown(ctx))
+	}
+	if mux != nil {
+		errs = append(errs, mux.Close())
+	}
+	if s.extensions != nil {
+		s.extensions.Close()
+	}
+	return errors.Join(errs...)
 }
 
 func (s *Server) requestIDMiddleware() gin.HandlerFunc {

@@ -33,18 +33,20 @@ import {
 import { ApiError } from "@/lib/api/errors";
 import { UpstreamDialog } from "@/components/proxy/upstream-dialog";
 import { CountryRules } from "@/components/proxy/country-rules";
+import { ProfileBindings } from "@/components/proxy/profile-bindings";
 import { InstanceDialog } from "@/components/proxy/instance-dialog";
 
 export default function ProxyPage() {
   return (
     <>
-      <PageHeader title="代理管理" description="本机代理实例与上游代理" />
+      <PageHeader title="代理管理" description="本机代理、上游、国家规则与 Profile 绑定" />
 
       <Tabs defaultValue="instances">
         <TabsList>
           <TabsTrigger value="instances">本机实例</TabsTrigger>
           <TabsTrigger value="upstream">上游代理</TabsTrigger>
           <TabsTrigger value="countries">国家路由</TabsTrigger>
+          <TabsTrigger value="profiles">Profile 绑定</TabsTrigger>
         </TabsList>
 
         <TabsContent value="instances" className="mt-4">
@@ -57,6 +59,9 @@ export default function ProxyPage() {
 
         <TabsContent value="countries" className="mt-4">
           <CountryRules />
+        </TabsContent>
+        <TabsContent value="profiles" className="mt-4">
+          <ProfileBindings />
         </TabsContent>
       </Tabs>
     </>

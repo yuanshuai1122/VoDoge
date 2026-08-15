@@ -439,6 +439,11 @@ type currentChannelProvider interface {
 	CurrentChannel() byte
 }
 
+// NewClientWithChannel 用任意 SmartCardChannel 打开 LPA。读卡器 PC/SC 走这条，不经过 AT/QMI。
+func NewClientWithChannel(ch driver.SmartCardChannel, aid []byte) (*lpa.Client, error) {
+	return newLPAClientWithChannel(ch, aid)
+}
+
 func newLPAClientWithChannel(ch driver.SmartCardChannel, aid []byte) (*lpa.Client, error) {
 	opts := &lpa.Options{Channel: ch, AID: aid, MSS: 120}
 	client, err := lpa.New(opts)
@@ -996,6 +1001,17 @@ func (m *Manager) acquireOperationLock() error {
 			return ErrOperationInProgress
 		}
 	}
+}
+
+func (m *Manager) WriteInProgress() bool {
+	if m == nil {
+		return false
+	}
+	if m.opMu.TryLock() {
+		m.opMu.Unlock()
+		return false
+	}
+	return true
 }
 
 func (m *Manager) lockOperation(operation string) (func(), error) {
@@ -1895,6 +1911,25 @@ func (m *Manager) GetProfiles() ([]EUICCProfiles, error) {
 		return nil, err
 	}
 	return cloneProfiles(overview.Profiles), nil
+}
+
+func (m *Manager) cachedProfileEnabled(iccid string) bool {
+	want := normalizeICCIDValue(iccid)
+	if want == "" || m == nil {
+		return false
+	}
+	overview := m.cachedOverview()
+	if overview == nil {
+		return false
+	}
+	for _, group := range overview.Profiles {
+		for _, profile := range group.Profiles {
+			if profile.State == 1 && normalizeICCIDValue(profile.ICCID) == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m *Manager) ActiveProfileName() (string, error) {
@@ -3801,6 +3836,13 @@ func (m *Manager) DeleteProfile(targetICCID string, aidHex string) (DeleteProfil
 	}()
 
 	result := DeleteProfileResult{}
+	if m.cachedProfileEnabled(targetICCID) {
+		return DeleteProfileResult{}, NewDeleteProfileError(
+			DeleteProfileErrorProfileEnabled,
+			"当前启用的 Profile 不能删除，请先切换到另一张卡",
+			nil,
+		)
+	}
 	iccid, err := sgp22.NewICCID(targetICCID)
 	if err != nil {
 		return DeleteProfileResult{}, NewDeleteProfileError(

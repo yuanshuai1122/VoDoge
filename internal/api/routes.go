@@ -62,6 +62,7 @@ func (s *Server) routes() []route {
 		s.vowifiRoutes(),
 		s.websheetRoutes(),
 		s.logRoutes(),
+		s.extensionRoutes(),
 	)
 }
 
@@ -112,6 +113,15 @@ func (s *Server) settingsRoutes() []route {
 		{"POST", "/settings/notifications/bark/test", s.handleTestBarkNotification, authRequired, false, "测试 Bark"},
 		{"POST", "/settings/notifications/email/test", s.handleTestEmailNotification, authRequired, false, "测试邮件"},
 		{"POST", "/settings/password", s.handleChangePassword, authRequired, false, "修改登录密码"},
+		{"GET", "/settings/sms", s.handleGetSMSSettings, authRequired, false, "获取短信发送限额"},
+		{"PUT", "/settings/sms", s.handleUpdateSMSSettings, authRequired, false, "更新短信发送限额"},
+		{"GET", "/settings/devices", s.handleGetDeviceQuota, authRequired, false, "获取设备配额"},
+		{"PUT", "/settings/devices", s.handleUpdateDeviceQuota, authRequired, false, "更新设备配额"},
+		{"GET", "/settings/https", s.handleGetHTTPSSettings, authRequired, false, "获取本机自签 HTTPS 状态"},
+		{"PUT", "/settings/https", s.handleUpdateHTTPSSettings, authRequired, false, "开关本机自签 HTTPS"},
+		{"GET", "/settings/https/certificate", s.handleDownloadHTTPSCertificate, authRequired, false, "下载自签证书"},
+		{"GET", "/settings/security", s.handleGetSecuritySettings, authRequired, false, "获取网络访问策略"},
+		{"PUT", "/settings/security", s.handleUpdateSecuritySettings, authRequired, false, "更新网络访问策略"},
 		{"GET", "/system/info", s.handleSystemInfo, authRequired, false, "系统运行与版本信息"},
 		{"GET", "/system/update/check", s.handleCheckUpdate, authRequired, false, "检查更新"},
 		{"POST", "/system/update/apply", s.handleApplyUpdate, authRequired, false, "应用更新"},
@@ -125,6 +135,7 @@ func (s *Server) deviceRoutes() []route {
 		{"GET", "/devices", s.handleDeviceMgmtList, authRequired, false, "设备列表（管理页）"},
 		{"POST", "/devices", s.handleDeviceMgmtAddDevice, authRequired, false, "添加设备"},
 		{"GET", "/devices/discovered", s.handleDeviceMgmtDiscovered, authRequired, false, "已发现的硬件设备"},
+		{"GET", "/readers", s.handleListReaders, authRequired, false, "PC/SC 读卡器发现"},
 		{"POST", "/devices/actions/rescan", s.handleDeviceRescan, authRequired, false, "手动重扫描"},
 		{"GET", "/devices/:device_id/overview/stream", s.handleDeviceMgmtOverviewStreamSingle, authRequired, true, "单设备深层实时流(SSE)"},
 		{"GET", "/devices/:device_id/overview", s.handleDeviceMgmtOverviewLite, authRequired, false, "设备详情（轻量）"},
@@ -182,6 +193,9 @@ func (s *Server) upstreamProxyRoutes() []route {
 		{"GET", "/upstream-proxy-country-rules", s.handleListUpstreamProxyCountryRules, authRequired, false, "国家规则列表"},
 		{"PUT", "/upstream-proxy-country-rules/:country_code", s.handleUpsertUpstreamProxyCountryRule, authRequired, false, "保存国家规则"},
 		{"DELETE", "/upstream-proxy-country-rules/:country_code", s.handleDeleteUpstreamProxyCountryRule, authRequired, false, "删除国家规则"},
+		{"GET", "/upstream-proxy-profile-bindings", s.handleListProfileProxyBindings, authRequired, false, "列出 Profile 前置代理绑定"},
+		{"POST", "/upstream-proxy-profile-bindings", s.handleCreateProfileProxyBindings, authRequired, false, "绑定 Profile 到前置代理"},
+		{"DELETE", "/upstream-proxy-profile-bindings", s.handleDeleteProfileProxyBindings, authRequired, false, "解除 Profile 前置代理绑定"},
 	}
 }
 
@@ -192,6 +206,7 @@ func (s *Server) esimRoutes() []route {
 		{"GET", "/devices/:device_id/esim/notifications", s.handleEsimListNotifications, authRequired, false, "通知列表"},
 		{"POST", "/devices/:device_id/esim/notifications/:sequence/actions/retry", s.handleEsimRetryNotification, authRequired, false, "重试通知"},
 		{"POST", "/devices/:device_id/esim/actions/switch", s.handleEsimSwitchProfile, authRequired, false, "切换 Profile"},
+		{"POST", "/devices/:device_id/esim/actions/disable", s.handleEsimDisableProfile, authRequired, false, "禁用当前 Profile"},
 		{"GET", "/devices/:device_id/esim/eids", s.handleEsimGetEID, authRequired, false, "获取 EID"},
 		{"GET", "/devices/:device_id/esim/chip-info", s.handleEsimGetChipInfo, authRequired, false, "eUICC 芯片信息"},
 		// 下载分两步：POST 建任务（激活码走 body），GET 按 task_id 订阅 SSE 进度。
@@ -248,6 +263,22 @@ func (s *Server) logRoutes() []route {
 	}
 }
 
+func (s *Server) extensionRoutes() []route {
+	out := []route{
+		{"GET", "/extensions", s.handleListExtensions, authRequired, false, "已安装插件"},
+		{"POST", "/extensions/install-url", s.handleInstallExtensionURL, authRequired, false, "从 URL 安装插件"},
+		{"POST", "/extensions/upload", s.handleUploadExtension, authRequired, false, "上传插件包"},
+		{"PUT", "/extensions/:id", s.handleUpdateExtension, authRequired, false, "启用或禁用插件"},
+		{"DELETE", "/extensions/:id", s.handleDeleteExtension, authRequired, false, "卸载插件"},
+	}
+	for _, path := range []string{"/extensions/:id/backend", "/extensions/:id/backend/*filepath"} {
+		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+			out = append(out, route{method, path, s.handleExtensionBackend, authRequired, false, "插件后端反代"})
+		}
+	}
+	return out
+}
+
 func registerRoutes(group *gin.RouterGroup, routes []route) {
 	for _, rt := range routes {
 		group.Handle(rt.method, rt.path, rt.handler)
@@ -281,6 +312,7 @@ func (s *Server) newRouter() *gin.Engine {
 	r.Use(gin.LoggerWithFormatter(accessLogFormatter))
 	r.Use(gin.Recovery())
 	r.Use(s.requestIDMiddleware())
+	r.Use(s.accessControlMiddleware())
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "pong"})
@@ -288,6 +320,9 @@ func (s *Server) newRouter() *gin.Engine {
 	if s.cfg.Debug {
 		r.GET("/debug/embed", s.authMiddleware(), s.handleDebugEmbed)
 	}
+
+	r.GET("/plugin-assets/:id/*filepath", s.authMiddleware(), s.handlePluginAsset)
+	r.HEAD("/plugin-assets/:id/*filepath", s.authMiddleware(), s.handlePluginAsset)
 
 	// 静态文件服务 (SPA)
 	r.NoRoute(s.handleStatic)

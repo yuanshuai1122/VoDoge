@@ -30,3 +30,25 @@ func TestValidateDeviceBackendConfigMBIM(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateDeviceBackendConfigPCSC(t *testing.T) {
+	if err := validateDeviceBackendConfig(config.DeviceConfig{DeviceBackend: "pcsc"}); err == nil {
+		t.Fatal("pcsc without reader_name should fail")
+	}
+	if err := validateDeviceBackendConfig(config.DeviceConfig{DeviceBackend: "pcsc", ReaderName: "Alcor"}); err != nil {
+		t.Fatalf("pcsc+reader_name should be valid: %v", err)
+	}
+}
+
+func TestValidateManagedNetworkConfigLane(t *testing.T) {
+	if err := validateManagedNetworkConfig(config.DeviceConfig{Lane: "cn"}); err != nil {
+		t.Fatalf("lane=cn 应合法: %v", err)
+	}
+	if err := validateManagedNetworkConfig(config.DeviceConfig{Lane: ""}); err != nil {
+		t.Fatalf("空 lane 应合法: %v", err)
+	}
+	err := validateManagedNetworkConfig(config.DeviceConfig{Lane: "eu"})
+	if err == nil || !strings.Contains(err.Error(), "lane") {
+		t.Fatalf("非法 lane 应被拒绝，实际: %v", err)
+	}
+}

@@ -108,6 +108,9 @@ type Manager struct {
 
 	// 回调
 	smsCallback            SMSCallback
+	statusReportHandler    func(mr int, status byte, recipient string)
+	lastSubmitMu           sync.Mutex
+	lastSubmitRefs         []int
 	newSMSHandler          func(index string) // 处理新短信索引的回调 (用于 bubble up URC)
 	disableURCRead         bool               // 如果启用 QMI，禁用 AT 自动读取
 	simStatusHandler       func(inserted *bool, state string)
@@ -1386,11 +1389,15 @@ func (m *Manager) handleURC(line string) {
 			go handler(index)
 			return
 		}
-		if !disabled {
-			go m.readAndProcessSMSFromStorage(storage, index)
-		} else {
+		if disabled {
 			logger.Debug(fmt.Sprintf("[%s] 收到 URC 但已禁用自动读取 (QMI 接管)", m.cfg.ID), "index", index, "storage", storage)
+			return
 		}
+		if m.APDUBusy() {
+			logger.Debug(fmt.Sprintf("[%s] APDU 占用中，暂缓读取 CMTI", m.cfg.ID), "index", index, "storage", storage)
+			return
+		}
+		go m.readAndProcessSMSFromStorage(storage, index)
 	}
 
 	// 分发 RING 来电事件
@@ -1511,7 +1518,14 @@ func (m *Manager) readAndProcessSMSFromStorage(storage, index string) {
 	}
 
 	// 解码 PDU
-	sender, content, timestamp := m.decodePDU(pduHex)
+	sender, content, timestamp, report, isReport := m.decodePDU(pduHex)
+	if isReport {
+		if m.statusReportHandler != nil {
+			m.statusReportHandler(report.MR, report.Status, report.Recipient)
+		}
+		m.ExecuteAT("AT+CMGD="+index, 3*time.Second)
+		return
+	}
 
 	// 如果内容为空（说明是分片且未完成），则不进行回调
 	if content == "" {
@@ -1644,8 +1658,8 @@ func (m *Manager) cleanupOldFragments() {
 	m.reassembler.Cleanup(10 * time.Minute)
 }
 
-// decodePDU 解码 PDU
-func (m *Manager) decodePDU(raw string) (sender, content string, timestamp time.Time) {
+// decodePDU 解码 PDU。isReport 为真时走回执，不进收件箱。
+func (m *Manager) decodePDU(raw string) (sender, content string, timestamp time.Time, report smscodec.StatusReport, isReport bool) {
 	timestamp = time.Now()
 
 	b, err := hex.DecodeString(raw)
@@ -1663,6 +1677,10 @@ func (m *Manager) decodePDU(raw string) (sender, content string, timestamp time.
 		}
 	}
 
+	if sr, ok := smscodec.DecodeStatusReportTPDU(b); ok {
+		return sr.Recipient, "", sr.Time, sr, true
+	}
+
 	var concat smscodec.ConcatInfo
 	sender, content, msgTime, concat, err := smscodec.DecodeDeliverTPDU(b)
 	if err != nil {
@@ -1678,14 +1696,14 @@ func (m *Manager) decodePDU(raw string) (sender, content string, timestamp time.
 		logger.Debug(fmt.Sprintf("[%s] 收到短信分片", m.cfg.ID), "ref", concat.Ref, "seq", concat.Seq, "total", concat.Total)
 		complete, full := m.reassembler.Add(sender, concat, content)
 		if !complete {
-			return "", "", time.Time{}
+			return "", "", time.Time{}, smscodec.StatusReport{}, false
 		}
 		content = full
 		logger.Info(fmt.Sprintf("[%s] 长短信重组完成", m.cfg.ID), "total", concat.Total)
-		return sender, content, timestamp
+		return sender, content, timestamp, smscodec.StatusReport{}, false
 	}
 
-	return sender, content, timestamp
+	return sender, content, timestamp, smscodec.StatusReport{}, false
 }
 
 // ExecuteAT 执行 AT 命令 (普通优先级)
@@ -1930,30 +1948,44 @@ func (m *Manager) Close() error {
 	return nil
 }
 
-// CheckAllSMS 检查所有短信（轮询模式）
+// CheckAllSMS 检查所有短信（轮询模式）。先 SM 再 ME，避免只扫当前 CPMS。
 func (m *Manager) CheckAllSMS() {
-	if m.IsBusy() {
+	if m.IsBusy() || m.APDUBusy() {
 		return
 	}
+	for _, storage := range []string{"SM", "ME"} {
+		m.checkSMSStorage(storage)
+	}
+}
 
+func (m *Manager) checkSMSStorage(storage string) {
+	restore, ok := m.switchSMSStorageForRead(storage)
+	if !ok {
+		return
+	}
+	if restore != nil {
+		defer restore()
+	}
 	pdus, err := m.SMSListAllPDU()
 	if err != nil {
-		logger.Warn(fmt.Sprintf("[%s] 检查短信失败", m.cfg.ID), "err", err)
+		logger.Warn(fmt.Sprintf("[%s] 检查短信失败", m.cfg.ID), "storage", storage, "err", err)
 		return
 	}
-
 	if len(pdus) == 0 {
 		return
 	}
-
 	for _, pduHex := range pdus {
-		sender, content, timestamp := m.decodePDU(pduHex)
+		sender, content, timestamp, report, isReport := m.decodePDU(pduHex)
+		if isReport {
+			if m.statusReportHandler != nil {
+				m.statusReportHandler(report.MR, report.Status, report.Recipient)
+			}
+			continue
+		}
 		if m.smsCallback != nil && content != "" {
 			m.smsCallback(sender, content, timestamp)
 		}
 	}
-
-	// 删除所有短信
 	_ = m.SMSDeleteAll()
 }
 
@@ -1974,6 +2006,7 @@ func (m *Manager) SendSMSWithOptions(phone, message string, opts smscodec.Submit
 	defer m.SetBusy(false)
 
 	logger.Info(fmt.Sprintf("[%s] 准备发送短信 (PDU)", m.cfg.ID), "to", phone)
+	var refs []int
 
 	// 确保处于 PDU 模式
 	if _, err := m.ExecuteATHigh("AT+CMGF=0", 3*time.Second); err != nil {
@@ -2014,6 +2047,9 @@ func (m *Manager) SendSMSWithOptions(phone, message string, opts smscodec.Submit
 			if !strings.Contains(resp, "OK") && !strings.Contains(resp, "+CMGS:") {
 				return fmt.Errorf("发送分片 %d 失败: %s", i+1, resp)
 			}
+			if mr, ok := smscodec.ParseCMGSReference(resp); ok {
+				refs = append(refs, mr)
+			}
 		case err := <-req.errChan:
 			return fmt.Errorf("发送分片 %d 失败: %w", i+1, err)
 		case <-time.After(20 * time.Second):
@@ -2026,8 +2062,39 @@ func (m *Manager) SendSMSWithOptions(phone, message string, opts smscodec.Submit
 		}
 	}
 
-	logger.Info(fmt.Sprintf("[%s] 短信已发送", m.cfg.ID))
+	m.lastSubmitMu.Lock()
+	m.lastSubmitRefs = refs
+	m.lastSubmitMu.Unlock()
+	logger.Info(fmt.Sprintf("[%s] 短信已发送", m.cfg.ID), "cmgs_refs", refs)
 	return nil
+}
+
+func (m *Manager) TakeLastSubmitRefs() []int {
+	if m == nil {
+		return nil
+	}
+	m.lastSubmitMu.Lock()
+	defer m.lastSubmitMu.Unlock()
+	out := m.lastSubmitRefs
+	m.lastSubmitRefs = nil
+	return out
+}
+
+func (m *Manager) SetStatusReportHandler(fn func(mr int, status byte, recipient string)) {
+	if m == nil {
+		return
+	}
+	m.statusReportHandler = fn
+}
+
+func (m *Manager) APDUBusy() bool {
+	if m == nil {
+		return false
+	}
+	m.apduLeaseMu.Lock()
+	arb := m.apduArbiter
+	m.apduLeaseMu.Unlock()
+	return arb != nil && !arb.IsIdle()
 }
 
 // buildSMSPDUs 构建多段 SMS-SUBMIT PDU

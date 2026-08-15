@@ -69,6 +69,9 @@ func hasManagedQMINetwork(cfg config.DeviceConfig) bool {
 }
 
 func requiresQMICore(cfg config.DeviceConfig) bool {
+	if config.IsPCSCBackend(cfg.DeviceBackend) {
+		return false
+	}
 	if requiresMBIMCore(cfg) {
 		return false
 	}
@@ -85,6 +88,9 @@ func needsATPortDiscovery(cfg config.DeviceConfig) bool {
 }
 
 func requiresMBIMCore(cfg config.DeviceConfig) bool {
+	if config.IsPCSCBackend(cfg.DeviceBackend) {
+		return false
+	}
 	if resolvedBackendMode(cfg) == backend.BackendMBIM {
 		return true
 	}
@@ -205,13 +211,19 @@ func (p *Pool) AddWorkerFromConfig(devCfg config.DeviceConfig) (*Worker, error) 
 		p.mu.Unlock()
 		return nil, fmt.Errorf("设备 %s 正在初始化中，请勿重复触发", devCfg.ID)
 	}
-	if FreeDeviceLimitReached(len(p.workers)) {
+	if DeviceLimitReached(len(p.workers), p.deviceLimit()) {
 		p.mu.Unlock()
-		return nil, fmt.Errorf("%s", FreeDeviceWorkerLimitMessage())
+		return nil, fmt.Errorf("%s", DeviceWorkerLimitMessage(p.deviceLimit()))
 	}
 	p.rebuilding[devCfg.ID] = true
 	attempt := p.beginRebuildAttemptLocked(devCfg.ID)
 	p.mu.Unlock()
+
+	if config.IsPCSCBackend(devCfg.DeviceBackend) {
+		w, err := p.startPCSCReaderWorker(devCfg)
+		p.endRebuildAttemptIfCurrent(devCfg.ID, attempt)
+		return w, err
+	}
 
 	// 启动看门狗：如果本次启动流程因内部某次探测卡死（如 vendored QMI 库未正确
 	// 响应 context 取消）而长期不返回，强制释放 rebuilding 标记，避免设备槽位

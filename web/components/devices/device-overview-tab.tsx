@@ -27,6 +27,7 @@ import { useEventSource } from "@/lib/sse/use-event-source";
 import { ApiError } from "@/lib/api/errors";
 import { Sensitive } from "@/components/common/sensitive";
 import { E911Card } from "@/components/devices/e911-card";
+import { LaneBadge } from "@/components/common/lane-badge";
 import { TrafficChart } from "@/components/traffic/traffic-chart";
 import type { DeviceOverview } from "@/types/device";
 
@@ -142,6 +143,10 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
             <CardTitle className="text-base">标识</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
+            <Row
+              label="线路"
+              value={device.lane ? <LaneBadge lane={device.lane} /> : "未分线"}
+            />
             <Row label="设备 ID" value={<code className="text-xs">{device.id}</code>} />
             <Row label="IMEI" value={<Sensitive value={m?.imei} />} mono />
             <Row label="ICCID" value={<Sensitive value={m?.iccid} />} mono />

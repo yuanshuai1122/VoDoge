@@ -45,6 +45,8 @@ type deviceConfigDTO struct {
 	VoWiFiEnabled         bool    `json:"vowifi_enabled"`
 	DeviceBackend         string  `json:"device_backend,omitempty"`
 	ModuleVendor          string  `json:"module_vendor,omitempty"`
+	Lane                  string  `json:"lane,omitempty"`
+	ReaderName            string  `json:"reader_name,omitempty"`
 }
 
 func deviceConfigToDTO(c config.DeviceConfig) deviceConfigDTO {
@@ -75,6 +77,8 @@ func deviceConfigToDTO(c config.DeviceConfig) deviceConfigDTO {
 		VoWiFiEnabled:         c.VoWiFiEnabled,
 		DeviceBackend:         c.DeviceBackend,
 		ModuleVendor:          config.NormalizeModuleVendor(c.ModuleVendor),
+		Lane:                  config.NormalizeLane(c.Lane),
+		ReaderName:            strings.TrimSpace(c.ReaderName),
 	}
 }
 
@@ -131,7 +135,20 @@ func deviceConfigFromDTOWithBase(d deviceConfigDTO, base *config.DeviceConfig) c
 		VoWiFiEnabled:         d.VoWiFiEnabled,
 		DeviceBackend:         d.DeviceBackend,
 		ModuleVendor:          config.NormalizeModuleVendor(d.ModuleVendor),
+		Lane:                  config.NormalizeLane(d.Lane),
+		ReaderName:            strings.TrimSpace(d.ReaderName),
 	}
+}
+
+func workerActiveProfileName(w *device.Worker) string {
+	if w == nil || w.EsimMgr == nil {
+		return ""
+	}
+	name, err := w.EsimMgr.ActiveProfileName()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(name)
 }
 
 func boolPtr(v bool) *bool {
@@ -170,6 +187,9 @@ func (s *Server) handleDeviceMgmtList(c *gin.Context) {
 			PublicIPv6:             w.GetCachedIPv6(),
 			Interface:              cfg.Interface,
 			ESIMTransport:          config.NormalizeESIMTransport(cfg.ESIMTransport),
+			Lane:                   config.NormalizeLane(cfg.Lane),
+			ActiveESIMProfileName:  workerActiveProfileName(w),
+			DeviceBackend:          strings.ToLower(strings.TrimSpace(cfg.DeviceBackend)),
 			SMSEnabled:             cfg.SMSEnabled,
 			NetworkEnabled:         cfg.NetworkEnabled,
 			VoWiFiEnabled:          s.pool.IsVoWiFiActive(w.ID), // 使用多设备状态查询
@@ -210,6 +230,8 @@ func (s *Server) handleDeviceMgmtList(c *gin.Context) {
 			PublicIP:               "",
 			Interface:              dc.Interface,
 			ESIMTransport:          config.NormalizeESIMTransport(dc.ESIMTransport),
+			Lane:                   config.NormalizeLane(dc.Lane),
+			DeviceBackend:          strings.ToLower(strings.TrimSpace(dc.DeviceBackend)),
 			SMSEnabled:             true, // SMS 恒开（系统不变量）
 			NetworkEnabled:         dc.NetworkEnabled,
 			VoWiFiEnabled:          false, // 非运行设备无活跃 VoWiFi
@@ -222,7 +244,7 @@ func (s *Server) handleDeviceMgmtList(c *gin.Context) {
 	}
 
 	respondOKWith(c, items, gin.H{
-		"device_limit": device.DefaultFreeDeviceLimit,
+		"device_limit": s.deviceLimit(),
 	})
 }
 
@@ -265,6 +287,9 @@ func validateManagedNetworkConfig(cfg config.DeviceConfig) error {
 	}
 	if _, _, err := config.ResolveIPFamily(cfg.IPVersion); err != nil {
 		return err
+	}
+	if err := config.ValidateLane(cfg.Lane); err != nil {
+		return fmt.Errorf("不支持的 lane: %q，可选值: cn, intl，或留空", strings.TrimSpace(cfg.Lane))
 	}
 	// 零路径持久化后 control_device/interface 由运行时从 IMEI 发现，不再作为保存前置条件。
 	return nil
@@ -330,6 +355,9 @@ func detectDeviceBindingConflictInList(cfg config.DeviceConfig, excludeID string
 	if v := strings.TrimSpace(cfg.ATPort); v != "" {
 		keys = append(keys, key{field: "at_port", value: v})
 	}
+	if v := strings.TrimSpace(cfg.ReaderName); v != "" {
+		keys = append(keys, key{field: "reader_name", value: v})
+	}
 	if len(keys) == 0 {
 		return nil
 	}
@@ -362,6 +390,10 @@ func detectDeviceBindingConflictInList(cfg config.DeviceConfig, excludeID string
 				}
 			case "at_port":
 				if strings.TrimSpace(existing.ATPort) == k.value {
+					return &deviceBindingConflict{Field: k.field, Value: k.value, OtherID: existingID}
+				}
+			case "reader_name":
+				if strings.TrimSpace(existing.ReaderName) == k.value {
 					return &deviceBindingConflict{Field: k.field, Value: k.value, OtherID: existingID}
 				}
 			}
@@ -522,10 +554,13 @@ type addDeviceRequest struct {
 func validateDeviceBackendConfig(cfg config.DeviceConfig) error {
 	backend := strings.ToLower(strings.TrimSpace(cfg.DeviceBackend))
 	switch backend {
-	case "", "at", "qmi", "mbim":
+	case "", "at", "qmi", "mbim", config.DeviceBackendPCSC:
 		// 合法值
 	default:
-		return fmt.Errorf("不支持的 device_backend: %q，可选值: at, qmi, mbim", backend)
+		return fmt.Errorf("不支持的 device_backend: %q，可选值: at, qmi, mbim, pcsc", backend)
+	}
+	if config.IsPCSCBackend(cfg.DeviceBackend) && strings.TrimSpace(cfg.ReaderName) == "" {
+		return fmt.Errorf("pcsc 设备必须填写 reader_name")
 	}
 	if err := config.ValidateModuleVendor(cfg.ModuleVendor); err != nil {
 		return fmt.Errorf("不支持的 module_vendor: %q，可选值: quectel, simcom", strings.TrimSpace(cfg.ModuleVendor))
@@ -533,9 +568,9 @@ func validateDeviceBackendConfig(cfg config.DeviceConfig) error {
 	return nil
 }
 
-func validateFreeDeviceConfigLimit(devices []config.DeviceConfig) error {
-	if device.FreeDeviceLimitReached(len(devices)) {
-		return fmt.Errorf("%s", device.FreeDeviceAddLimitMessage())
+func validateFreeDeviceConfigLimit(devices []config.DeviceConfig, limit int) error {
+	if device.DeviceLimitReached(len(devices), limit) {
+		return fmt.Errorf("%s", device.DeviceAddLimitMessage(limit))
 	}
 	return nil
 }
@@ -567,12 +602,16 @@ func (s *Server) handleDeviceMgmtAddDevice(c *gin.Context) {
 			fmt.Sprintf("设备资源冲突：%s=%s 已被设备 %s 使用", conflict.Field, conflict.Value, conflict.OtherID))
 		return
 	}
-	if err := validateFreeDeviceConfigLimit(config.ListDevices()); err != nil {
+	if err := validateFreeDeviceConfigLimit(config.ListDevices(), s.deviceLimit()); err != nil {
 		fail(c, http.StatusConflict, "", err.Error())
 		return
 	}
-	// MBIM 设备使用 MBIM DeviceCaps 探测 IMEI，非 MBIM 设备使用 QMI 探测
-	if strings.ToLower(strings.TrimSpace(newCfg.DeviceBackend)) == "mbim" {
+	// 读卡器没有模组 IMEI；MBIM 走 DeviceCaps，其余走 QMI。
+	if config.IsPCSCBackend(newCfg.DeviceBackend) {
+		newCfg.ModemIMEI = ""
+		newCfg.NetworkEnabled = false
+		newCfg.VoWiFiEnabled = false
+	} else if strings.ToLower(strings.TrimSpace(newCfg.DeviceBackend)) == "mbim" {
 		if config.NormalizeIMEI(newCfg.ModemIMEI) == "" && strings.TrimSpace(newCfg.ControlDevice) != "" {
 			if mbimIMEI, err := device.ProbeIMEIViaMBIM(newCfg.ControlDevice); err == nil && mbimIMEI != "" {
 				newCfg.ModemIMEI = mbimIMEI
