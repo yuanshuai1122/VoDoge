@@ -175,7 +175,7 @@ func TestBridgeDetectsATTAddressValidationOnlyForMutationResponses(t *testing.T)
 		"window.top.postMessage",
 		"BroadcastChannel",
 		"localStorage.setItem",
-		"vohive-websheet-complete",
+		"vodoge-websheet-complete",
 	} {
 		if !strings.Contains(script, marker) {
 			t.Fatalf("bridge script missing %q: %s", marker, script)

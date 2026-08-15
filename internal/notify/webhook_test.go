@@ -22,7 +22,7 @@ func TestWebhookSignature(t *testing.T) {
 	var receivedBody []byte
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedSig = r.Header.Get("X-Vohive-Signature")
+		receivedSig = r.Header.Get("X-Vodoge-Signature")
 		receivedBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -56,7 +56,7 @@ func TestWebhookNoSignatureWhenSecretEmpty(t *testing.T) {
 	var hasSigHeader bool
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hasSigHeader = r.Header.Get("X-Vohive-Signature") != ""
+		hasSigHeader = r.Header.Get("X-Vodoge-Signature") != ""
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -75,7 +75,7 @@ func TestWebhookNoSignatureWhenSecretEmpty(t *testing.T) {
 	}
 
 	if hasSigHeader {
-		t.Error("secret 为空时不应携带 X-Vohive-Signature header")
+		t.Error("secret 为空时不应携带 X-Vodoge-Signature header")
 	}
 }
 
@@ -287,7 +287,7 @@ func TestWebhookCustomHeadersCannotOverrideProtected(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotCT = r.Header.Get("Content-Type")
-		gotSig = r.Header.Get("X-Vohive-Signature")
+		gotSig = r.Header.Get("X-Vodoge-Signature")
 		gotBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -300,7 +300,7 @@ func TestWebhookCustomHeadersCannotOverrideProtected(t *testing.T) {
 		Headers: map[string]string{
 			"Content-Type":       "text/plain",    // 尝试覆盖
 			"content-type":       "text/xml",      // 大小写变体也应被拦截
-			"X-Vohive-Signature": "sha256=forged", // 尝试伪造签名
+			"X-Vodoge-Signature": "sha256=forged", // 尝试伪造签名
 			"":                   "ignored",       // 空 key 应被丢弃
 		},
 	})

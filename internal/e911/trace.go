@@ -52,7 +52,7 @@ func traceEntitlementRequest(deviceID string, req *runtimee911.HTTPRequest) {
 	if req == nil {
 		return
 	}
-	raw := envFlag("VOHIVE_E911_TRACE_RAW")
+	raw := envFlag("VODOGE_E911_TRACE_RAW")
 	body := decodeEntitlementTraceBody(req.Body)
 	logger.RunDebug("E911 entitlement request",
 		"device", deviceID,
@@ -64,7 +64,7 @@ func traceEntitlementRequest(deviceID string, req *runtimee911.HTTPRequest) {
 }
 
 func traceEntitlementResponse(deviceID, url string, statusCode int, body []byte) {
-	raw := envFlag("VOHIVE_E911_TRACE_RAW")
+	raw := envFlag("VODOGE_E911_TRACE_RAW")
 	body = decodeEntitlementTraceBody(body)
 	logger.RunDebug("E911 entitlement response",
 		"device", deviceID,

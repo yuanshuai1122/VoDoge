@@ -413,12 +413,6 @@ func (m *Manager) startBackendLocked(id string) error {
 		"VODOGE_PLUGIN_ID="+id,
 		"VODOGE_PLUGIN_LISTEN="+addr,
 		"VODOGE_PLUGIN_DATA_DIR="+dataDir,
-		"VODOG_PLUGIN_ID="+id,
-		"VODOG_PLUGIN_LISTEN="+addr,
-		"VODOG_PLUGIN_DATA_DIR="+dataDir,
-		"VOCAT_PLUGIN_ID="+id,
-		"VOCAT_PLUGIN_LISTEN="+addr,
-		"VOCAT_PLUGIN_DATA_DIR="+dataDir,
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var stderr strings.Builder

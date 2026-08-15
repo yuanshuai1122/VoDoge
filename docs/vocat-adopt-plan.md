@@ -156,10 +156,10 @@ VoCat 比我们超前的、值得抄的三块：
 
 **软件先行（2026-08-15）：** 对照 VoCat 的 zip 清单、安装/启停/卸载、侧栏 iframe、本机后端反代，**不搬源码**。
 
-- 清单 `vodoge-plugin.json`（也认 `vocat-plugin.json`），`schema_version=1`。
+- 清单 `vodoge-plugin.json`，`schema_version=1`。
 - `GET/POST/PUT/DELETE /api/extensions*`；上传字段 `package`。
 - 从 URL 安装只走 HTTPS，解析后的地址不能是内网。
-- 后端 `VODOGE_PLUGIN_ID` / `LISTEN` / `DATA_DIR`，并带 `VOCAT_*` 别名。
+- 后端 `VODOGE_PLUGIN_ID` / `LISTEN` / `DATA_DIR`。
 - 设置页安装；侧栏按 contribution 插入；`/plugins?plugin=&contribution=` iframe。
 
 插件以管理员权限跑，只装信任的包。硬件无关。

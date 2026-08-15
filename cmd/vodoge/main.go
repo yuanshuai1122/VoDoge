@@ -226,7 +226,7 @@ func main() {
 				sipgwCfg.SIP.Transport = "udp"
 			}
 			if sipgwCfg.SIP.Realm == "" {
-				sipgwCfg.SIP.Realm = "vohive.local"
+				sipgwCfg.SIP.Realm = "vodoge.local"
 			}
 			if sipgwCfg.Media.RTPPortMin == 0 {
 				sipgwCfg.Media.RTPPortMin = 10000

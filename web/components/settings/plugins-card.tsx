@@ -134,7 +134,7 @@ export function PluginsCard() {
           <input
             ref={fileRef}
             type="file"
-            accept=".zip,.vodoge-plugin,.vodog-plugin,.vocat-plugin,application/zip"
+            accept=".zip,.vodoge-plugin,application/zip"
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0];

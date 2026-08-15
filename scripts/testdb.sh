@@ -11,12 +11,12 @@
 #   scripts/testdb.sh dsn      打印可用的 DSN
 set -euo pipefail
 
-NAME="${TEST_DB_CONTAINER:-vohive-testdb}"
-NETWORK="${TEST_DB_NETWORK:-vohive-test-net}"
+NAME="${TEST_DB_CONTAINER:-vodoge-testdb}"
+NETWORK="${TEST_DB_NETWORK:-vodoge-test-net}"
 IMAGE="${TEST_DB_IMAGE:-postgres:16-alpine}"
-DB="${TEST_DB_NAME:-vohive_test}"
-USER="${TEST_DB_USER:-vohive}"
-PASS="${TEST_DB_PASSWORD:-vohive}"
+DB="${TEST_DB_NAME:-vodoge_test}"
+USER="${TEST_DB_USER:-vodoge}"
+PASS="${TEST_DB_PASSWORD:-vodoge}"
 # 宿主机端口，便于本机直接连；容器间通信走 NETWORK 上的容器名
 HOST_PORT="${TEST_DB_PORT:-5433}"
 

@@ -22,9 +22,9 @@ server:
 
 # 持久化：仅支持 PostgreSQL，无 SQLite 回退路径。
 # DSN 为空或连接失败时进程直接退出。
-# 优先级：VODOGE_DB_DSN > VOHIVE_DB_DSN > DATABASE_URL > 本文件 database.dsn
+# 优先级：VODOGE_DB_DSN > DATABASE_URL > 本文件 database.dsn
 database:
-  dsn: "host=127.0.0.1 user=vohive password=vohive dbname=vohive port=5432 sslmode=disable TimeZone=UTC"
+  dsn: "host=127.0.0.1 user=vodoge password=vodoge dbname=vodoge port=5432 sslmode=disable TimeZone=UTC"
   max_open_conns: 20
   max_idle_conns: 5
   conn_max_lifetime: 30m

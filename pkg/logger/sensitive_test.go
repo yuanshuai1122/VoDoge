@@ -17,7 +17,7 @@ func TestRedactSIPRaw(t *testing.T) {
 }
 
 func TestRedactSMSContentDefaultHidden(t *testing.T) {
-	t.Setenv("VOHIVE_SMS_LOG_CONTENT", "")
+	t.Setenv("VODOGE_SMS_LOG_CONTENT", "")
 	out := RedactSMSContent("hello world")
 	if !strings.Contains(out, "[REDACTED") {
 		t.Fatalf("sms content should be hidden by default: %s", out)
@@ -25,7 +25,7 @@ func TestRedactSMSContentDefaultHidden(t *testing.T) {
 }
 
 func TestRedactSMSContentEnabled(t *testing.T) {
-	t.Setenv("VOHIVE_SMS_LOG_CONTENT", "true")
+	t.Setenv("VODOGE_SMS_LOG_CONTENT", "true")
 	in := "hello world"
 	out := RedactSMSContent(in)
 	if out != in {

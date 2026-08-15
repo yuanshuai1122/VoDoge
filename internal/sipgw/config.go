@@ -27,7 +27,7 @@ type LinphonePushConfig struct {
 type SIPConfig struct {
 	Listen     string `yaml:"listen"`      // 监听地址，如 "0.0.0.0:5060"
 	Transport  string `yaml:"transport"`   // 传输协议: udp/tcp/tls
-	Realm      string `yaml:"realm"`       // SIP 认证域，如 "vohive.local"
+	Realm      string `yaml:"realm"`       // SIP 认证域，如 "vodoge.local"
 	ExternalIP string `yaml:"external_ip"` // 公网 IP (可选，用于 NAT)
 }
 
@@ -77,7 +77,7 @@ func DefaultConfig() Config {
 		SIP: SIPConfig{
 			Listen:    "0.0.0.0:5060",
 			Transport: "udp",
-			Realm:     "vohive.local",
+			Realm:     "vodoge.local",
 		},
 		Users: []UserConfig{},
 		Media: MediaConfig{

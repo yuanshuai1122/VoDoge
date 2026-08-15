@@ -115,7 +115,7 @@ bash scripts/ufi103s-enable-qmi.sh --serial 34d12d26 --restore-rndis
 
 ```bash
 cd /opt/vohive
-# config/config.yaml 与 .env（VOHIVE_POSTGRES_PASSWORD）已就位
+# config/config.yaml 与 .env（VODOGE_POSTGRES_PASSWORD）已就位
 sudo docker build --progress=plain -t vohive:latest --build-arg VERSION=lab-$(date +%Y%m%d) .
 sudo docker compose --env-file .env up -d
 curl -sS http://127.0.0.1:7575/ping

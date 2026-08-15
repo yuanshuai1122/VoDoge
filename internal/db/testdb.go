@@ -26,7 +26,7 @@ func OpenTestDB(t testing.TB) {
 	t.Helper()
 	dsn := TestDSN()
 	if dsn == "" {
-		t.Skip("set TEST_DATABASE_URL or VOHIVE_DB_DSN to a PostgreSQL DSN for database tests")
+		t.Skip("set TEST_DATABASE_URL or VODOGE_DB_DSN to a PostgreSQL DSN for database tests")
 	}
 	testDBMu.Lock()
 	defer testDBMu.Unlock()
@@ -50,7 +50,7 @@ func ReopenTestDB(t testing.TB) {
 	t.Helper()
 	dsn := TestDSN()
 	if dsn == "" {
-		t.Skip("set TEST_DATABASE_URL or VOHIVE_DB_DSN to a PostgreSQL DSN for database tests")
+		t.Skip("set TEST_DATABASE_URL or VODOGE_DB_DSN to a PostgreSQL DSN for database tests")
 	}
 	testDBMu.Lock()
 	defer testDBMu.Unlock()

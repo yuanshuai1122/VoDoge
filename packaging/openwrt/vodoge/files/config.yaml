@@ -10,9 +10,9 @@ server:
 
 # 本服务仅支持 PostgreSQL，不再内置文件数据库。
 # 必须改成一个实际可达的实例，否则进程启动时会直接退出。
-# 也可以改用环境变量 VOHIVE_DB_DSN 注入（优先级高于本文件）。
+# 也可以改用环境变量 VODOGE_DB_DSN 注入（优先级高于本文件）。
 database:
-  dsn: "host=127.0.0.1 user=vohive password=vohive dbname=vohive port=5432 sslmode=disable TimeZone=UTC"
+  dsn: "host=127.0.0.1 user=vodoge password=vodoge dbname=vodoge port=5432 sslmode=disable TimeZone=UTC"
   max_open_conns: 20
   max_idle_conns: 5
   conn_max_lifetime: 30m

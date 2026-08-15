@@ -50,7 +50,7 @@ type WebhookChannel struct {
 // protectedWebhookHeaders 是系统强制设置、不允许被自定义头覆盖的请求头（小写）
 var protectedWebhookHeaders = map[string]struct{}{
 	"content-type":       {},
-	"x-vohive-signature": {},
+	"x-vodoge-signature": {},
 }
 
 type SendWithContextResult struct {
@@ -281,7 +281,7 @@ func (w *WebhookChannel) doPost(targetURL string, body []byte, signature string)
 		req.Header.Set("User-Agent", "Vohive-Webhook/1.0")
 	}
 	if signature != "" {
-		req.Header.Set("X-Vohive-Signature", signature)
+		req.Header.Set("X-Vodoge-Signature", signature)
 	}
 
 	resp, err := w.client.Do(req)

@@ -169,7 +169,7 @@ func (h *httpProxyHandler) checkProxyAuth(r *http.Request) bool {
 }
 
 func (h *httpProxyHandler) writeProxyAuthRequired(w http.ResponseWriter) {
-	w.Header().Set("Proxy-Authenticate", `Basic realm="vohive-proxy"`)
+	w.Header().Set("Proxy-Authenticate", `Basic realm="vodoge-proxy"`)
 	w.WriteHeader(http.StatusProxyAuthRequired)
 	_, _ = io.WriteString(w, "Proxy Authentication Required\n")
 }

@@ -164,8 +164,6 @@ func (s *Server) handleExtensionBackend(c *gin.Context) {
 		r.Header.Del("X-CSRF-Token")
 		if id != "" {
 			r.Header.Set("X-VoDoge-Plugin-ID", id)
-			r.Header.Set("X-VoDog-Plugin-ID", id)
-			r.Header.Set("X-VoCat-Plugin-ID", id)
 		}
 	}
 	proxy.ModifyResponse = func(resp *http.Response) error {

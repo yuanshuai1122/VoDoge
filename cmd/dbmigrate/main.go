@@ -69,7 +69,7 @@ type options struct {
 func main() {
 	var opts options
 	flag.StringVar(&opts.sqlitePath, "sqlite", "", "旧 SQLite 文件路径（必填）")
-	flag.StringVar(&opts.postgresDSN, "postgres", "", "目标 PostgreSQL DSN；留空则取 VOHIVE_DB_DSN / DATABASE_URL")
+	flag.StringVar(&opts.postgresDSN, "postgres", "", "目标 PostgreSQL DSN；留空则取 VODOGE_DB_DSN / DATABASE_URL")
 	flag.BoolVar(&opts.dryRun, "dry-run", false, "只报告将要迁移什么，不写入目标库")
 	flag.IntVar(&opts.batchSize, "batch", 500, "每批插入行数")
 	flag.BoolVar(&opts.allowNonEmpty, "allow-nonempty", false, "目标表非空时仍然导入（主键冲突的行跳过）")
@@ -109,7 +109,7 @@ func run(opts options) error {
 
 	dsn := db.ResolveDSN(opts.postgresDSN)
 	if strings.TrimSpace(dsn) == "" {
-		return errors.New("目标 DSN 为空：用 --postgres 指定，或设置 VOHIVE_DB_DSN / DATABASE_URL")
+		return errors.New("目标 DSN 为空：用 --postgres 指定，或设置 VODOGE_DB_DSN / DATABASE_URL")
 	}
 
 	// AutoMigrate 建表：目标库通常是全新的，schema 以 Go 模型为准。

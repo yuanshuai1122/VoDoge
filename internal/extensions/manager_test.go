@@ -30,7 +30,7 @@ func pluginZip(t *testing.T, manifest string, files map[string]string) []byte {
 			t.Fatal(err)
 		}
 	}
-	write(ManifestFilenameVodog, manifest)
+	write(ManifestFilename, manifest)
 	for name, body := range files {
 		write(name, body)
 	}
@@ -153,10 +153,10 @@ func TestInstallURLUsesFetcherAndRejectsChecksum(t *testing.T) {
 	}
 }
 
-func TestInstallAcceptsVocatManifestName(t *testing.T) {
+func TestInstallRejectsLegacyManifestName(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	w, _ := zw.Create(ManifestFilenameVocat)
+	w, _ := zw.Create("vocat-plugin.json")
 	_, _ = w.Write([]byte(sidebarManifest("vocat-compat")))
 	w, _ = zw.Create("index.html")
 	_, _ = w.Write([]byte("ok"))
@@ -166,9 +166,8 @@ func TestInstallAcceptsVocatManifestName(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer mgr.Close()
-	inst, err := mgr.InstallZip(buf.Bytes(), "")
-	if err != nil || inst.ID != "vocat-compat" {
-		t.Fatalf("%+v %v", inst, err)
+	if _, err := mgr.InstallZip(buf.Bytes(), ""); err == nil {
+		t.Fatal("legacy vocat-plugin.json must be rejected")
 	}
 }
 
@@ -234,7 +233,7 @@ func main() {
 		"contributions": [{"id": "page", "label": "P", "location": "sidebar", "entry": "index.html"}],
 		"backend": {"commands": {%q: %q}}
 	}`, runtime.GOOS+"/"+runtime.GOARCH, rel)
-	w, _ := zw.Create(ManifestFilenameVodog)
+	w, _ := zw.Create(ManifestFilename)
 	_, _ = w.Write([]byte(mf))
 	w, _ = zw.Create("index.html")
 	_, _ = w.Write([]byte("ui"))

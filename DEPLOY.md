@@ -10,8 +10,8 @@
 ### 1. 准备目录
 
 ```bash
-mkdir -p vohive/{config,data,logs}
-cd vohive
+mkdir -p vodoge/{config,data,logs}
+cd vodoge
 ```
 
 ### 2. 创建配置文件
@@ -29,7 +29,7 @@ web:
 EOF
 ```
 
-> 数据库连接串通过环境变量 `VOHIVE_DB_DSN` 注入（见下方 compose），
+> 数据库连接串通过环境变量 `VODOGE_DB_DSN` 注入（见下方 compose），
 > 优先级高于配置文件里的 `database.dsn`。
 
 ### 3. 启动
@@ -40,25 +40,25 @@ EOF
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: vohive-postgres
+    container_name: vodoge-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: vohive
-      POSTGRES_PASSWORD: ${VOHIVE_POSTGRES_PASSWORD:-vohive}
-      POSTGRES_DB: vohive
+      POSTGRES_USER: vodoge
+      POSTGRES_PASSWORD: ${VODOGE_POSTGRES_PASSWORD:-vodoge}
+      POSTGRES_DB: vodoge
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vohive -d vohive"]
+      test: ["CMD-SHELL", "pg_isready -U vodoge -d vodoge"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  vohive:
-    image: vohive:latest
-    container_name: vohive
+  vodoge:
+    image: ghcr.io/yuanshuai1122/vodoge:latest
+    container_name: vodoge
     restart: unless-stopped
     network_mode: host
     privileged: true
@@ -71,7 +71,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - CONFIG_PATH=/app/config/config.yaml
-      - VOHIVE_DB_DSN=host=127.0.0.1 user=vohive password=${VOHIVE_POSTGRES_PASSWORD:-vohive} dbname=vohive port=5432 sslmode=disable TimeZone=UTC
+      - VODOGE_DB_DSN=host=127.0.0.1 user=vodoge password=${VODOGE_POSTGRES_PASSWORD:-vodoge} dbname=vodoge port=5432 sslmode=disable TimeZone=UTC
       # 可选：访问 Telegram 等外部服务的代理
       # - HTTPS_PROXY=http://proxy-ip:port
     depends_on:
@@ -88,9 +88,9 @@ docker compose up -d
 
 > `network_mode: host` 下容器与宿主共享网络，因此 DSN 用 `127.0.0.1`。
 > PostgreSQL 只发布到宿主机回环地址；生产部署请在 `.env` 中设置
-> `VOHIVE_POSTGRES_PASSWORD`，不要使用默认值。
+> `VODOGE_POSTGRES_PASSWORD`，不要使用默认值。
 > 若改用端口映射（如 Windows/Docker Desktop），请把 host 改为 `postgres`
-> 并为 vohive 加上 `ports: ["7575:7575"]`。
+> 并为 vodoge 加上 `ports: ["7575:7575"]`。
 
 ### 4. 访问
 
@@ -122,9 +122,9 @@ bash scripts/ci.sh
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `VOHIVE_DB_DSN` | — | **必需**。PostgreSQL 连接串；为空或连不上时进程退出 |
-| `DATABASE_URL` | — | `VOHIVE_DB_DSN` 未设置时的备选 |
-| `VOHIVE_POSTGRES_PASSWORD` | `vohive` | Compose 使用的 PostgreSQL 密码；生产部署必须覆盖 |
+| `VODOGE_DB_DSN` | — | **必需**。PostgreSQL 连接串；为空或连不上时进程退出 |
+| `DATABASE_URL` | — | `VODOGE_DB_DSN` 未设置时的备选 |
+| `VODOGE_POSTGRES_PASSWORD` | `vodoge` | Compose 使用的 PostgreSQL 密码；生产部署必须覆盖 |
 | `CONFIG_PATH` | `/app/config/config.yaml` | 配置文件路径 |
 | `TZ` | `UTC` | 时区 |
 | `HTTPS_PROXY` | — | 外部服务代理（如 Telegram API） |
@@ -142,13 +142,13 @@ bash scripts/ci.sh
 业务数据全部在 PostgreSQL，备份方式是 `pg_dump`，不再是拷贝数据库文件：
 
 ```bash
-docker exec vohive-postgres pg_dump -U vohive vohive > vohive-$(date +%F).sql
+docker exec vodoge-postgres pg_dump -U vodoge vodoge > vodoge-$(date +%F).sql
 ```
 
 恢复：
 
 ```bash
-cat vohive-2026-01-01.sql | docker exec -i vohive-postgres psql -U vohive -d vohive
+cat vodoge-2026-01-01.sql | docker exec -i vodoge-postgres psql -U vodoge -d vodoge
 ```
 
 ## 🤖 Telegram Bot

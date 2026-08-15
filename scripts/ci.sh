@@ -11,7 +11,7 @@ cd "$ROOT"
 export GOWORK="${GOWORK:-off}"
 
 # 需要 Docker 的任务共用的镜像名
-VET_IMAGE="${VET_IMAGE:-vohive-vet}"
+VET_IMAGE="${VET_IMAGE:-vodoge-vet}"
 
 find_go() {
 	if [[ -n "${GO_BIN:-}" ]]; then
@@ -173,8 +173,8 @@ go_tests() {
 	local pkgs
 	pkgs="${CI_GO_TEST_PACKAGES:-./internal/... ./pkg/... ./cmd/...}"
 	run bash scripts/testdb.sh ensure
-	run docker run --rm --network "${TEST_DB_NETWORK:-vohive-test-net}" \
-		-e TEST_DATABASE_URL="${TEST_DATABASE_URL:-host=vohive-testdb user=vohive password=vohive dbname=vohive_test port=5432 sslmode=disable TimeZone=UTC}" \
+	run docker run --rm --network "${TEST_DB_NETWORK:-vodoge-test-net}" \
+		-e TEST_DATABASE_URL="${TEST_DATABASE_URL:-host=vodoge-testdb user=vodoge password=vodoge dbname=vodoge_test port=5432 sslmode=disable TimeZone=UTC}" \
 		"$VET_IMAGE" sh -c "go test -p 1 $pkgs"
 }
 
@@ -197,7 +197,7 @@ build_version() {
 
 image_build() {
 	need_docker
-	run docker build --build-arg VERSION="$(build_version)" -t "${VOHIVE_IMAGE:-vohive:latest}" .
+	run docker build --build-arg VERSION="$(build_version)" -t "${VODOGE_IMAGE:-vodoge:latest}" .
 }
 
 # 交叉构建 arm64 与 armv7，验证目标平台产物真的能出来。
@@ -221,7 +221,7 @@ multiarch_build() {
 		# 顺便让产物可以被检查（见 docs 里的 ELF 头验证）。
 		run docker buildx build --platform "$platform" \
 			--build-arg VERSION="$version" \
-			-t "vohive:${platform//\//-}" --load .
+			-t "vodoge:${platform//\//-}" --load .
 	done
 }
 
@@ -246,10 +246,10 @@ Tasks:
 
 Environment:
   GO_BIN               path to go binary (only needed by tidy/build)
-  VET_IMAGE            image name for the vet/test container (default vohive-vet)
+  VET_IMAGE            image name for the vet/test container (default vodoge-vet)
   TEST_DATABASE_URL    override the throwaway test database
   CI_GO_TEST_PACKAGES  package list for tests
-  VOHIVE_IMAGE         production image tag (default vohive:latest)
+  VODOGE_IMAGE         production image tag (default vodoge:latest)
   MULTIARCH_PLATFORMS  platforms for multiarch (default "linux/arm64 linux/arm/v7")
 USAGE
 }

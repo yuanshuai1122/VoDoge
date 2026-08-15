@@ -5,15 +5,15 @@
 #   VODOGE_DIR=/opt/vodoge bash scripts/install.sh
 set -euo pipefail
 
-REPO="${VODOGE_REPO:-${VODOG_REPO:-yuanshuai1122/VoDoge}}"
-IMAGE="${VODOGE_IMAGE:-${VODOG_IMAGE:-ghcr.io/yuanshuai1122/vodoge:latest}}"
-INSTALL_DIR="${VODOGE_DIR:-${VODOG_DIR:-/opt/vodoge}}"
-PG_USER="${VODOGE_POSTGRES_USER:-${VODOG_POSTGRES_USER:-vodoge}}"
-PG_PASS="${VODOGE_POSTGRES_PASSWORD:-${VODOG_POSTGRES_PASSWORD:-vodoge}}"
-PG_DB="${VODOGE_POSTGRES_DB:-${VODOG_POSTGRES_DB:-vodoge}}"
-WEB_USER="${VODOGE_WEB_USER:-${VODOG_WEB_USER:-admin}}"
-WEB_PASS="${VODOGE_WEB_PASSWORD:-${VODOG_WEB_PASSWORD:-admin123}}"
-PORT="${VODOGE_PORT:-${VODOG_PORT:-7575}}"
+REPO="${VODOGE_REPO:-yuanshuai1122/VoDoge}"
+IMAGE="${VODOGE_IMAGE:-ghcr.io/yuanshuai1122/vodoge:latest}"
+INSTALL_DIR="${VODOGE_DIR:-/opt/vodoge}"
+PG_USER="${VODOGE_POSTGRES_USER:-vodoge}"
+PG_PASS="${VODOGE_POSTGRES_PASSWORD:-vodoge}"
+PG_DB="${VODOGE_POSTGRES_DB:-vodoge}"
+WEB_USER="${VODOGE_WEB_USER:-admin}"
+WEB_PASS="${VODOGE_WEB_PASSWORD:-admin123}"
+PORT="${VODOGE_PORT:-7575}"
 
 need_cmd() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -123,11 +123,10 @@ latest_tag() {
 
 install_binary() {
 	need_cmd curl
-	if [[ -z "${VODOGE_DB_DSN:-${VODOG_DB_DSN:-}}" ]]; then
+	if [[ -z "${VODOGE_DB_DSN:-}" ]]; then
 		printf '二进制安装需要已有 PostgreSQL，并设置 VODOGE_DB_DSN。\n例如：export VODOGE_DB_DSN="host=127.0.0.1 user=vodoge password=vodoge dbname=vodoge port=5432 sslmode=disable"\n' >&2
 		return 1
 	fi
-	VODOGE_DB_DSN="${VODOGE_DB_DSN:-${VODOG_DB_DSN}}"
 	local tag arch asset url bin
 	tag="${VODOGE_VERSION:-$(latest_tag)}"
 	if [[ -z "$tag" ]]; then

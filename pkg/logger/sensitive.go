@@ -16,7 +16,7 @@ func envEnabled(name string) bool {
 }
 
 func envEnabledPrefixed(suffix string) bool {
-	return envEnabled("VODOGE_"+suffix) || envEnabled("VODOG_"+suffix) || envEnabled("VOHIVE_"+suffix)
+	return envEnabled("VODOGE_" + suffix)
 }
 
 // ShouldLogSIPRaw 返回是否允许输出 SIP 原文。
@@ -52,7 +52,7 @@ func RedactSIPRaw(raw string) string {
 	return strings.Join(lines, "\n")
 }
 
-// RedactSMSContent 统一短信内容脱敏；开启 VOHIVE_SMS_LOG_CONTENT 时返回明文。
+// RedactSMSContent 统一短信内容脱敏；开启 VODOGE_SMS_LOG_CONTENT 时返回明文。
 func RedactSMSContent(content string) string {
 	if ShouldLogSMSContent() {
 		return content

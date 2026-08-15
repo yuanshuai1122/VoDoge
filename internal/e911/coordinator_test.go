@@ -19,6 +19,7 @@ func TestCoordinatorDoesNotRunEntitlementProbes(t *testing.T) {
 		"runATTBootstrapProbe",
 		"runTS43Probe",
 		"VOHIVE_E911_ATT_CACHED_TOKEN",
+		"VODOGE_E911_ATT_CACHED_TOKEN",
 		"debugATTCachedToken",
 	} {
 		if strings.Contains(source, forbidden) {
@@ -69,7 +70,7 @@ func TestHTTPClientAdapterUsesConfiguredEntitlementClient(t *testing.T) {
 }
 
 func TestBuildRuntimeE911IdentityIgnoresDebugCachedTokenEnv(t *testing.T) {
-	t.Setenv("VOHIVE_E911_ATT_CACHED_TOKEN", " cached-token-value ")
+	t.Setenv("VODOGE_E911_ATT_CACHED_TOKEN", " cached-token-value ")
 
 	got := buildRuntimeE911Identity(modem.DeviceStatus{
 		IMSI: "310280233641503",

@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: vodoge
-      POSTGRES_PASSWORD: ${VODOGE_POSTGRES_PASSWORD:-${VODOG_POSTGRES_PASSWORD:-${VOHIVE_POSTGRES_PASSWORD:-vodoge}}}
+      POSTGRES_PASSWORD: ${VODOGE_POSTGRES_PASSWORD:-vodoge}
       POSTGRES_DB: vodoge
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -21,7 +21,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${VODOGE_IMAGE:-${VODOG_IMAGE:-ghcr.io/yuanshuai1122/vodoge:latest}}
+    image: ${VODOGE_IMAGE:-ghcr.io/yuanshuai1122/vodoge:latest}
     container_name: vodoge
     restart: unless-stopped
     network_mode: "host"
@@ -33,7 +33,7 @@ services:
       - /dev:/dev
     environment:
       - TZ=Asia/Shanghai
-      - VODOGE_DB_DSN=host=127.0.0.1 user=vodoge password=${VODOGE_POSTGRES_PASSWORD:-${VODOG_POSTGRES_PASSWORD:-${VOHIVE_POSTGRES_PASSWORD:-vodoge}}} dbname=vodoge port=5432 sslmode=disable TimeZone=UTC
+      - VODOGE_DB_DSN=host=127.0.0.1 user=vodoge password=${VODOGE_POSTGRES_PASSWORD:-vodoge} dbname=vodoge port=5432 sslmode=disable TimeZone=UTC
     depends_on:
       postgres:
         condition: service_healthy

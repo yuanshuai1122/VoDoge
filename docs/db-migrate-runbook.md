@@ -56,7 +56,7 @@ go run ./cmd/dbmigrate --sqlite ./data/vohive.db --postgres "host=127.0.0.1 user
 结束时会做**行数校验**：任何一张表在目标库的行数少于源库，命令以非零码退出并列出差异。
 校验通过时打印 `行数校验通过。`
 
-`--postgres` 可省略，此时按 `VOHIVE_DB_DSN` → `DATABASE_URL` 的顺序取，与服务本身一致。
+`--postgres` 可省略，此时按 `VODOGE_DB_DSN` → `DATABASE_URL` 的顺序取，与服务本身一致。
 
 ---
 

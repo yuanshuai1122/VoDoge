@@ -4,9 +4,9 @@ START=99
 STOP=10
 USE_PROCD=1
 
-PROG=/usr/bin/vohive
-CONFIG=/etc/vohive/config.yaml
-WORKDIR=/var/lib/vohive
+PROG=/usr/bin/vodoge
+CONFIG=/etc/vodoge/config.yaml
+WORKDIR=/var/lib/vodoge
 
 start_service() {
 	mkdir -p "$WORKDIR/data" "$WORKDIR/logs"
@@ -24,5 +24,5 @@ start_service() {
 }
 
 service_triggers() {
-	procd_add_reload_trigger vohive
+	procd_add_reload_trigger vodoge
 }

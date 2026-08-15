@@ -40,9 +40,9 @@ func DefaultOptions(dsn string) Options {
 }
 
 // ResolveDSN returns the first non-empty DSN from env then fallback.
-// Order: VODOGE_DB_DSN, VODOG_DB_DSN, VOHIVE_DB_DSN, DATABASE_URL, fallback.
+// Order: VODOGE_DB_DSN, DATABASE_URL, fallback.
 func ResolveDSN(fallback string) string {
-	for _, key := range []string{"VODOGE_DB_DSN", "VODOG_DB_DSN", "VOHIVE_DB_DSN", "DATABASE_URL"} {
+	for _, key := range []string{"VODOGE_DB_DSN", "DATABASE_URL"} {
 		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 			return v
 		}
@@ -51,7 +51,7 @@ func ResolveDSN(fallback string) string {
 }
 
 // Init opens PostgreSQL with default pool settings. dsn must be non-empty.
-// For tests, pass TEST_DATABASE_URL / VOHIVE_DB_DSN via ResolveDSN.
+// For tests, pass TEST_DATABASE_URL via ResolveDSN.
 func Init(dsn string) error {
 	return Open(DefaultOptions(dsn))
 }
@@ -60,7 +60,7 @@ func Init(dsn string) error {
 func Open(opts Options) error {
 	dsn := strings.TrimSpace(opts.DSN)
 	if dsn == "" {
-		return fmt.Errorf("database dsn is empty: set database.dsn or VODOGE_DB_DSN / VODOG_DB_DSN / VOHIVE_DB_DSN / DATABASE_URL")
+		return fmt.Errorf("database dsn is empty: set database.dsn or VODOGE_DB_DSN / DATABASE_URL")
 	}
 	if opts.MaxOpenConns <= 0 {
 		opts.MaxOpenConns = 20

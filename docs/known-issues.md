@@ -99,12 +99,12 @@ for(const f of execSync('git ls-files \"*.go\"',{encoding:'utf8'}).trim().split(
 本地建议单独起一个：
 
 ```bash
-docker run -d --name vohive-testdb \
-  -e POSTGRES_USER=vohive -e POSTGRES_PASSWORD=vohive -e POSTGRES_DB=vohive_test \
+docker run -d --name vodoge-testdb \
+  -e POSTGRES_USER=vodoge -e POSTGRES_PASSWORD=vodoge -e POSTGRES_DB=vodoge_test \
   -p 5433:5432 postgres:16-alpine
 ```
 
 ```bash
-export TEST_DATABASE_URL="host=127.0.0.1 port=5433 user=vohive password=vohive dbname=vohive_test sslmode=disable TimeZone=UTC"
+export TEST_DATABASE_URL="host=127.0.0.1 port=5433 user=vodoge password=vodoge dbname=vodoge_test sslmode=disable TimeZone=UTC"
 ```
 

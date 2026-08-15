@@ -4,7 +4,7 @@
 # 生产镜像刻意不含测试代码，但编译校验必须看得到它们——UTF-8 损坏、未使用
 # import 这类问题只在加载测试文件时才暴露，普通镜像构建永远覆盖不到。
 #
-# 用法：scripts/with-test-sources.sh docker build -f Dockerfile.vet -t vohive-vet .
+# 用法：scripts/with-test-sources.sh docker build -f Dockerfile.vet -t vodoge-vet .
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

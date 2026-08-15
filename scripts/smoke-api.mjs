@@ -9,19 +9,19 @@
  *
  * 用法：
  *   node scripts/smoke-api.mjs
- *   VOHIVE_URL=http://192.168.1.10:7575 VOHIVE_PASS=xxx node scripts/smoke-api.mjs
+ *   VODOGE_URL=http://192.168.1.10:7575 VODOGE_PASS=xxx node scripts/smoke-api.mjs
  *   SMOKE_SEND_TO=+8613800138000 SMOKE_DEVICE=dev1 node scripts/smoke-api.mjs
  *
  * 环境变量：
- *   VOHIVE_URL   默认 http://127.0.0.1:7575
- *   VOHIVE_USER  默认 admin
- *   VOHIVE_PASS  默认 admin123
+ *   VODOGE_URL   默认 http://127.0.0.1:7575
+ *   VODOGE_USER  默认 admin
+ *   VODOGE_PASS  默认 admin123
  *   SMOKE_SEND_TO / SMOKE_DEVICE  同时提供时才会真的发送短信
  */
 
-const BASE = (process.env.VOHIVE_URL ?? "http://127.0.0.1:7575").replace(/\/$/, "");
-const USER = process.env.VOHIVE_USER ?? "admin";
-const PASS = process.env.VOHIVE_PASS ?? "admin123";
+const BASE = (process.env.VODOGE_URL ?? "http://127.0.0.1:7575").replace(/\/$/, "");
+const USER = process.env.VODOGE_USER ?? "admin";
+const PASS = process.env.VODOGE_PASS ?? "admin123";
 
 let token = "";
 let failures = 0;

@@ -36,14 +36,14 @@
 
 | 变量 | 说明 |
 |------|------|
-| `VOHIVE_DB_DSN` | 主 DSN（优先） |
+| `VODOGE_DB_DSN` | 主 DSN（优先） |
 | `DATABASE_URL` | 备选 DSN |
 | `TEST_DATABASE_URL` | 测试专用 |
 
 示例：
 
 ```text
-host=127.0.0.1 user=vohive password=vohive dbname=vohive port=5432 sslmode=disable TimeZone=UTC
+host=127.0.0.1 user=vodoge password=vodoge dbname=vodoge port=5432 sslmode=disable TimeZone=UTC
 ```
 
 ## 2026-08-14 — 阶段 D（数据迁移工具）完成
