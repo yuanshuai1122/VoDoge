@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/global"
-	"github.com/yuanshuai1122/vodog/internal/proxy/server"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/global"
+	"github.com/yuanshuai1122/vodoge/internal/proxy/server"
 
 	"github.com/spf13/viper"
 

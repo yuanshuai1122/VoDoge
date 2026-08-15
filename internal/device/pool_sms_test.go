@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/modem"
+	"github.com/yuanshuai1122/vodoge/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/modem"
 )
 
 func TestShouldDeferSMSPollWhenModemBusy(t *testing.T) {

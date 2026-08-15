@@ -11,10 +11,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/netprobe"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/netprobe"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 
 	qmimanager "github.com/boa-z/quectel-qmi-go/pkg/manager"
 	"github.com/boa-z/quectel-qmi-go/pkg/netcfg"
@@ -1646,7 +1646,7 @@ func (m *Manager) Disconnect() error {
 }
 
 // ResetExistingDataConnection tears down a data call that may have been left
-// active before VoDog took ownership of this QMI device.
+// active before VoDoge took ownership of this QMI device.
 func (m *Manager) ResetExistingDataConnection(ctx context.Context) (bool, error) {
 	if m == nil {
 		return false, fmt.Errorf("qmi_manager_not_available")

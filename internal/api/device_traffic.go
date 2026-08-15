@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/db"
-	"github.com/yuanshuai1122/vodog/internal/proxy/server"
+	"github.com/yuanshuai1122/vodoge/internal/db"
+	"github.com/yuanshuai1122/vodoge/internal/proxy/server"
 )
 
 const (

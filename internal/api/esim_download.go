@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vodog/internal/esim"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/esim"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // eSIM Profile 下载：POST 建任务 + GET 订阅进度。

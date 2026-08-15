@@ -1,8 +1,8 @@
 # UFI103S 原厂 QMI 接入
 
 这份手册适用于让 **UFI103S 继续运行原厂 Android/CPE 系统**，由一台原生 Linux
-主机上的 VoDog 集中管理。不要把每根棒子刷成 Debian 主机：VoDog 的主机才运行
-Debian、Docker、PostgreSQL 和一个 VoDog 实例。
+主机上的 VoDoge 集中管理。不要把每根棒子刷成 Debian 主机：VoDoge 的主机才运行
+Debian、Docker、PostgreSQL 和一个 VoDoge 实例。
 
 ## 已实测的单根样品
 
@@ -56,7 +56,7 @@ sudo qmicli -d "$CTRL" --dms-get-ids
 ```
 
 出现 `05c6:90b4`、只有 `rndis*` 网卡或没有 `/dev/cdc-wdm*` 时，当前棒子不应添加到
-VoDog 的 QMI 后端。RNDIS/CPE 模式只能作为恢复路径；它们通常共享相同私网地址，且
+VoDoge 的 QMI 后端。RNDIS/CPE 模式只能作为恢复路径；它们通常共享相同私网地址，且
 当前项目没有纯 RNDIS 的 DHCP、路由、IP 轮换和设备控制实现。
 
 ## 接管目标主机后的执行顺序
@@ -74,9 +74,9 @@ lsmod | grep -E 'qmi_wwan|cdc_wdm|usbnet'
 现场操作按下面顺序进行：
 
 1. 只接一根样品，运行本仓库脚本并完成上面的 QMI 驱动、`cdc-wdm`、`wwan` 和 IMEI 验收。
-2. 依照 [DEPLOY.md](../DEPLOY.md) 启动唯一的 VoDog Compose 实例；不要为同一 Hub 起第二个
+2. 依照 [DEPLOY.md](../DEPLOY.md) 启动唯一的 VoDoge Compose 实例；不要为同一 Hub 起第二个
    实例。
-3. 在 VoDog 发现页确认该设备的后端是 QMI，添加唯一设备 ID 与 IMEI，再创建一条测试代理。
+3. 在 VoDoge 发现页确认该设备的后端是 QMI，添加唯一设备 ID 与 IMEI，再创建一条测试代理。
 4. 用 `node scripts/smoke-api.mjs` 和一次真实出口请求确认代理绑定到该 `wwan` 接口。
 5. 单根稳定后，再逐根切换、发现和登记；每一根都保存其 ADB USB 序列号与 IMEI 对照。
 
@@ -117,16 +117,16 @@ bash scripts/ufi103s-enable-qmi.sh --serial 34d12d26 --restore-rndis
 这台样品的 eMMC 用户区和关键分区备份已经保存在本地工作区的忽略目录，且不随 Git
 推送。批量动作前，应为每个新批次保留等价、可校验的恢复备份。
 
-## VoDog 接入
+## VoDoge 接入
 
 通过后，保留默认 Linux Compose 的 `network_mode: host`、`privileged: true` 和 `/dev`
-挂载。一个 VoDog 实例应独占整台 Hub，而不是用多个容器争抢同一批设备。
+挂载。一个 VoDoge 实例应独占整台 Hub，而不是用多个容器争抢同一批设备。
 
-在 VoDog 的设备发现页确认每根棒子都显示为 QMI，并用唯一 IMEI 添加设备，后端选
-`qmi`。不要持久化 `/dev/cdc-wdmN` 或 `wwanN`：热插拔会改变这些路径，VoDog 会以 IMEI
+在 VoDoge 的设备发现页确认每根棒子都显示为 QMI，并用唯一 IMEI 添加设备，后端选
+`qmi`。不要持久化 `/dev/cdc-wdmN` 或 `wwanN`：热插拔会改变这些路径，VoDoge 会以 IMEI
 重新关联设备。
 
-验证阶段停用 ModemManager，避免它与 VoDog 同时打开 QMI/串口节点：
+验证阶段停用 ModemManager，避免它与 VoDoge 同时打开 QMI/串口节点：
 
 ```bash
 sudo systemctl disable --now ModemManager
@@ -136,13 +136,13 @@ sudo systemctl disable --now ModemManager
 
 - 先拿一根完成 QMI、IMEI 和拨号验收，再按相同样品批次逐根扩展。
 - Hub 电源按每根至少 500 mA 的 USB 声明值预留余量；不要依赖主机 USB 口供电。
-- 当前 VoDog 代码硬限制为 **5 台**。第 6 根起必须先调整设备上限及热插拔测试，不能
-  通过启动多个 VoDog 容器绕过。
+- 当前 VoDoge 代码硬限制为 **5 台**。第 6 根起必须先调整设备上限及热插拔测试，不能
+  通过启动多个 VoDoge 容器绕过。
 - QMI 比 MBIM、RNDIS 更适合当前多棒架构：项目的 QMI 路径按设备网卡绑定代理出口，且
   不会重写主机全局 DNS。
 
 ## 不采用的路线
 
 OpenStick 的通用底包会重写分区表和启动链，而且没有为 UFI103S HW1.3 / 230515 发布
-经过验证的完整 Debian 固件组合。它不是把 VoDog 接到多根原厂棒子的必要步骤，也不应
+经过验证的完整 Debian 固件组合。它不是把 VoDoge 接到多根原厂棒子的必要步骤，也不应
 作为批量部署前置条件。

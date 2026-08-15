@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"

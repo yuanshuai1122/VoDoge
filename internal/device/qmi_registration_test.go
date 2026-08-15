@@ -9,8 +9,8 @@ import (
 
 	qmimanager "github.com/boa-z/quectel-qmi-go/pkg/manager"
 	"github.com/boa-z/quectel-qmi-go/pkg/qmi"
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 type qmiRegistrationTestController struct {

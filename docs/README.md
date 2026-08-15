@@ -1,6 +1,6 @@
-# VoDog 文档索引
+# VoDoge 文档索引
 
-维护仓库：https://github.com/yuanshuai1122/VoDog  
+维护仓库：https://github.com/yuanshuai1122/VoDoge  
 
 ## 计划与决策
 

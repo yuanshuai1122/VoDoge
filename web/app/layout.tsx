@@ -4,13 +4,13 @@ import { Providers } from "./providers";
 import { RegisterServiceWorker } from "@/components/pwa/register-sw";
 
 export const metadata: Metadata = {
-  title: "VoDog",
+  title: "VoDoge",
   description: "短信中枢：国内线 / 国外线",
-  applicationName: "VoDog",
+  applicationName: "VoDoge",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "VoDog",
+    title: "VoDoge",
     statusBarStyle: "default",
   },
   icons: {

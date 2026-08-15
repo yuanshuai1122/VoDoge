@@ -1,4 +1,4 @@
-# VoDog 部署
+# VoDoge 部署
 
 面向高通 4G/LTE/5G 模组（Quectel EC20/EC25/EC21/EG25/EM20 等）的综合管理与代理服务平台。
 
@@ -98,18 +98,18 @@ docker compose up -d
 
 ## 📦 构建镜像
 
-预构建镜像：`ghcr.io/yuanshuai1122/vodog`（打 `v*` 标签由 GitHub Actions 推送）。
+预构建镜像：`ghcr.io/yuanshuai1122/vodoge`（打 `v*` 标签由 GitHub Actions 推送）。
 
 本机构建：
 
 ```bash
-docker build -t vodog:latest .
+docker build -t vodoge:latest .
 ```
 
 一键安装：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yuanshuai1122/VoDog/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yuanshuai1122/VoDoge/main/scripts/install.sh | bash
 ```
 
 完整的本地流水线（编码检查、路由校验、前端构建、编译、测试、镜像）：
@@ -239,7 +239,7 @@ bash scripts/ci.sh multiarch
 
 ## 📖 文档
 
-完整文档见 [GitHub](https://github.com/yuanshuai1122/VoDog)。
+完整文档见 [GitHub](https://github.com/yuanshuai1122/VoDoge)。
 
 ## 📝 License
 

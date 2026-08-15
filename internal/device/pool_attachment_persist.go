@@ -3,8 +3,8 @@ package device
 import (
 	"strings"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // deviceIMEIBackfillNeeded 判断是否需要把运行时学到的 IMEI 回填进配置。

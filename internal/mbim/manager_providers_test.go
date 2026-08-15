@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/pkg/mbim"
+	"github.com/yuanshuai1122/vodoge/pkg/mbim"
 )
 
 func TestManagerVisibleProvidersAndSetRegisterDelegate(t *testing.T) {

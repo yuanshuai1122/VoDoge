@@ -1,11 +1,11 @@
-# VoDog
+# VoDoge
 
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go)](go.mod)
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 
 一台机器上管多根 USB 模组的 **短信中枢**：国内线、国外线分开，网页看会话、发短信、切 eSIM。
 
-仓库：[github.com/yuanshuai1122/VoDog](https://github.com/yuanshuai1122/VoDog)
+仓库：[github.com/yuanshuai1122/VoDoge](https://github.com/yuanshuai1122/VoDoge)
 
 产品不是「全球一张卡」，也不是代理池。代理和 VoWiFi 有，但排在短信后面。不拉黑中国卡。
 
@@ -39,10 +39,10 @@
 
 ## 快速开始
 
-一键安装（优先 Docker Compose，拉 GHCR 镜像 `ghcr.io/yuanshuai1122/vodog`）：
+一键安装（优先 Docker Compose，拉 GHCR 镜像 `ghcr.io/yuanshuai1122/vodoge`）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yuanshuai1122/VoDog/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yuanshuai1122/VoDoge/main/scripts/install.sh | bash
 ```
 
 本机已有仓库时：
@@ -53,7 +53,7 @@ docker compose up -d
 ```
 
 - 管理面：`http://127.0.0.1:7575`（默认账密见配置里的 `web`，登录后立刻改）
-- Compose 自带 PostgreSQL，后端用 `VODOG_DB_DSN` 连（也认旧名 `VOHIVE_DB_DSN` / `DATABASE_URL`）
+- Compose 自带 PostgreSQL，后端用 `VODOGE_DB_DSN` 连（也认旧名 `VOHIVE_DB_DSN` / `DATABASE_URL`）
 - 默认只放行内网访问；公网要先在设置里改网络策略，并上 HTTPS
 
 没有可用的 PostgreSQL 时进程会退出。没有 SQLite。
@@ -62,7 +62,7 @@ docker compose up -d
 
 ```bash
 docker compose up -d postgres
-go run ./cmd/vodog -c config/config.yaml
+go run ./cmd/vodoge -c config/config.yaml
 npm install --prefix web && npm run dev --prefix web
 ```
 
@@ -72,7 +72,7 @@ npm install --prefix web && npm run dev --prefix web
 
 ```bash
 make frontend-dist
-go build -o vodog ./cmd/vodog
+go build -o vodoge ./cmd/vodoge
 ```
 
 ### 验证
@@ -88,7 +88,7 @@ bash scripts/testdb.sh ensure       # 一次性测试库
 备份用 `pg_dump`：
 
 ```bash
-docker exec vodog-postgres pg_dump -U vodog vodog > vodog-$(date +%F).sql
+docker exec vodoge-postgres pg_dump -U vodoge vodoge > vodoge-$(date +%F).sql
 ```
 
 ## 文档

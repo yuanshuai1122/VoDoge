@@ -21,10 +21,10 @@ import (
 	"github.com/damonto/euicc-go/driver"
 	"github.com/damonto/euicc-go/lpa"
 	sgp22 "github.com/damonto/euicc-go/v2"
-	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
-	backendpkg "github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/modem"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/apduarbiter"
+	backendpkg "github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/modem"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // 支持的 ISD-R AID 列表

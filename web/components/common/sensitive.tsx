@@ -11,7 +11,7 @@ import { maskIdentifier } from "@/lib/format";
  * 且不需要在 effect 里 setState。
  */
 
-const KEY = "vodog.reveal_sensitive";
+const KEY = "vodoge.reveal_sensitive";
 const listeners = new Set<() => void>();
 
 function notify() {

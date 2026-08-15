@@ -202,7 +202,7 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("pong"))
 	})
-	_ = http.ListenAndServe(os.Getenv("VODOG_PLUGIN_LISTEN"), nil)
+	_ = http.ListenAndServe(os.Getenv("VODOGE_PLUGIN_LISTEN"), nil)
 }
 `
 	if err := os.WriteFile(src, []byte(body), 0o644); err != nil {

@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 type apduSessionInfo struct {

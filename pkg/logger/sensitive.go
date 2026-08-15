@@ -16,7 +16,7 @@ func envEnabled(name string) bool {
 }
 
 func envEnabledPrefixed(suffix string) bool {
-	return envEnabled("VODOG_"+suffix) || envEnabled("VOHIVE_"+suffix)
+	return envEnabled("VODOGE_"+suffix) || envEnabled("VODOG_"+suffix) || envEnabled("VOHIVE_"+suffix)
 }
 
 // ShouldLogSIPRaw 返回是否允许输出 SIP 原文。

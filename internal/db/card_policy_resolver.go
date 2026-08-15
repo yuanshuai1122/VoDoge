@@ -1,6 +1,6 @@
 package db
 
-import "github.com/yuanshuai1122/vodog/internal/cardpolicy"
+import "github.com/yuanshuai1122/vodoge/internal/cardpolicy"
 
 // CardPolicyResolver 用 DB 实现 cardpolicy.Resolver。
 type CardPolicyResolver struct{}

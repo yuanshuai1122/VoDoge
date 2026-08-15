@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 func TestGetDeviceQuotaDefaults(t *testing.T) {

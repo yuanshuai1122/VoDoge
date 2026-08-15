@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vodog/internal/pcsc"
+	"github.com/yuanshuai1122/vodoge/internal/pcsc"
 )
 
 type fakePCSC struct {

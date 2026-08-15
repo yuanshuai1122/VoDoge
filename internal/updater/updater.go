@@ -11,14 +11,14 @@ import (
 	"time"
 
 	"github.com/minio/selfupdate"
-	"github.com/yuanshuai1122/vodog/internal/global"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/global"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 	"golang.org/x/mod/semver"
 )
 
 const (
 	repoOwner = "yuanshuai1122"
-	repoName  = "VoDog"
+	repoName  = "VoDoge"
 )
 
 type Release struct {
@@ -119,14 +119,14 @@ func ApplyUpdate() error {
 		return fmt.Errorf("failed to decode release info: %w", err)
 	}
 
-	// 拼接对应的 asset name。例如: vodog_v1.0.0_linux_amd64
+	// 拼接对应的 asset name。例如: vodoge_v1.0.0_linux_amd64
 	targetGoos := runtime.GOOS
 	targetGoarch := runtime.GOARCH
 	if targetGoarch == "arm" {
 		targetGoarch = "armv7" // 根据 Makefile 中的定义，arm 编的是 armv7
 	}
 
-	binaryName := "vodog"
+	binaryName := "vodoge"
 	assetPrefix := fmt.Sprintf("%s_%s_%s_%s", binaryName, release.TagName, targetGoos, targetGoarch)
 
 	var downloadURL string

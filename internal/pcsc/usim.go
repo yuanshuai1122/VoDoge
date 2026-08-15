@@ -119,7 +119,7 @@ func DerivedIMEI(reader string) string {
 	sum := 0
 	h := []byte(strings.TrimSpace(reader))
 	if len(h) == 0 {
-		h = []byte("vodog-reader")
+		h = []byte("vodoge-reader")
 	}
 	// 用名字字节摊成 14 位再补 Luhn
 	digits := make([]byte, 14)

@@ -3,8 +3,8 @@ package api
 import (
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/db"
 )
 
 func TestFilterSMSContactsByLane(t *testing.T) {

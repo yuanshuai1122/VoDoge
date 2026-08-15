@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/db"
-	"github.com/yuanshuai1122/vodog/internal/device"
-	"github.com/yuanshuai1122/vodog/internal/modem"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/db"
+	"github.com/yuanshuai1122/vodoge/internal/device"
+	"github.com/yuanshuai1122/vodoge/internal/modem"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )

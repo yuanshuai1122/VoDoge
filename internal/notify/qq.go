@@ -5,9 +5,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
-	qqbot "github.com/yuanshuai1122/vodog/internal/qqbot"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	qqbot "github.com/yuanshuai1122/vodoge/internal/qqbot"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 type qqApp interface {

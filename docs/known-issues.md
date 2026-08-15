@@ -4,7 +4,7 @@
 
 **发现**：2026-08-13，构建 Docker 镜像时
 **修复**：2026-08-13，65 处全部还原
-**影响过**：`go build ./cmd/vodog`、`go vet`、`go test ./internal/api ./internal/device` 全部失败
+**影响过**：`go build ./cmd/vodoge`、`go vet`、`go test ./internal/api ./internal/device` 全部失败
 
 ### 曾经的症状
 

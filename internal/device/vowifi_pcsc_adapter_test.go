@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/pcsc"
-	innersim "github.com/yuanshuai1122/vodog/internal/sim"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/pcsc"
+	innersim "github.com/yuanshuai1122/vodoge/internal/sim"
 )
 
 func TestAddPCSCReaderWorkerEnablesVoWiFi(t *testing.T) {

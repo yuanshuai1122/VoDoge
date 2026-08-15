@@ -6,7 +6,7 @@ import { en, zh, type MessageKey } from "./messages";
 export type Locale = "zh" | "en";
 export type { MessageKey };
 
-const STORAGE_KEY = "vodog.locale";
+const STORAGE_KEY = "vodoge.locale";
 const catalogs: Record<Locale, Record<MessageKey, string>> = { zh, en };
 
 let locale: Locale = "zh";

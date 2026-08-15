@@ -3,7 +3,7 @@ package device
 import (
 	"strings"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 // MatchedPair 表示一台已配置设备与一块物理硬件按 IMEI 身份配对的结果。

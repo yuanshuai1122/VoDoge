@@ -187,7 +187,7 @@ func generateCertificate(listenAddr string) ([]byte, []byte, error) {
 	now := time.Now().UTC()
 	tpl := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "VoDog local", Organization: []string{"VoDog"}},
+		Subject:               pkix.Name{CommonName: "VoDoge local", Organization: []string{"VoDoge"}},
 		NotBefore:             now.Add(-5 * time.Minute),
 		NotAfter:              now.AddDate(5, 0, 0),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,

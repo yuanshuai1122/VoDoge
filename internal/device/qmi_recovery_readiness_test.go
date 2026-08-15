@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 func TestQMIConvergenceShouldEscalate(t *testing.T) {

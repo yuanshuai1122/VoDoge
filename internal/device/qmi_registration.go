@@ -8,10 +8,10 @@ import (
 
 	qmimanager "github.com/boa-z/quectel-qmi-go/pkg/manager"
 	"github.com/boa-z/quectel-qmi-go/pkg/qmi"
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/config"
-	qmipkg "github.com/yuanshuai1122/vodog/internal/qmi"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	qmipkg "github.com/yuanshuai1122/vodoge/internal/qmi"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 var (

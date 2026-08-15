@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vodog/internal/extensions"
+	"github.com/yuanshuai1122/vodoge/internal/extensions"
 )
 
 func (s *Server) plugins() *extensions.Manager {
@@ -163,6 +163,7 @@ func (s *Server) handleExtensionBackend(c *gin.Context) {
 		r.Header.Del("Cookie")
 		r.Header.Del("X-CSRF-Token")
 		if id != "" {
+			r.Header.Set("X-VoDoge-Plugin-ID", id)
 			r.Header.Set("X-VoDog-Plugin-ID", id)
 			r.Header.Set("X-VoCat-Plugin-ID", id)
 		}

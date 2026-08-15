@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/modem"
-	"github.com/yuanshuai1122/vodog/pkg/smscodec"
+	"github.com/yuanshuai1122/vodoge/internal/modem"
+	"github.com/yuanshuai1122/vodoge/pkg/smscodec"
 )
 
 // ATBackend AT 后端适配器 — 纯包装层，委托给现有 modem.Manager

@@ -1,4 +1,4 @@
-# VoDog 数据库决策记录
+# VoDoge 数据库决策记录
 
 ### ADR-DB-001 仅 PostgreSQL
 

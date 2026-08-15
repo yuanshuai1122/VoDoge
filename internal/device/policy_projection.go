@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/cardpolicy"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/cardpolicy"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // applyPolicyToWorker 把卡策略投影进 worker.Config 的运行时有效字段。
@@ -139,7 +139,7 @@ func (p *Pool) CurrentICCIDForDevice(deviceID string) string {
 	return w.CurrentICCID()
 }
 
-// SetPolicyResolver 注入卡策略解析器（cmd/vodog 启动时调用）。
+// SetPolicyResolver 注入卡策略解析器（cmd/vodoge 启动时调用）。
 func (p *Pool) SetPolicyResolver(r cardpolicy.Resolver) {
 	if p == nil {
 		return

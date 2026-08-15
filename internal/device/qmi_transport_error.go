@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 const qmiTransportFailureRecoveryReason = "qmi_transport_failed"

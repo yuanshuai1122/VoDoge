@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VoDog 本地流水线。
+# VoDoge 本地流水线。
 #
 # 本机验证流水线。发版镜像与 GitHub Release 走 .github/workflows/release.yml。
 # 需要 Docker 的环节（vet-all / test）会自动起容器，见各任务说明。
@@ -125,7 +125,7 @@ fmt_check() {
 	printf '\n==> gofmt ok\n'
 }
 
-# 校验 openapi.vodog.yaml 与 server.go 实际注册的路由一致。
+# 校验 openapi.vodoge.yaml 与 server.go 实际注册的路由一致。
 route_check() {
 	if ! command -v node >/dev/null 2>&1; then
 		printf '\n==> route check skipped (node not found)\n'
@@ -183,7 +183,7 @@ go_build() {
 	(
 		export CGO_ENABLED="${CGO_ENABLED:-0}"
 		export GOOS="${GOOS:-linux}"
-		run "$GO_BIN" build -trimpath -buildvcs=false -tags "${GO_TAGS:-with_utls nomsgpack}" -o "${CI_BUILD_OUTPUT:-/tmp/vodog}" ./cmd/vodog
+		run "$GO_BIN" build -trimpath -buildvcs=false -tags "${GO_TAGS:-with_utls nomsgpack}" -o "${CI_BUILD_OUTPUT:-/tmp/vodoge}" ./cmd/vodoge
 	)
 }
 
@@ -234,7 +234,7 @@ Default `all` runs: hygiene, encoding, routes, web, vet-all, fmt, test, image.
 Tasks:
   hygiene   forbidden dependency / local replace directives
   encoding  every tracked .go file must be valid UTF-8
-  routes    openapi.vodog.yaml must match the routes server.go registers
+  routes    openapi.vodoge.yaml must match the routes server.go registers
   fmt       gofmt -l must be empty (needs the vet image; run vet-all first)
   web       npm ci + typecheck + lint + test + build, then embed into internal/web/dist
   tidy      go mod tidy -diff            (needs Go on the host)

@@ -7,9 +7,9 @@ import (
 
 	"github.com/boa-z/vowifi-go/runtimehost/carrier"
 	runtimee911 "github.com/boa-z/vowifi-go/runtimehost/e911"
-	"github.com/yuanshuai1122/vodog/internal/device"
-	"github.com/yuanshuai1122/vodog/internal/modem"
-	"github.com/yuanshuai1122/vodog/internal/websheet"
+	"github.com/yuanshuai1122/vodoge/internal/device"
+	"github.com/yuanshuai1122/vodoge/internal/modem"
+	"github.com/yuanshuai1122/vodoge/internal/websheet"
 )
 
 // ErrNotSupported means device status does not support e911 updates.
@@ -102,13 +102,13 @@ func (c *Coordinator) StartWebsheet(ctx context.Context, deviceID string) (websh
 
 func displayName(w *device.Worker) string {
 	if w == nil {
-		return "VoDog"
+		return "VoDoge"
 	}
 	cfg := w.Config
 	if cfg.Name != "" {
 		return cfg.Name
 	}
-	return "VoDog " + w.ID
+	return "VoDoge " + w.ID
 }
 
 func buildATTSIPUsername(imsi string) string {

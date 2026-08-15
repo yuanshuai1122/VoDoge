@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/proxy/server"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/proxy/server"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )

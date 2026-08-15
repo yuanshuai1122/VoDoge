@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/pkg/mbim"
+	"github.com/yuanshuai1122/vodoge/pkg/mbim"
 )
 
 func mbimResetCapableForTest() *mbim.Capabilities {

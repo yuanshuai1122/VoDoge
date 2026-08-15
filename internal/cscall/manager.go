@@ -12,9 +12,9 @@ import (
 	"github.com/emiago/sipgo"
 	"github.com/emiago/sipgo/sip"
 	"github.com/google/uuid"
-	"github.com/yuanshuai1122/vodog/internal/modem"
-	"github.com/yuanshuai1122/vodog/internal/sipgw"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/modem"
+	"github.com/yuanshuai1122/vodoge/internal/sipgw"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // CallState 定义 CS 呼叫状态
@@ -412,7 +412,7 @@ func (m *Manager) buildLocalSDP(ip string, port int) string {
 	return fmt.Sprintf(
 		"v=0\r\n"+
 			"o=- %s %s IN IP4 %s\r\n"+
-			"s=VoDog CS Call\r\n"+
+			"s=VoDoge CS Call\r\n"+
 			"c=IN IP4 %s\r\n"+
 			"t=0 0\r\n"+
 			"m=audio %d RTP/AVP 0\r\n"+

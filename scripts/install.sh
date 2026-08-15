@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# VoDog 一键安装。优先 Docker Compose + GHCR；没有 Docker 时下载发行二进制并写 systemd。
+# VoDoge 一键安装。优先 Docker Compose + GHCR；没有 Docker 时下载发行二进制并写 systemd。
 # 用法：
-#   curl -fsSL https://raw.githubusercontent.com/yuanshuai1122/VoDog/main/scripts/install.sh | bash
-#   VODOG_DIR=/opt/vodog bash scripts/install.sh
+#   curl -fsSL https://raw.githubusercontent.com/yuanshuai1122/VoDoge/main/scripts/install.sh | bash
+#   VODOGE_DIR=/opt/vodoge bash scripts/install.sh
 set -euo pipefail
 
-REPO="${VODOG_REPO:-yuanshuai1122/VoDog}"
-IMAGE="${VODOG_IMAGE:-ghcr.io/yuanshuai1122/vodog:latest}"
-INSTALL_DIR="${VODOG_DIR:-/opt/vodog}"
-PG_USER="${VODOG_POSTGRES_USER:-vodog}"
-PG_PASS="${VODOG_POSTGRES_PASSWORD:-vodog}"
-PG_DB="${VODOG_POSTGRES_DB:-vodog}"
-WEB_USER="${VODOG_WEB_USER:-admin}"
-WEB_PASS="${VODOG_WEB_PASSWORD:-admin123}"
-PORT="${VODOG_PORT:-7575}"
+REPO="${VODOGE_REPO:-${VODOG_REPO:-yuanshuai1122/VoDoge}}"
+IMAGE="${VODOGE_IMAGE:-${VODOG_IMAGE:-ghcr.io/yuanshuai1122/vodoge:latest}}"
+INSTALL_DIR="${VODOGE_DIR:-${VODOG_DIR:-/opt/vodoge}}"
+PG_USER="${VODOGE_POSTGRES_USER:-${VODOG_POSTGRES_USER:-vodoge}}"
+PG_PASS="${VODOGE_POSTGRES_PASSWORD:-${VODOG_POSTGRES_PASSWORD:-vodoge}}"
+PG_DB="${VODOGE_POSTGRES_DB:-${VODOG_POSTGRES_DB:-vodoge}}"
+WEB_USER="${VODOGE_WEB_USER:-${VODOG_WEB_USER:-admin}}"
+WEB_PASS="${VODOGE_WEB_PASSWORD:-${VODOG_WEB_PASSWORD:-admin123}}"
+PORT="${VODOGE_PORT:-${VODOG_PORT:-7575}}"
 
 need_cmd() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -52,7 +52,7 @@ install_with_compose() {
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: vodog-postgres
+    container_name: vodoge-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${PG_USER}
@@ -68,9 +68,9 @@ services:
       timeout: 5s
       retries: 10
 
-  vodog:
+  vodoge:
     image: ${IMAGE}
-    container_name: vodog
+    container_name: vodoge
     restart: unless-stopped
     network_mode: host
     privileged: true
@@ -83,7 +83,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - CONFIG_PATH=/app/config/config.yaml
-      - VODOG_DB_DSN=host=127.0.0.1 user=${PG_USER} password=${PG_PASS} dbname=${PG_DB} port=5432 sslmode=disable TimeZone=UTC
+      - VODOGE_DB_DSN=host=127.0.0.1 user=${PG_USER} password=${PG_PASS} dbname=${PG_DB} port=5432 sslmode=disable TimeZone=UTC
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,7 +96,7 @@ EOF
 		docker compose pull
 		docker compose up -d
 	)
-	printf '\nVoDog 已启动。管理面: http://127.0.0.1:%s\n默认账密见 %s/config/config.yaml\n需要 PostgreSQL，没有 SQLite。\n' "$PORT" "$INSTALL_DIR"
+	printf '\nVoDoge 已启动。管理面: http://127.0.0.1:%s\n默认账密见 %s/config/config.yaml\n需要 PostgreSQL，没有 SQLite。\n' "$PORT" "$INSTALL_DIR"
 }
 
 detect_arch() {
@@ -123,40 +123,41 @@ latest_tag() {
 
 install_binary() {
 	need_cmd curl
-	if [[ -z "${VODOG_DB_DSN:-}" ]]; then
-		printf '二进制安装需要已有 PostgreSQL，并设置 VODOG_DB_DSN。\n例如：export VODOG_DB_DSN="host=127.0.0.1 user=vodog password=vodog dbname=vodog port=5432 sslmode=disable"\n' >&2
+	if [[ -z "${VODOGE_DB_DSN:-${VODOG_DB_DSN:-}}" ]]; then
+		printf '二进制安装需要已有 PostgreSQL，并设置 VODOGE_DB_DSN。\n例如：export VODOGE_DB_DSN="host=127.0.0.1 user=vodoge password=vodoge dbname=vodoge port=5432 sslmode=disable"\n' >&2
 		return 1
 	fi
+	VODOGE_DB_DSN="${VODOGE_DB_DSN:-${VODOG_DB_DSN}}"
 	local tag arch asset url bin
-	tag="${VODOG_VERSION:-$(latest_tag)}"
+	tag="${VODOGE_VERSION:-$(latest_tag)}"
 	if [[ -z "$tag" ]]; then
 		printf '读不到 GitHub Release 标签\n' >&2
 		return 1
 	fi
 	arch="$(detect_arch)"
-	asset="vodog_${tag}_linux_${arch}"
+	asset="vodoge_${tag}_linux_${arch}"
 	url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
-	bin="/usr/local/bin/vodog"
+	bin="/usr/local/bin/vodoge"
 	printf '下载 %s\n' "$url"
-	curl -fL "$url" -o /tmp/vodog.new
-	chmod +x /tmp/vodog.new
-	install -m 0755 /tmp/vodog.new "$bin"
-	rm -f /tmp/vodog.new
-	mkdir -p /etc/vodog /var/lib/vodog /var/log/vodog
-	write_config /etc/vodog/config.yaml
+	curl -fL "$url" -o /tmp/vodoge.new
+	chmod +x /tmp/vodoge.new
+	install -m 0755 /tmp/vodoge.new "$bin"
+	rm -f /tmp/vodoge.new
+	mkdir -p /etc/vodoge /var/lib/vodoge /var/log/vodoge
+	write_config /etc/vodoge/config.yaml
 	if command -v systemctl >/dev/null 2>&1; then
-		cat >/etc/systemd/system/vodog.service <<EOF
+		cat >/etc/systemd/system/vodoge.service <<EOF
 [Unit]
-Description=VoDog SMS hub
+Description=VoDoge SMS hub
 After=network-online.target postgresql.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=VODOG_DB_DSN=${VODOG_DB_DSN}
-Environment=CONFIG_PATH=/etc/vodog/config.yaml
-ExecStart=${bin} -c /etc/vodog/config.yaml
-WorkingDirectory=/var/lib/vodog
+Environment=VODOGE_DB_DSN=${VODOGE_DB_DSN}
+Environment=CONFIG_PATH=/etc/vodoge/config.yaml
+ExecStart=${bin} -c /etc/vodoge/config.yaml
+WorkingDirectory=/var/lib/vodoge
 Restart=on-failure
 RestartSec=3
 
@@ -164,16 +165,16 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 		systemctl daemon-reload
-		systemctl enable --now vodog
-		printf '\nVoDog systemd 单元已启动。管理面: http://127.0.0.1:%s\n' "$PORT"
+		systemctl enable --now vodoge
+		printf '\nVoDoge systemd 单元已启动。管理面: http://127.0.0.1:%s\n' "$PORT"
 	else
-		printf '没有 systemd。请自行用 VODOG_DB_DSN 运行：%s -c /etc/vodog/config.yaml\n' "$bin"
+		printf '没有 systemd。请自行用 VODOGE_DB_DSN 运行：%s -c /etc/vodoge/config.yaml\n' "$bin"
 	fi
 }
 
 main() {
-	if [[ "$(id -u)" -ne 0 && "${VODOG_DIR:-}" = "/opt/vodog" ]]; then
-		printf '默认装到 /opt/vodog，建议用 root，或设置 VODOG_DIR=$HOME/vodog\n' >&2
+	if [[ "$(id -u)" -ne 0 && "${VODOGE_DIR:-}" = "/opt/vodoge" ]]; then
+		printf '默认装到 /opt/vodoge，建议用 root，或设置 VODOGE_DIR=$HOME/vodoge\n' >&2
 	fi
 	if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
 		install_with_compose

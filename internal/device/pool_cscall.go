@@ -3,10 +3,10 @@ package device
 import (
 	"fmt"
 
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/cscall"
-	"github.com/yuanshuai1122/vodog/internal/sipgw"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/cscall"
+	"github.com/yuanshuai1122/vodoge/internal/sipgw"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 func newCSCallManagerForWorker(w *Worker, r *sipgw.Registrar) *cscall.Manager {

@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 func (s *Server) handleGetHTTPSSettings(c *gin.Context) {
@@ -63,7 +63,7 @@ func (s *Server) handleDownloadHTTPSCertificate(c *gin.Context) {
 		return
 	}
 	c.Header("Content-Type", "application/x-pem-file")
-	c.Header("Content-Disposition", `attachment; filename="vodog-selfsigned.crt"`)
+	c.Header("Content-Disposition", `attachment; filename="vodoge-selfsigned.crt"`)
 	c.Header("Content-Length", strconv.Itoa(len(pem)))
 	c.Data(http.StatusOK, "application/x-pem-file", pem)
 }

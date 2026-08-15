@@ -30,10 +30,10 @@ func TestListReadersViaFakeDaemon(t *testing.T) {
 }
 
 func TestDialDaemonMissingSocket(t *testing.T) {
-	t.Setenv("PCSCLITE_CSOCK_NAME", "/tmp/vodog-no-pcscd-"+t.Name())
+	t.Setenv("PCSCLITE_CSOCK_NAME", "/tmp/vodoge-no-pcscd-"+t.Name())
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err := dialDaemon(ctx, []string{"/tmp/vodog-no-pcscd-" + t.Name()})
+	_, err := dialDaemon(ctx, []string{"/tmp/vodoge-no-pcscd-" + t.Name()})
 	if !errors.Is(err, ErrAPDUUnavailable) {
 		t.Fatalf("err=%v want ErrAPDUUnavailable", err)
 	}

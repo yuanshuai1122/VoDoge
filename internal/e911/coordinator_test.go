@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	runtimee911 "github.com/boa-z/vowifi-go/runtimehost/e911"
-	"github.com/yuanshuai1122/vodog/internal/modem"
+	"github.com/yuanshuai1122/vodoge/internal/modem"
 )
 
 func TestCoordinatorDoesNotRunEntitlementProbes(t *testing.T) {
@@ -74,7 +74,7 @@ func TestBuildRuntimeE911IdentityIgnoresDebugCachedTokenEnv(t *testing.T) {
 	got := buildRuntimeE911Identity(modem.DeviceStatus{
 		IMSI: "310280233641503",
 		IMEI: "356306952701762",
-	}, "310", "280", "VoDog")
+	}, "310", "280", "VoDoge")
 
 	if got.CachedToken != "" {
 		t.Fatalf("cached token=%q", got.CachedToken)

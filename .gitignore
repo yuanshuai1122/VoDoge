@@ -1,6 +1,8 @@
 # 构建产物
 /vo-hive
 /vohive
+/vodog
+/vodoge
 /mbimprobe
 /dbmigrate
 *.exe

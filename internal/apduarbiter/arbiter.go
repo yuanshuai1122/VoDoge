@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 var ErrAPDUBusy = errors.New("apdu busy")

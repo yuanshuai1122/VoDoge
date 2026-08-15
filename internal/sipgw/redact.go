@@ -1,7 +1,7 @@
 package sipgw
 
 import (
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 func shouldLogSIPRaw() bool {

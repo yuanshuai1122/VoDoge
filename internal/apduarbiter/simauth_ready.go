@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 var ErrSIMAuthNotReady = errors.New("simauth not ready")

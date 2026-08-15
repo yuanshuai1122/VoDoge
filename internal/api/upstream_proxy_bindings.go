@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vodog/internal/db"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/db"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 type profileProxyBindingPayload struct {

@@ -12,10 +12,15 @@ import (
 )
 
 const (
-	ManifestFilenameVodog = "vodog-plugin.json"
-	ManifestFilenameVocat = "vocat-plugin.json"
-	SchemaVersion         = 1
+	ManifestFilenameVodoge = "vodoge-plugin.json"
+	ManifestFilenameVodog  = "vodog-plugin.json"
+	ManifestFilenameVocat  = "vocat-plugin.json"
+	SchemaVersion          = 1
 )
+
+func manifestFilenames() []string {
+	return []string{ManifestFilenameVodoge, ManifestFilenameVodog, ManifestFilenameVocat}
+}
 
 var pluginIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}[a-z0-9]$`)
 

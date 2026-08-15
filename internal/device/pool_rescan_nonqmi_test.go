@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 // 现状记录:一台 MBIM 设备(requiresQMICore=false)在线 → 掉线 → 带相同 IMEI 以新路径回来。

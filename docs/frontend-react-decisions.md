@@ -1,4 +1,4 @@
-# VoDog 前端 React 重写 — 决策记录（ADR）
+# VoDoge 前端 React 重写 — 决策记录（ADR）
 
 > 与 `docs/frontend-react-migration-plan.md` 配套。有新决策时在此追加，勿覆盖历史条目。
 

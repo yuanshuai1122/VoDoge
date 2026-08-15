@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 const (
@@ -410,6 +410,9 @@ func (m *Manager) startBackendLocked(id string) error {
 	cmd.Dir = m.pluginDir(id)
 	dataDir, _ := filepath.Abs(m.dataDir(id))
 	cmd.Env = append(os.Environ(),
+		"VODOGE_PLUGIN_ID="+id,
+		"VODOGE_PLUGIN_LISTEN="+addr,
+		"VODOGE_PLUGIN_DATA_DIR="+dataDir,
 		"VODOG_PLUGIN_ID="+id,
 		"VODOG_PLUGIN_LISTEN="+addr,
 		"VODOG_PLUGIN_DATA_DIR="+dataDir,

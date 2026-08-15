@@ -4,7 +4,7 @@ package taskpool
 import (
 	"sync"
 
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // Pool 有界异步任务池

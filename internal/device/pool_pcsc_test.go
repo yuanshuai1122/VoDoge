@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/pcsc"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/pcsc"
 )
 
 func TestAddPCSCReaderWorkerSkipsRadio(t *testing.T) {

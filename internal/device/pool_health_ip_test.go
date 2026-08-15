@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 func TestHealthCheckSkipsDeviceUnderRebootRecovery(t *testing.T) {

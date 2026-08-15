@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/boa-z/vowifi-go/runtimehost/eventhost"
-	"github.com/yuanshuai1122/vodog/internal/smsnotify"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/smsnotify"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 type poolVoWiFiRuntimeDispatcher struct {

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	mbimcore "github.com/yuanshuai1122/vodog/internal/mbim"
-	"github.com/yuanshuai1122/vodog/pkg/mbim"
+	mbimcore "github.com/yuanshuai1122/vodoge/internal/mbim"
+	"github.com/yuanshuai1122/vodoge/pkg/mbim"
 )
 
 func TestBindMBIMStateIndicationsTriggersHandleSIMStatusEvent(t *testing.T) {

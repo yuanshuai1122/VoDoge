@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/modem"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/modem"
 )
 
 // deviceIdentityState 存储设备/SIM卡相对静态的身份标识信息

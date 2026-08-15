@@ -15,7 +15,7 @@ import (
 	"unicode/utf8"
 
 	runtimee911 "github.com/boa-z/vowifi-go/runtimehost/e911"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 const maxEntitlementTraceBody = 64 * 1024

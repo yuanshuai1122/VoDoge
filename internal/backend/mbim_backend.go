@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/boa-z/quectel-qmi-go/pkg/manager"
-	"github.com/yuanshuai1122/vodog/internal/modem"
-	"github.com/yuanshuai1122/vodog/pkg/mbim"
+	"github.com/yuanshuai1122/vodoge/internal/modem"
+	"github.com/yuanshuai1122/vodoge/pkg/mbim"
 )
 
 // MBIMBackend implements DeviceBackend over an MBIM modem.

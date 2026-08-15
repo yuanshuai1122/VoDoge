@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodoge/internal/db"
 )
 
 type enabledPatchRequest struct {

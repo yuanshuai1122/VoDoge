@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * VoDog API 冒烟脚本。
+ * VoDoge API 冒烟脚本。
  *
  * 覆盖前端 MVP 依赖的主路径：登录 → 系统信息 → 设备列表 → 短信会话 →
  * 卡策略 → 代理概览 → SSE 日志流。可选发送一条短信。
@@ -75,7 +75,7 @@ async function step(name, fn) {
 }
 
 async function main() {
-  console.log(`VoDog 冒烟测试 → ${BASE}\n`);
+  console.log(`VoDoge 冒烟测试 → ${BASE}\n`);
 
   await step("登录", async () => {
     const r = await call("POST", "/auth/login", {
@@ -190,7 +190,7 @@ async function main() {
   if (to && dev) {
     await step("发送短信", async () => {
       await call("POST", "/sms/send", {
-        json: { phone: to, message: "VoDog smoke test", device_id: dev },
+        json: { phone: to, message: "VoDoge smoke test", device_id: dev },
       });
       return `已发往 ${to}`;
     });

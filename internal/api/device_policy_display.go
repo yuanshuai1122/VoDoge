@@ -3,8 +3,8 @@ package api
 import (
 	"errors"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/db"
 )
 
 // cardPolicyFromDeviceConfig 把设备保存 DTO 解析出的策略字段映射为 card_policies 行。

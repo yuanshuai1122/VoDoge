@@ -120,7 +120,7 @@ export async function downloadHTTPSCertificate(): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "vodog-selfsigned.crt";
+  a.download = "vodoge-selfsigned.crt";
   a.click();
   URL.revokeObjectURL(url);
 }

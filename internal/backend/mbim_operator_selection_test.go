@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/pkg/mbim"
+	"github.com/yuanshuai1122/vodoge/pkg/mbim"
 )
 
 func TestMBIMBackendImplementsOperatorSelectionProvider(t *testing.T) {

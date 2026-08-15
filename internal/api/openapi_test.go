@@ -11,21 +11,21 @@ import (
 
 func loadSpec(t *testing.T) map[string]any {
 	t.Helper()
-	data, err := os.ReadFile("openapi.vodog.yaml")
+	data, err := os.ReadFile("openapi.vodoge.yaml")
 	if err != nil {
-		t.Fatalf("read openapi.vodog.yaml: %v", err)
+		t.Fatalf("read openapi.vodoge.yaml: %v", err)
 	}
 	var doc map[string]any
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		t.Fatalf("openapi.vodog.yaml is invalid YAML: %v", err)
+		t.Fatalf("openapi.vodoge.yaml is invalid YAML: %v", err)
 	}
 	return doc
 }
 
-func TestOpenAPIVoDogYAMLValid(t *testing.T) {
+func TestOpenAPIVoDogeYAMLValid(t *testing.T) {
 	doc := loadSpec(t)
 	if doc["openapi"] == "" {
-		t.Fatalf("openapi.vodog.yaml missing openapi version")
+		t.Fatalf("openapi.vodoge.yaml missing openapi version")
 	}
 }
 

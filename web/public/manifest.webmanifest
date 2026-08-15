@@ -1,6 +1,6 @@
 {
-  "name": "VoDog",
-  "short_name": "VoDog",
+  "name": "VoDoge",
+  "short_name": "VoDoge",
   "description": "短信中枢：国内线 / 国外线",
   "start_url": "/sms",
   "scope": "/",

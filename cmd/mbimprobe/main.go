@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	dev "github.com/yuanshuai1122/vodog/internal/device"
-	mbimcore "github.com/yuanshuai1122/vodog/internal/mbim"
+	dev "github.com/yuanshuai1122/vodoge/internal/device"
+	mbimcore "github.com/yuanshuai1122/vodoge/internal/mbim"
 )
 
 func main() {

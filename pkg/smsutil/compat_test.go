@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/warthog618/sms/encoding/tpdu"
-	"github.com/yuanshuai1122/vodog/pkg/smscodec"
+	"github.com/yuanshuai1122/vodoge/pkg/smscodec"
 )
 
 var (

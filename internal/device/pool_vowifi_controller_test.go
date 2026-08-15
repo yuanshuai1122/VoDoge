@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/boa-z/vowifi-go/runtimehost"
-	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/cardpolicy"
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/vowifihost"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/cardpolicy"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/vowifihost"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 func newVoWiFiLifecycleControllerForTest(p *Pool) *vowifihost.LifecycleController {

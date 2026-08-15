@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 func TestSuppressQMIUnhealthyEvictionDuringLifecycleRecovery(t *testing.T) {

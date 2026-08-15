@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vodog/internal/e911"
+	"github.com/yuanshuai1122/vodoge/internal/e911"
 )
 
 func e911ErrorStatus(err error) int {

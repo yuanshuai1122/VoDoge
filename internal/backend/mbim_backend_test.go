@@ -8,8 +8,8 @@ import (
 
 	qmimanager "github.com/boa-z/quectel-qmi-go/pkg/manager"
 	"github.com/warthog618/sms/encoding/tpdu"
-	"github.com/yuanshuai1122/vodog/pkg/mbim"
-	"github.com/yuanshuai1122/vodog/pkg/smscodec"
+	"github.com/yuanshuai1122/vodoge/pkg/mbim"
+	"github.com/yuanshuai1122/vodoge/pkg/smscodec"
 )
 
 type fakeMBIMSource struct {

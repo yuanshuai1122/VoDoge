@@ -1,4 +1,4 @@
-# VoDog 剩余工作
+# VoDoge 剩余工作
 
 > 更新：2026-08-15（读卡器 APDU / 插件体系已合入）
 > 相关：[known-issues.md](./known-issues.md)、[frontend-api-matrix.md](./frontend-api-matrix.md)、
@@ -108,7 +108,7 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | 项 | 状态 | 说明 |
 |----|------|------|
 | 备份说明改 `pg_dump` | ✅ 已做 | README 与 DEPLOY.md 均已更新 |
-| 构建与验证入口 | ✅ 已做 | 本机 `scripts/ci.sh`；发版 `.github/workflows/release.yml` 推 `ghcr.io/yuanshuai1122/vodog` 并挂 GitHub Release |
+| 构建与验证入口 | ✅ 已做 | 本机 `scripts/ci.sh`；发版 `.github/workflows/release.yml` 推 `ghcr.io/yuanshuai1122/vodoge` 并挂 GitHub Release |
 | 一键安装 | ✅ 已做 | `scripts/install.sh`：优先 Compose + GHCR，否则发行二进制 + systemd |
 | 读卡器 VoWiFi / AKA | ✅ 已做 | 无射频，AKA 走 PC/SC APDU，跳过飞行模式 |
 | 深色 / 中英界面 | ✅ 已做 | next-themes + `web/lib/i18n` 完整中英目录，顶栏可切换 |
@@ -141,7 +141,7 @@ UFI 不承担短信验收；第 1 期真机改为 EC25-CN。
 第 4f 期软件已先行（默认仅内网可打开管理面）。
 插件体系软件已先行（zip 安装/启停/卸载、侧栏 iframe、本机后端）。硬件支持表见 [hardware-support.md](./hardware-support.md)。
 
-PVE lab（VM 113 / `vodog.lab.lan`）见 [pve-lab-deploy.md](./pve-lab-deploy.md)。
+PVE lab（VM 113 / `vodoge.lab.lan`）见 [pve-lab-deploy.md](./pve-lab-deploy.md)。
 有卡那根在原厂 RNDIS/CPE 下也是紧急呼叫、没互联网（基带 `UFI103_CT`、卡 `46011`）。
 不是单 QMI 的问题。代理冒烟要换卡或换地点。切回 QMI 后有卡那根掉总线，需拔插。
 ```

@@ -1,5 +1,5 @@
 export const zh = {
-  "app.name": "VoDog",
+  "app.name": "VoDoge",
   "app.tagline": "短信中枢：国内线 / 国外线",
   "nav.dashboard": "仪表盘",
   "nav.devices": "设备管理",
@@ -377,7 +377,7 @@ export const zh = {
 export type MessageKey = keyof typeof zh;
 
 export const en: Record<MessageKey, string> = {
-  "app.name": "VoDog",
+  "app.name": "VoDoge",
   "app.tagline": "SMS hub: domestic and international lanes",
   "nav.dashboard": "Dashboard",
   "nav.devices": "Devices",

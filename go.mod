@@ -1,4 +1,4 @@
-module github.com/yuanshuai1122/vodog
+module github.com/yuanshuai1122/vodoge
 
 go 1.26.3
 

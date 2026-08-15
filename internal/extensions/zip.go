@@ -56,7 +56,7 @@ func detectZipRoot(zr *zip.Reader) string {
 		if name == "" {
 			continue
 		}
-		if name == ManifestFilenameVodog || name == ManifestFilenameVocat {
+		if name == ManifestFilenameVodoge || name == ManifestFilenameVodog || name == ManifestFilenameVocat {
 			hasRootManifest = true
 		}
 		first := strings.SplitN(name, "/", 2)[0]
@@ -93,7 +93,7 @@ func extractZipFile(f *zip.File, dest string) error {
 }
 
 func readManifestFile(dir string) (Manifest, error) {
-	for _, name := range []string{ManifestFilenameVodog, ManifestFilenameVocat} {
+	for _, name := range manifestFilenames() {
 		path := filepath.Join(dir, name)
 		f, err := os.Open(path)
 		if err != nil {
@@ -109,5 +109,5 @@ func readManifestFile(dir string) (Manifest, error) {
 		}
 		return m, nil
 	}
-	return Manifest{}, fmt.Errorf("%w: 缺少 %s 或 %s", ErrInvalidManifest, ManifestFilenameVodog, ManifestFilenameVocat)
+	return Manifest{}, fmt.Errorf("%w: 缺少 %s、%s 或 %s", ErrInvalidManifest, ManifestFilenameVodoge, ManifestFilenameVodog, ManifestFilenameVocat)
 }

@@ -13,7 +13,7 @@
 // --allow-nonempty（追加，冲突行跳过）或 --truncate（清空后导入）。
 //
 // 依赖说明：这里用 modernc.org/sqlite（纯 Go，无需 CGO）。它只被本命令导入，
-// ./cmd/vodog 的二进制里不含任何 SQLite 代码。
+// ./cmd/vodoge 的二进制里不含任何 SQLite 代码。
 package main
 
 import (
@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodoge/internal/db"
 	"gorm.io/gorm"
 	_ "modernc.org/sqlite"
 )

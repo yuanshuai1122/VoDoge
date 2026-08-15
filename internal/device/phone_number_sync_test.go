@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/boa-z/vowifi-go/runtimehost/eventhost"
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/db"
 )
 
 type workerPhoneBackendStub struct {

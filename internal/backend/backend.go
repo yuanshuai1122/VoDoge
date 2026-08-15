@@ -1,4 +1,4 @@
-// Package backend 定义 VoDog 设备后端的统一抽象层。
+// Package backend 定义 VoDoge 设备后端的统一抽象层。
 // AT 和 QMI 是平等的两种后端实现，通过配置开关 device_backend 选择。
 package backend
 

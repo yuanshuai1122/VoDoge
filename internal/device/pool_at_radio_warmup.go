@@ -3,8 +3,8 @@ package device
 import (
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 var atRadioWarmupDelays = []time.Duration{0, time.Second, 3 * time.Second, 8 * time.Second}

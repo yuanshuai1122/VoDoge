@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/boa-z/vowifi-go/runtimehost/identity"
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // qmiModemAdapter 将 QMIBackend 适配为 vowifi.Modem + simauth.ATModem 接口。

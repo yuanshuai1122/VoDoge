@@ -2,7 +2,7 @@
 
 日期：2026-08-15  
 对照仓库：https://github.com/MengMengCode/VoCat（开源控制台，Quectel EC20/EC25/EG25）  
-本仓库：VoDog（专有，已在 PVE lab `vodog.lab.lan` 跑着）
+本仓库：VoDoge（专有，已在 PVE lab `vodoge.lab.lan` 跑着）
 
 这不是「把 VoCat 贴进本仓库」。VoCat 的 LICENSE 在 GitHub 上标成 `NOASSERTION`，**禁止整文件搬代码**。本计划只抄**产品边界、验收标准和工程手法**，实现落在现有 `internal/esim`、`internal/api`、PostgreSQL 信封上。
 
@@ -13,7 +13,7 @@
 
 ## 对照结论
 
-| 维度 | VoCat | VoDog 现状 | 本计划 |
+| 维度 | VoCat | VoDoge 现状 | 本计划 |
 |---|---|---|---|
 | 用户 | 境外 eSIM / WiFi Calling 工具人 | 实验室 + 国内场景 | **国内短信 + 国外短信** 两条线 |
 | 中国卡 MCC 460/461 | 源码 `BlockedMCCs` **拉黑**数据/短信/VoWiFi | 不拉黑；UFI 登不上网 | **禁止抄拉黑** |
@@ -92,7 +92,7 @@ VoCat 比我们超前的、值得抄的三块：
 约束：
 
 - Service Worker **只缓存壳和静态资源**（HTML/JS/CSS/图标）。`/api/*`、SSE、`/ping` **一律不缓存**。  
-- 安装提示和独立窗口需要 **HTTPS**（或 localhost）。现网 `http://vodog.lab.lan:7575` 不够；入口走 Caddy / Tailscale / 已有反代，**不要把 7575 裸暴露公网**。  
+- 安装提示和独立窗口需要 **HTTPS**（或 localhost）。现网 `http://vodoge.lab.lan:7575` 不够；入口走 Caddy / Tailscale / 已有反代，**不要把 7575 裸暴露公网**。  
 - iOS 推送弱，不把 Web Push 写进第 1b 验收。有余力再做第 5 期。  
 - 不做离线队列、不做两套 API。
 
@@ -156,10 +156,10 @@ VoCat 比我们超前的、值得抄的三块：
 
 **软件先行（2026-08-15）：** 对照 VoCat 的 zip 清单、安装/启停/卸载、侧栏 iframe、本机后端反代，**不搬源码**。
 
-- 清单 `vodog-plugin.json`（也认 `vocat-plugin.json`），`schema_version=1`。
+- 清单 `vodoge-plugin.json`（也认 `vocat-plugin.json`），`schema_version=1`。
 - `GET/POST/PUT/DELETE /api/extensions*`；上传字段 `package`。
 - 从 URL 安装只走 HTTPS，解析后的地址不能是内网。
-- 后端 `VODOG_PLUGIN_ID` / `LISTEN` / `DATA_DIR`，并带 `VOCAT_*` 别名。
+- 后端 `VODOGE_PLUGIN_ID` / `LISTEN` / `DATA_DIR`，并带 `VOCAT_*` 别名。
 - 设置页安装；侧栏按 contribution 插入；`/plugins?plugin=&contribution=` iframe。
 
 插件以管理员权限跑，只装信任的包。硬件无关。

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/internal/modem"
+	"github.com/yuanshuai1122/vodoge/internal/modem"
 )
 
 type atRadioSnapshotTestQuerier struct {

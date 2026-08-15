@@ -9,8 +9,8 @@
  * 组件可以在 render 期间安全读取，无需 effect + setState，也不会有 hydration 错配。
  */
 
-const TOKEN_KEY = "vodog.token";
-const EXPIRES_KEY = "vodog.token.expires_at";
+const TOKEN_KEY = "vodoge.token";
+const EXPIRES_KEY = "vodoge.token.expires_at";
 
 const listeners = new Set<() => void>();
 

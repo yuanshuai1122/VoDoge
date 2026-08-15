@@ -1,7 +1,7 @@
-# VoDog 服务端：SQLite → PostgreSQL 完整改造计划
+# VoDoge 服务端：SQLite → PostgreSQL 完整改造计划
 
 > **状态**：计划定稿（策略已确认，**代码尚未改**）  
-> **仓库**：https://github.com/yuanshuai1122/VoDog  
+> **仓库**：https://github.com/yuanshuai1122/VoDoge  
 > **日期**：2026-08-11  
 > **策略**：**直接切断 SQLite 运行时，仅使用 PostgreSQL**（见 `docs/backend-db-decisions.md`）
 
@@ -9,7 +9,7 @@
 
 ## 0. 一句话目标
 
-把 VoDog 后端的持久化从「单文件 SQLite」换成「独立 PostgreSQL」，**业务 API / 设备池 / 短信 / eSIM / 代理逻辑尽量不动**，只改：配置、连接、方言、迁移、测试、部署。
+把 VoDoge 后端的持久化从「单文件 SQLite」换成「独立 PostgreSQL」，**业务 API / 设备池 / 短信 / eSIM / 代理逻辑尽量不动**，只改：配置、连接、方言、迁移、测试、部署。
 
 ---
 

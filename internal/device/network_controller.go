@@ -1,8 +1,8 @@
 package device
 
 import (
-	mbimcore "github.com/yuanshuai1122/vodog/internal/mbim"
-	qmicore "github.com/yuanshuai1122/vodog/internal/qmi"
+	mbimcore "github.com/yuanshuai1122/vodoge/internal/mbim"
+	qmicore "github.com/yuanshuai1122/vodoge/internal/qmi"
 )
 
 type NetworkController interface {

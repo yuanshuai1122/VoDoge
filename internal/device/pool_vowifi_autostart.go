@@ -3,7 +3,7 @@ package device
 import (
 	"time"
 
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 const vowifiInitialAutoStartReason = "startup_auto"

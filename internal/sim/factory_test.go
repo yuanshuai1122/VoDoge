@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	swusim "github.com/boa-z/vowifi-go/engine/sim"
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/pkg/mbim"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/pkg/mbim"
 )
 
 type factoryWorkerStub struct {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/yuanshuai1122/vodog/internal/modem"
+	"github.com/yuanshuai1122/vodoge/internal/modem"
 )
 
 // ModemChannel 实现 euicc-go 的 driver.SmartCardChannel 接口

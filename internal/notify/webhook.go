@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // webhookPayload 定义 Webhook 推送的 JSON 结构

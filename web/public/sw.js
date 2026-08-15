@@ -1,8 +1,8 @@
-/* VoDog PWA：只缓存壳和静态资源。
+/* VoDoge PWA：只缓存壳和静态资源。
  * /api/*、/ping、text/event-stream 一律不拦截，走浏览器默认网络。
  * 规则与 web/lib/pwa/cache-policy.ts 对齐。
  */
-const CACHE = "vodog-shell-v1";
+const CACHE = "vodoge-shell-v1";
 const PRECACHE = ["/", "/sms", "/login", "/manifest.webmanifest", "/icons/icon.svg"];
 
 function bypass(url, accept) {

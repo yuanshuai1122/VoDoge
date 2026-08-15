@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodoge/internal/db"
 	_ "modernc.org/sqlite"
 )
 

@@ -1,4 +1,4 @@
-BINARY_NAME ?= vodog
+BINARY_NAME ?= vodoge
 GO_TAGS ?= with_utls nomsgpack
 GOOS ?= linux
 CGO_ENABLED ?= 0
@@ -6,10 +6,10 @@ VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo "unknown")
 VERSION_TAG = $(if $(filter v%,$(VERSION)),$(VERSION),v$(VERSION))
 BUILD_TIME ?= $(shell date "+%Y-%m-%d %H:%M:%S")
 DIST_DIR ?= dist
-MAIN_PACKAGE ?= ./cmd/vodog
+MAIN_PACKAGE ?= ./cmd/vodoge
 CI ?= ./scripts/ci.sh
 
-LDFLAGS = -s -w -X 'github.com/yuanshuai1122/vodog/internal/global.Version=$(VERSION)' -X 'github.com/yuanshuai1122/vodog/internal/global.BuildTime=$(BUILD_TIME)'
+LDFLAGS = -s -w -X 'github.com/yuanshuai1122/vodoge/internal/global.Version=$(VERSION)' -X 'github.com/yuanshuai1122/vodoge/internal/global.BuildTime=$(BUILD_TIME)'
 GO_BUILD = go build -trimpath -buildvcs=false -tags "$(GO_TAGS)" -ldflags "$(LDFLAGS)"
 
 AMD64_OUT = $(DIST_DIR)/$(BINARY_NAME)_$(VERSION_TAG)_linux_amd64

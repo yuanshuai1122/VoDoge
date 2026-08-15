@@ -47,10 +47,10 @@
 
 语义对齐 VoCat 控制台扩展，实现是本仓库自己的：
 
-- 包：zip ≤ 64MiB，根目录（或单层目录）放 `vodog-plugin.json`（也认 `vocat-plugin.json`）。
+- 包：zip ≤ 64MiB，根目录（或单层目录）放 `vodoge-plugin.json`（也认 `vocat-plugin.json`）。
 - 安装：URL（仅 HTTPS，拒绝内网）或上传；同 id 须先卸载。上传也可带 `sha256`。
-- 反代剥 `Cookie` / `Authorization` / `Set-Cookie`，加上 `X-VoDog-Plugin-ID`。
-- 后端：按 `GOOS/GOARCH` 起 `127.0.0.1:随机端口`，环境变量 `VODOG_PLUGIN_*`，并带 `VOCAT_PLUGIN_*` 别名。
+- 反代剥 `Cookie` / `Authorization` / `Set-Cookie`，加上 `X-VoDoge-Plugin-ID`。
+- 后端：按 `GOOS/GOARCH` 起 `127.0.0.1:随机端口`，环境变量 `VODOGE_PLUGIN_*`，并带 `VOCAT_PLUGIN_*` 别名。
 - 页面：侧栏入口 + 沙箱 iframe；`/plugin-assets/:id/...`；`/api/extensions/:id/backend` 反代。
 
 插件以后端管理员权限跑，只装完全信任的包。

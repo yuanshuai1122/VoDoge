@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	proxytraffic "github.com/yuanshuai1122/vodog/internal/proxy/traffic"
+	proxytraffic "github.com/yuanshuai1122/vodoge/internal/proxy/traffic"
 )
 
 func TestOverviewStreamEmitVersionIgnoresRuntimeUpdatedAt(t *testing.T) {

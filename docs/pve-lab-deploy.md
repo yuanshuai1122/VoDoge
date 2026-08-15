@@ -11,14 +11,14 @@
 PVE 宿主机 192.168.2.50
   └─ xHCI 0000:00:14.0  —— PCI 直通 ——▶  VM 113 vohive
                                               192.168.2.80
-                                              vodog.lab.lan
+                                              vodoge.lab.lan
                                               Ubuntu 24.04 / 6.8.0-137
                                               /opt/vohive + docker compose
                                               USB 2-4  34d12d26
                                               USB 2-8  6726c019
 ```
 
-不要把 VoDog 放在 PVE 宿主机、不要放 LXC、不要先上 k8s。棒子默认 RNDIS，宿主机一旦认成网卡会抢走默认路由。
+不要把 VoDoge 放在 PVE 宿主机、不要放 LXC、不要先上 k8s。棒子默认 RNDIS，宿主机一旦认成网卡会抢走默认路由。
 
 ## 虚拟机
 
@@ -27,13 +27,13 @@ PVE 宿主机 192.168.2.50
 | VMID | 113 |
 | 名称 | `vohive` |
 | IP | `192.168.2.80/24`，网关 `192.168.2.1`，DNS `192.168.2.51` |
-| 域名 | `vodog.lab.lan` |
+| 域名 | `vodoge.lab.lan` |
 | 规格 | 4 vCPU / 6G / 60G |
 | 模板 | VMID 9000 Ubuntu 24.04 |
 | 用户 | `ops`（sudo；**不在** `docker` 组，docker 命令要 sudo） |
 | USB | `hostpci0: 0000:00:14.0`（整颗 Intel 8 Series xHCI） |
 | 启动 | `onboot=1`，`startup: order=2,up=20`（跟在 jumpserver 后面） |
-| 代码 | 本机克隆 `Documents/local/vodog`；虚机上仍是 `/opt/vohive`（compose 工作目录，未改以免断挂载） |
+| 代码 | 本机克隆 `Documents/local/vodoge`；虚机上仍是 `/opt/vohive`（compose 工作目录，未改以免断挂载） |
 
 两根同型号棒子必须按控制器直通或按口绑定，不能 `host=05c6:90b4`。
 
@@ -41,7 +41,7 @@ PVE 宿主机 192.168.2.50
 
 两根都是 `UFI103S_V02_QR_QB_DD_230515`，原厂 Android，没有刷 OpenStick。
 
-| 客户机 USB | ADB 序列号 | VoDog ID | SIM | 出厂 PID | QMI PID | 备注 |
+| 客户机 USB | ADB 序列号 | VoDoge ID | SIM | 出厂 PID | QMI PID | 备注 |
 |---|---|---|---|---|---|---|
 | `2-4` | `34d12d26` | `ufi-34d12d26` | **有卡**（电信 USIM，应用态曾报 `illegal`） | `05c6:90b4` | `05c6:9091` | 样品；本机工作区有 eMMC 备份 |
 | `2-8` | `6726c019` | `ufi-6726c019` | **无卡**（UIM `no-atr` / `unknown`） | `05c6:90b4` | `05c6:9091` | 同批次；尚未做同等级备份 |
@@ -121,7 +121,7 @@ sudo docker compose --env-file .env up -d
 curl -sS http://127.0.0.1:7575/ping
 ```
 
-访问：`http://vodog.lab.lan:7575` 或 `http://192.168.2.80:7575`。  
+访问：`http://vodoge.lab.lan:7575` 或 `http://192.168.2.80:7575`。  
 装 PWA 可在系统设置打开「本机自签 HTTPS」（同一端口，先下载并信任证书）。  
 `network_mode: host` + `privileged` + `/dev`，一个实例独占这台机器上的全部棒子。
 
@@ -139,11 +139,11 @@ curl -sS http://127.0.0.1:7575/ping
 infra 容器 `100` 的 `/etc/dnsmasq.d/lab.conf`：
 
 ```
-host-record=vodog.lab.lan,192.168.2.80
+host-record=vodoge.lab.lan,192.168.2.80
 ```
 
 ```bash
-dig @192.168.2.51 vodog.lab.lan +short    # 192.168.2.80
+dig @192.168.2.51 vodoge.lab.lan +short    # 192.168.2.80
 ```
 
 ## 明确不做
@@ -161,7 +161,7 @@ dig @192.168.2.51 vodog.lab.lan +short    # 192.168.2.80
 | VM 113 + xHCI 直通 | 已完成 | 2026-08-15 之前 |
 | 客户机基线 / ModemManager 关闭 | 已完成 | 2026-08-15 |
 | `34d12d26` 切 QMI、读到 IMEI | 已完成 | 2026-08-15 |
-| DNS `vodog.lab.lan` + 启动顺序 | 已完成 | 2026-08-15 |
+| DNS `vodoge.lab.lan` + 启动顺序 | 已完成 | 2026-08-15 |
 | 修 `.dockerignore` + 补 `internal/data` + 镜像 + compose + `/ping` | 已完成 | 2026-08-15 |
 | 发现页登记 `ufi-34d12d26`（QMI 后端起来，SIM 身份入库） | 已完成 | 2026-08-15 |
 | 第二根 `6726c019` 切 QMI + 登记 `ufi-6726c019` | 已完成 | 2026-08-15 |
@@ -169,7 +169,7 @@ dig @192.168.2.51 vodog.lab.lan +short    # 192.168.2.80
 | 拔插 / 虚拟机重启门槛 | 未做 | |
 | JumpServer 收纳 | 未做 | |
 
-### 两根都进 VoDog 之后（2026-08-15）
+### 两根都进 VoDoge 之后（2026-08-15）
 
 两根都是 `05c6:9091`，控制节点按口对齐：`2-4` → `/dev/cdc-wdm0`/`wwan0`，`2-8` → `/dev/cdc-wdm1`/`wwan1`。不要把这些路径写进配置。
 

@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
-	"github.com/yuanshuai1122/vodog/internal/esim"
-	"github.com/yuanshuai1122/vodog/internal/pcsc"
+	"github.com/yuanshuai1122/vodoge/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodoge/internal/esim"
+	"github.com/yuanshuai1122/vodoge/internal/pcsc"
 )
 
 func TestEsimWriteHTTPStatus(t *testing.T) {

@@ -15,18 +15,18 @@ import (
 
 	"github.com/boa-z/vowifi-go/runtimehost/carrier"
 	"github.com/boa-z/vowifi-go/runtimehost/voicehost"
-	"github.com/yuanshuai1122/vodog/internal/api"
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/db"
-	"github.com/yuanshuai1122/vodog/internal/device"
-	"github.com/yuanshuai1122/vodog/internal/notify"
-	proxyserver "github.com/yuanshuai1122/vodog/internal/proxy/server"
-	"github.com/yuanshuai1122/vodog/internal/proxy/traffic"
-	"github.com/yuanshuai1122/vodog/internal/sipgw"
-	"github.com/yuanshuai1122/vodog/internal/upstreamproxy"
+	"github.com/yuanshuai1122/vodoge/internal/api"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/db"
+	"github.com/yuanshuai1122/vodoge/internal/device"
+	"github.com/yuanshuai1122/vodoge/internal/notify"
+	proxyserver "github.com/yuanshuai1122/vodoge/internal/proxy/server"
+	"github.com/yuanshuai1122/vodoge/internal/proxy/traffic"
+	"github.com/yuanshuai1122/vodoge/internal/sipgw"
+	"github.com/yuanshuai1122/vodoge/internal/upstreamproxy"
 
-	"github.com/yuanshuai1122/vodog/internal/web"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/web"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 
 	"github.com/emiago/sipgo/sip"
 )
@@ -64,12 +64,12 @@ func main() {
 	})
 	// 将内置 slog 重定向到已就绪的系统日志框架
 	slog.SetDefault(slog.New(logger.NewSlogHandler(logger.ZapLogger())))
-	logger.Info("VoDog 模组管理器启动中...")
+	logger.Info("VoDoge 模组管理器启动中...")
 
 	go func() {
 		disclaimer := `
 ======================================================================
-【VoDog 免责与使用声明】
+【VoDoge 免责与使用声明】
 1. 本软件仅供个人技术测试与研究交流，严禁任何商业用途。
 2. 严禁将本软件用于任何非法或违规场景。
 3. 本软件涉及底层通信操作，因测试产生的硬件、资费或网络风险由用户自行承担。

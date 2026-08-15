@@ -17,10 +17,10 @@ import (
 	"unicode/utf16"
 
 	"github.com/warthog618/sms/encoding/gsm7"
-	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
-	"github.com/yuanshuai1122/vodog/pkg/smscodec"
+	"github.com/yuanshuai1122/vodoge/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/smscodec"
 
 	"go.bug.st/serial"
 )

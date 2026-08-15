@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vodog/internal/extensions"
+	"github.com/yuanshuai1122/vodoge/internal/extensions"
 )
 
 func testPluginZip(t *testing.T, id string) []byte {
@@ -26,7 +26,7 @@ func testPluginZip(t *testing.T, id string) []byte {
 			{"id": "demo-page", "label": "Demo", "location": "sidebar", "entry": "index.html"}
 		]
 	}`
-	w, err := zw.Create("vodog-plugin.json")
+	w, err := zw.Create("vodoge-plugin.json")
 	if err != nil {
 		t.Fatal(err)
 	}

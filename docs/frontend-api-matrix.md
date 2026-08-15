@@ -1,9 +1,9 @@
-# VoDog 前端 ↔ 后端 API 契约矩阵
+# VoDoge 前端 ↔ 后端 API 契约矩阵
 
 > **来源**：直接阅读 `internal/api/` 源码得出。  
 > **日期**：2026-08-14（响应结构统一后）  
 > **用途**：前端的接口依据。实现每个页面前先查本文件。
-> `openapi.vodog.yaml` 已与实现对齐（§7），两者由 `scripts/ci.sh` 持续校验。
+> `openapi.vodoge.yaml` 已与实现对齐（§7），两者由 `scripts/ci.sh` 持续校验。
 
 ---
 
@@ -398,7 +398,7 @@ E911 websheet 本质是把运营商网页代理进本服务。前端流程：
 
 ---
 
-## 7. 与 `openapi.vodog.yaml` 的一致性
+## 7. 与 `openapi.vodoge.yaml` 的一致性
 
 **2026-08-13 起已对齐**，并由 `scripts/check-routes.mjs` 在本地流水线里持续校验：
 spec 缺少任何一条已注册路由、或声明了未注册的路由，`bash scripts/ci.sh routes` 都会失败。

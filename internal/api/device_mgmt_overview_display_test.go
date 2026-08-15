@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 // 重构后策略字段(network/vowifi/airplane/ip/apn/sms)只存在于运行时投影(w.Config)，

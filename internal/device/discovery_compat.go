@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/boa-z/quectel-qmi-go/pkg/qmi"
-	qmicore "github.com/yuanshuai1122/vodog/internal/qmi"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	qmicore "github.com/yuanshuai1122/vodoge/internal/qmi"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // CompatibleModem 描述可接管的 modem（QMI + 非QMI）。

@@ -1,4 +1,4 @@
-# VoDog 前端 React 重写 — 进度日志
+# VoDoge 前端 React 重写 — 进度日志
 
 ---
 
@@ -13,7 +13,7 @@
 ### 2026-08-11 — 版权与仓库归属
 
 - **状态**：done  
-- **内容**：模块路径改为 `github.com/yuanshuai1122/vodog`；LICENSE 更新为维护方专有声明  
+- **内容**：模块路径改为 `github.com/yuanshuai1122/vodoge`；LICENSE 更新为维护方专有声明  
 - **业务实现**：未改 PG/React 功能代码  
 
 ---
@@ -166,7 +166,7 @@ Next 静态导出为每个路由同时产出 `login.html` 和一个同名目录 
 
 - **状态**：done
 - **做法**：通读 `internal/api/`（路由注册、认证、SSE、各域 handler）、`internal/device/lifecycle.go`，
-  并与 `openapi.vodog.yaml` 做端点级 diff。**未运行验证**（本机无 Go 工具链）。
+  并与 `openapi.vodoge.yaml` 做端点级 diff。**未运行验证**（本机无 Go 工具链）。
 - **产出**：`docs/frontend-api-matrix.md` — 97 条实际端点、认证机制、响应/错误形状、
   4 个 SSE 协议、游标分页、9 个生命周期状态、spec 偏差、5 个后端遗留问题。
 - **推翻的三个旧假设**：

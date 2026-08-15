@@ -5,9 +5,9 @@ import (
 
 	"github.com/boa-z/vowifi-go/runtimehost/voicehost"
 	"github.com/emiago/sipgo/sip"
-	"github.com/yuanshuai1122/vodog/internal/sipgw"
+	"github.com/yuanshuai1122/vodoge/internal/sipgw"
 
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // SetVoiceGateway 注入 VoWiFi 语音网关，用于优先走 IMS 外呼/挂断路径。

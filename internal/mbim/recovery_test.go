@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/pkg/mbim"
+	"github.com/yuanshuai1122/vodoge/pkg/mbim"
 )
 
 func TestOnRecoveryExhaustedDispatch(t *testing.T) {

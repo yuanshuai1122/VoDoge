@@ -1,28 +1,28 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: vodog-postgres
+    container_name: vodoge-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: vodog
-      POSTGRES_PASSWORD: ${VODOG_POSTGRES_PASSWORD:-${VOHIVE_POSTGRES_PASSWORD:-vodog}}
-      POSTGRES_DB: vodog
+      POSTGRES_USER: vodoge
+      POSTGRES_PASSWORD: ${VODOGE_POSTGRES_PASSWORD:-${VODOG_POSTGRES_PASSWORD:-${VOHIVE_POSTGRES_PASSWORD:-vodoge}}}
+      POSTGRES_DB: vodoge
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vodog -d vodog"]
+      test: ["CMD-SHELL", "pg_isready -U vodoge -d vodoge"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  vodog:
+  vodoge:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${VODOG_IMAGE:-ghcr.io/yuanshuai1122/vodog:latest}
-    container_name: vodog
+    image: ${VODOGE_IMAGE:-${VODOG_IMAGE:-ghcr.io/yuanshuai1122/vodoge:latest}}
+    container_name: vodoge
     restart: unless-stopped
     network_mode: "host"
     privileged: true
@@ -33,7 +33,7 @@ services:
       - /dev:/dev
     environment:
       - TZ=Asia/Shanghai
-      - VODOG_DB_DSN=host=127.0.0.1 user=vodog password=${VODOG_POSTGRES_PASSWORD:-${VOHIVE_POSTGRES_PASSWORD:-vodog}} dbname=vodog port=5432 sslmode=disable TimeZone=UTC
+      - VODOGE_DB_DSN=host=127.0.0.1 user=vodoge password=${VODOGE_POSTGRES_PASSWORD:-${VODOG_POSTGRES_PASSWORD:-${VOHIVE_POSTGRES_PASSWORD:-vodoge}}} dbname=vodoge port=5432 sslmode=disable TimeZone=UTC
     depends_on:
       postgres:
         condition: service_healthy

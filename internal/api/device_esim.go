@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
-	"github.com/yuanshuai1122/vodog/internal/device"
-	"github.com/yuanshuai1122/vodog/internal/esim"
-	"github.com/yuanshuai1122/vodog/internal/pcsc"
+	"github.com/yuanshuai1122/vodoge/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodoge/internal/device"
+	"github.com/yuanshuai1122/vodoge/internal/esim"
+	"github.com/yuanshuai1122/vodoge/internal/pcsc"
 
 	"github.com/gin-gonic/gin"
 )

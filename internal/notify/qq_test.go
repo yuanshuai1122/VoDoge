@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	qqbot "github.com/yuanshuai1122/vodog/internal/qqbot"
+	qqbot "github.com/yuanshuai1122/vodoge/internal/qqbot"
 )
 
 func TestQQChannelSendBroadcastsToAllowedRecipients(t *testing.T) {

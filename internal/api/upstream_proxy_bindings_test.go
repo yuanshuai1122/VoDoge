@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vodog/internal/data/repo"
-	"github.com/yuanshuai1122/vodog/internal/db"
+	"github.com/yuanshuai1122/vodoge/internal/data/repo"
+	"github.com/yuanshuai1122/vodoge/internal/db"
 )
 
 const testBindingICCID = "89441000400128014257"

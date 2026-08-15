@@ -1,6 +1,6 @@
 package api
 
-import "github.com/yuanshuai1122/vodog/internal/config"
+import "github.com/yuanshuai1122/vodoge/internal/config"
 
 const (
 	smsTransportCellular = "cellular"

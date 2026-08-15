@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/boa-z/vowifi-go/runtimehost"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 func (m *Manager) BeginStart(deviceID string) StartClaim {

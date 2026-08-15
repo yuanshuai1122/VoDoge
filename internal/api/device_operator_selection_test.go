@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/backend"
-	"github.com/yuanshuai1122/vodog/internal/device"
+	"github.com/yuanshuai1122/vodoge/internal/backend"
+	"github.com/yuanshuai1122/vodoge/internal/device"
 )
 
 func TestOperatorSelectionErrorStatusMapsBusyStatesToConflict(t *testing.T) {

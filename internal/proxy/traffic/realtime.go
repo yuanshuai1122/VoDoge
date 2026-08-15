@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/device"
+	"github.com/yuanshuai1122/vodoge/internal/device"
 )
 
 const (

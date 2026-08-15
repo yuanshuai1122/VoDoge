@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/httpsmode"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/httpsmode"
 )
 
 func TestHTTPSRedirectWhenEnabled(t *testing.T) {
@@ -26,12 +26,12 @@ func TestHTTPSRedirectWhenEnabled(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "http://vodog.lab.lan:7575/sms", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://vodoge.lab.lan:7575/sms", nil)
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusPermanentRedirect {
 		t.Fatalf("status=%d want 308 body=%s", rec.Code, rec.Body.String())
 	}
-	if loc := rec.Header().Get("Location"); loc != "https://vodog.lab.lan:7575/sms" {
+	if loc := rec.Header().Get("Location"); loc != "https://vodoge.lab.lan:7575/sms" {
 		t.Fatalf("Location=%q", loc)
 	}
 }

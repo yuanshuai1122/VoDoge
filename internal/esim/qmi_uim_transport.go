@@ -8,8 +8,8 @@ import (
 	"time"
 
 	qmiq "github.com/boa-z/quectel-qmi-go/pkg/qmi"
-	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/apduarbiter"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // QMIUIMTransport 提供独立于 qmicore.Manager 的 QMI UIM APDU 传输实现。

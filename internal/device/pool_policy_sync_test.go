@@ -3,7 +3,7 @@ package device
 import (
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 func newPoolWithWorkerForSync(id string, cfg config.DeviceConfig) (*Pool, *Worker) {

@@ -9,10 +9,10 @@ import (
 
 	"github.com/boa-z/vowifi-go/runtimehost"
 	"github.com/boa-z/vowifi-go/runtimehost/identity"
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/pcsc"
-	innersim "github.com/yuanshuai1122/vodog/internal/sim"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/pcsc"
+	innersim "github.com/yuanshuai1122/vodoge/internal/sim"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 // pcscModemAdapter 把读卡器当成 VoWiFi 的 SIM 入口：无射频，AKA / 身份走 PC/SC。

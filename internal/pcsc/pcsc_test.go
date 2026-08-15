@@ -19,7 +19,7 @@ func (fakeFileInfo) Sys() any           { return nil }
 
 func TestDiscoverMissingDaemon(t *testing.T) {
 	b := &SystemBackend{
-		Sockets: []string{"/tmp/vodog-no-such-pcscd.comm"},
+		Sockets: []string{"/tmp/vodoge-no-such-pcscd.comm"},
 		Stat: func(string) (os.FileInfo, error) {
 			return nil, os.ErrNotExist
 		},

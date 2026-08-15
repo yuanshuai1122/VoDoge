@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	qmimanager "github.com/boa-z/quectel-qmi-go/pkg/manager"
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 func TestBuildQMIManagerConfigIPFamily(t *testing.T) {

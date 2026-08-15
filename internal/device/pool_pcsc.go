@@ -7,10 +7,10 @@ import (
 
 	"github.com/damonto/euicc-go/driver"
 	"github.com/damonto/euicc-go/lpa"
-	"github.com/yuanshuai1122/vodog/internal/config"
-	"github.com/yuanshuai1122/vodog/internal/esim"
-	"github.com/yuanshuai1122/vodog/internal/pcsc"
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/esim"
+	"github.com/yuanshuai1122/vodoge/internal/pcsc"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 )
 
 func (p *Pool) occupancy() *pcsc.Occupancy {

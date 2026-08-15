@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 // 零路径持久化后,持久化 config 不再含 control_device/interface 等路径;

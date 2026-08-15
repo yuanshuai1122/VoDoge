@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuanshuai1122/vodog/internal/config"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 
-	"github.com/yuanshuai1122/vodog/pkg/logger"
+	"github.com/yuanshuai1122/vodoge/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -246,7 +246,7 @@ func (s *Server) requestSessionToken(c *gin.Context) string {
 	return ""
 }
 
-const sessionCookieName = "vodog_session"
+const sessionCookieName = "vodoge_session"
 
 func (s *Server) attachSessionCookie(c *gin.Context, token string) {
 	if c == nil || strings.TrimSpace(token) == "" {
