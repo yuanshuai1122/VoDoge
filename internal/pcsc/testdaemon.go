@@ -18,13 +18,21 @@ type fakeReader struct {
 }
 
 type fakeDaemon struct {
-	t       *testing.T
-	socket  string
-	ln      net.Listener
-	readers []fakeReader
-	mu      sync.Mutex
-	seen    [][]byte
-	cmds    []uint32
+	t           *testing.T
+	socket      string
+	ln          net.Listener
+	readers     []fakeReader
+	mu          sync.Mutex
+	seen        [][]byte
+	cmds        []uint32
+	lastSelect  []byte
+	usimChannel byte
+}
+
+// StartFakeDaemonForTest 起一个假 pcscd，供读卡器 / VoWiFi AKA 单测连。
+func StartFakeDaemonForTest(t *testing.T, reader string) {
+	t.Helper()
+	startFakeDaemon(t, []fakeReader{{name: reader, cardPresent: true}})
 }
 
 func startFakeDaemon(t *testing.T, readers []fakeReader) *fakeDaemon {
@@ -174,8 +182,8 @@ func (d *fakeDaemon) handle(conn net.Conn) {
 			}
 			d.mu.Lock()
 			d.seen = append(d.seen, append([]byte(nil), apdu...))
+			resp := d.fakeAPDU(apdu)
 			d.mu.Unlock()
-			resp := fakeAPDU(apdu)
 			binary.LittleEndian.PutUint32(body[24:28], uint32(len(resp)))
 			binary.LittleEndian.PutUint32(body[28:32], scardSuccess)
 			_, _ = conn.Write(body)
@@ -187,16 +195,47 @@ func (d *fakeDaemon) handle(conn net.Conn) {
 }
 
 func fakeAPDU(apdu []byte) []byte {
-	if len(apdu) >= 4 && apdu[1] == 0x70 && apdu[2] == 0x00 {
-		return []byte{0x01, 0x90, 0x00}
+	return (&fakeDaemon{}).fakeAPDU(apdu)
+}
+
+func (d *fakeDaemon) fakeAPDU(apdu []byte) []byte {
+	if len(apdu) < 4 {
+		return []byte{0x6F, 0x00}
 	}
-	if len(apdu) >= 4 && apdu[1] == 0x70 && apdu[2] == 0x80 {
+	ins, p1 := apdu[1], apdu[2]
+	switch ins {
+	case 0x70:
+		if p1 == 0x00 {
+			if d != nil {
+				d.usimChannel = 1
+			}
+			return []byte{0x01, 0x90, 0x00}
+		}
+		if p1 == 0x80 {
+			if d != nil {
+				d.usimChannel = 0
+			}
+			return []byte{0x90, 0x00}
+		}
+	case 0xA4:
+		if d != nil && len(apdu) >= 5 {
+			n := int(apdu[4])
+			if 5+n <= len(apdu) {
+				d.lastSelect = append([]byte(nil), apdu[5:5+n]...)
+			}
+		}
 		return []byte{0x90, 0x00}
-	}
-	if len(apdu) >= 4 && apdu[1] == 0xA4 {
+	case 0xB0:
+		if d != nil {
+			switch string(d.lastSelect) {
+			case string([]byte{0x2F, 0xE2}):
+				return []byte{0x98, 0x68, 0x00, 0x21, 0x43, 0x65, 0x87, 0x09, 0x21, 0xF3, 0x90, 0x00}
+			case string([]byte{0x6F, 0x07}):
+				return []byte{0x08, 0x49, 0x06, 0x00, 0x21, 0x43, 0x65, 0x87, 0x09, 0x90, 0x00}
+			}
+		}
 		return []byte{0x90, 0x00}
-	}
-	if len(apdu) >= 4 && apdu[1] == 0xC0 {
+	case 0xC0, 0x88:
 		return []byte{0x90, 0x00}
 	}
 	return []byte{0x90, 0x00}

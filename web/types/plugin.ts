@@ -2,6 +2,7 @@ export interface PluginContribution {
   id: string;
   label: string;
   label_zh?: string;
+  label_en?: string;
   location: "sidebar" | "proxy";
   after?: string;
   entry: string;

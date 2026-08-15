@@ -16,6 +16,7 @@ import { UssdTab } from "@/components/devices/ussd-tab";
 import { CardPolicyTab } from "@/components/devices/card-policy-tab";
 import { ConfigTab } from "@/components/devices/config-tab";
 import { OperatorTab } from "@/components/devices/operator-tab";
+import { useT, type MessageKey } from "@/lib/i18n";
 
 /**
  * 设备详情。
@@ -23,15 +24,15 @@ import { OperatorTab } from "@/components/devices/operator-tab";
  * 走 query 参数而非 /devices/[id]：静态导出不支持没有 generateStaticParams 的
  * 动态路由，而设备 ID 只有运行时才知道，无法在构建期枚举。
  */
-const TABS = [
-  { value: "overview", label: "概览" },
-  { value: "esim", label: "eSIM" },
-  { value: "at", label: "AT" },
-  { value: "ussd", label: "USSD" },
-  { value: "operator", label: "选网" },
-  { value: "card-policy", label: "卡策略" },
-  { value: "config", label: "配置" },
-] as const;
+const TABS: { value: string; labelKey: MessageKey }[] = [
+  { value: "overview", labelKey: "detail.tab.overview" },
+  { value: "esim", labelKey: "detail.tab.esim" },
+  { value: "at", labelKey: "detail.tab.at" },
+  { value: "ussd", labelKey: "detail.tab.ussd" },
+  { value: "operator", labelKey: "detail.tab.operator" },
+  { value: "card-policy", labelKey: "detail.tab.policy" },
+  { value: "config", labelKey: "detail.tab.config" },
+];
 
 export default function DeviceDetailPage() {
   return (
@@ -45,6 +46,7 @@ export default function DeviceDetailPage() {
 function DeviceDetail() {
   const router = useRouter();
   const params = useSearchParams();
+  const t = useT();
 
   const deviceId = params.get("id") ?? "";
   const tab = params.get("tab") ?? "overview";
@@ -52,13 +54,13 @@ function DeviceDetail() {
   if (!deviceId) {
     return (
       <>
-        <PageHeader title="设备详情" />
+        <PageHeader title={t("detail.title")} />
         <EmptyState
-          title="缺少设备参数"
-          description="请从设备列表进入。"
+          title={t("detail.missing")}
+          description={t("detail.missingHint")}
           action={
             <Link href="/devices" className={buttonVariants({ size: "sm" })}>
-              返回设备列表
+              {t("detail.back")}
             </Link>
           }
         />
@@ -76,7 +78,7 @@ function DeviceDetail() {
   return (
     <>
       <PageHeader
-        title="设备详情"
+        title={t("detail.title")}
         description={deviceId}
         actions={
           <Link
@@ -84,16 +86,16 @@ function DeviceDetail() {
             className={buttonVariants({ variant: "outline", size: "sm" })}
           >
             <ArrowLeft className="size-4" />
-            返回列表
+            {t("detail.back")}
           </Link>
         }
       />
 
       <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
         <TabsList>
-          {TABS.map((t) => (
-            <TabsTrigger key={t.value} value={t.value}>
-              {t.label}
+          {TABS.map((item) => (
+            <TabsTrigger key={item.value} value={item.value}>
+              {t(item.labelKey)}
             </TabsTrigger>
           ))}
         </TabsList>

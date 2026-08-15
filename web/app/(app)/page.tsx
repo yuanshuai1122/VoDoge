@@ -10,8 +10,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { listDevices } from "@/lib/api/endpoints/devices";
 import { TrafficChart } from "@/components/traffic/traffic-chart";
 import type { DeviceOverview } from "@/types/device";
+import { useT } from "@/lib/i18n";
 
 export default function DashboardPage() {
+  const t = useT();
   // 刻意用 /devices 而非 /dashboard/devices：后者是精简快照，
   // 缺 lifecycle_phase 与 data_connected，下面的统计会恒为 0。
   // 复用设备页的 queryKey，两处共享同一份缓存。
@@ -23,7 +25,7 @@ export default function DashboardPage() {
 
   return (
     <>
-      <PageHeader title="仪表盘" description="设备与服务运行概览" />
+      <PageHeader title={t("dash.title")} description={t("dash.desc")} />
 
       {devicesQuery.isError ? (
         <ErrorState
@@ -46,12 +48,12 @@ export default function DashboardPage() {
 
       <div className="mt-8">
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">
-          快捷入口
+          {t("dash.shortcuts")}
         </h2>
         <div className="grid gap-3 sm:grid-cols-3">
-          <QuickLink href="/devices" icon={Smartphone} label="设备管理" />
-          <QuickLink href="/sms" icon={MessageSquare} label="短信中心" />
-          <QuickLink href="/proxy" icon={Network} label="代理管理" />
+          <QuickLink href="/devices" icon={Smartphone} label={t("nav.devices")} />
+          <QuickLink href="/sms" icon={MessageSquare} label={t("nav.sms")} />
+          <QuickLink href="/proxy" icon={Network} label={t("nav.proxy")} />
         </div>
       </div>
     </>
@@ -59,6 +61,7 @@ export default function DashboardPage() {
 }
 
 function Summary({ devices }: { devices: DeviceOverview[] }) {
+  const t = useT();
   const total = devices.length;
   // running / healthy / 数据连接是相互独立的位，分别统计更能反映真实状态
   const online = devices.filter((d) => d.lifecycle_phase === "online").length;
@@ -68,10 +71,10 @@ function Summary({ devices }: { devices: DeviceOverview[] }) {
   ).length;
 
   const stats = [
-    { label: "设备总数", value: total, icon: Smartphone },
-    { label: "在线", value: online, icon: Signal },
-    { label: "已联网", value: dataConnected, icon: Network },
-    { label: "异常", value: degraded, icon: Signal },
+    { label: t("dash.total"), value: total, icon: Smartphone },
+    { label: t("dash.online"), value: online, icon: Signal },
+    { label: t("dash.dataOn"), value: dataConnected, icon: Network },
+    { label: t("dash.abnormal"), value: degraded, icon: Signal },
   ];
 
   return (

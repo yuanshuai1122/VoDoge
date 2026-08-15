@@ -28,22 +28,27 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { changePassword } from "@/lib/api/endpoints/auth";
 import { ApiError } from "@/lib/api/errors";
+import { useT } from "@/lib/i18n";
 
-const schema = z
-  .object({
-    old_password: z.string().min(1, "请输入当前密码"),
-    new_password: z.string().min(6, "新密码至少 6 位"),
-    confirm_password: z.string().min(1, "请再次输入新密码"),
-  })
-  .refine((v) => v.new_password === v.confirm_password, {
-    message: "两次输入的新密码不一致",
-    path: ["confirm_password"],
-  });
-
-type FormValues = z.infer<typeof schema>;
+type FormValues = {
+  old_password: string;
+  new_password: string;
+  confirm_password: string;
+};
 
 export default function SettingsPage() {
+  const t = useT();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const schema = z
+    .object({
+      old_password: z.string().min(1, t("settings.needOld")),
+      new_password: z.string().min(6, t("settings.needNew")),
+      confirm_password: z.string().min(1, t("settings.needConfirm")),
+    })
+    .refine((v) => v.new_password === v.confirm_password, {
+      message: t("settings.mismatch"),
+      path: ["confirm_password"],
+    });
 
   const {
     register,
@@ -60,23 +65,21 @@ export default function SettingsPage() {
       await changePassword(values);
       // changePassword 内部已触发登出：后端 token 的 HMAC 密钥就是密码，
       // 改密后所有既有 token 立即失效，AuthGuard 会把页面切回登录
-      toast.success("密码已修改，请重新登录");
+      toast.success(t("settings.passwordOk"));
     } catch (e) {
-      setSubmitError(e instanceof ApiError ? e.message : "修改失败，请重试");
+      setSubmitError(e instanceof ApiError ? e.message : t("settings.passwordFailed"));
     }
   }
 
   return (
     <>
-      <PageHeader title="系统设置" description="账号、配额、短信限额与通知配置" />
+      <PageHeader title={t("settings.title")} description={t("settings.desc")} />
 
       <div className="flex max-w-2xl flex-col gap-6">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">修改密码</CardTitle>
-            <CardDescription>
-              修改后当前登录会立即失效，需要重新登录。
-            </CardDescription>
+            <CardTitle className="text-base">{t("settings.password")}</CardTitle>
+            <CardDescription>{t("settings.passwordHint")}</CardDescription>
           </CardHeader>
           <CardContent>
             <form
@@ -85,7 +88,7 @@ export default function SettingsPage() {
             >
               <Field
                 id="old_password"
-                label="当前密码"
+                label={t("settings.oldPassword")}
                 error={errors.old_password?.message}
               >
                 <Input
@@ -98,7 +101,7 @@ export default function SettingsPage() {
 
               <Field
                 id="new_password"
-                label="新密码"
+                label={t("settings.newPassword")}
                 error={errors.new_password?.message}
               >
                 <Input
@@ -111,7 +114,7 @@ export default function SettingsPage() {
 
               <Field
                 id="confirm_password"
-                label="确认新密码"
+                label={t("settings.confirmPassword")}
                 error={errors.confirm_password?.message}
               >
                 <Input
@@ -131,7 +134,7 @@ export default function SettingsPage() {
               <Separator />
 
               <Button type="submit" disabled={isSubmitting} className="self-start">
-                {isSubmitting ? "提交中…" : "修改密码"}
+                {isSubmitting ? t("common.loading") : t("settings.password")}
               </Button>
             </form>
           </CardContent>

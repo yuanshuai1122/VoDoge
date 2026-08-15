@@ -32,6 +32,7 @@ import {
 } from "@/types/device-config";
 import { cn } from "@/lib/utils";
 import { DEVICE_LANES, type DeviceLane } from "@/lib/lane";
+import { useT } from "@/lib/i18n";
 import {
   Select,
   SelectContent,
@@ -58,6 +59,7 @@ export function AddDeviceDialog({
   const [selectedReader, setSelectedReader] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [lane, setLane] = useState<DeviceLane>("");
+  const t = useT();
 
   const query = useQuery({
     queryKey: ["devices", "discovered"],
@@ -81,7 +83,7 @@ export function AddDeviceDialog({
       if (result.warning) {
         toast.warning(result.warning);
       } else {
-        toast.success("设备已添加");
+        toast.success(t("devices.addOk"));
       }
       queryClient.invalidateQueries({ queryKey: ["devices"] });
       onOpenChange(false);
@@ -91,7 +93,7 @@ export function AddDeviceDialog({
       setLane("");
     },
     onError: (e) =>
-      toast.error(e instanceof ApiError ? e.message : "添加失败"),
+      toast.error(e instanceof ApiError ? e.message : t("devices.addFailed")),
   });
 
   const addReader = useMutation({
@@ -111,7 +113,7 @@ export function AddDeviceDialog({
         interface: "",
         sms_enabled: true,
         network_enabled: false,
-        vowifi_enabled: false,
+        vowifi_enabled: true,
         device_backend: "pcsc",
         reader_name: readerName,
         lane: lane || undefined,
@@ -119,7 +121,7 @@ export function AddDeviceDialog({
     },
     onSuccess: (result) => {
       if (result.warning) toast.warning(result.warning);
-      else toast.success("读卡器已添加，可在设备详情里写卡");
+      else toast.success(t("devices.readerAdded"));
       queryClient.invalidateQueries({ queryKey: ["devices"] });
       queryClient.invalidateQueries({ queryKey: ["readers"] });
       onOpenChange(false);
@@ -129,17 +131,15 @@ export function AddDeviceDialog({
       setLane("");
     },
     onError: (e) =>
-      toast.error(e instanceof ApiError ? e.message : "添加失败"),
+      toast.error(e instanceof ApiError ? e.message : t("devices.addFailed")),
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>添加设备</DialogTitle>
-          <DialogDescription>
-            从已发现的硬件中选择一个加入管理。未列出的设备可先执行「重新扫描」。
-          </DialogDescription>
+          <DialogTitle>{t("add.title")}</DialogTitle>
+          <DialogDescription>{t("add.hint")}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
@@ -153,7 +153,7 @@ export function AddDeviceDialog({
               <RefreshCw
                 className={cn("size-4", query.isFetching && "animate-spin")}
               />
-              刷新发现结果
+              {t("add.refresh")}
             </Button>
           </div>
 
@@ -163,8 +163,8 @@ export function AddDeviceDialog({
             <Skeleton className="h-40" />
           ) : query.data.length === 0 ? (
             <EmptyState
-              title="未发现硬件"
-              description="确认模组已插入，且容器已透传 /dev 与 USB 设备（Windows 需 WSL + usbipd）。"
+              title={t("add.none")}
+              description={t("add.noneHint")}
             />
           ) : (
             <div className="max-h-72 overflow-auto rounded-lg border">
@@ -185,33 +185,33 @@ export function AddDeviceDialog({
           {(selected || selectedReader) && (
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="device_name">设备名称（可选）</Label>
+                <Label htmlFor="device_name">{t("add.nameOptional")}</Label>
                 <Input
                   id="device_name"
                   value={name}
-                  placeholder="留空则使用 IMEI"
+                  placeholder={t("add.namePh")}
                   onChange={(e) => setName(e.target.value)}
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="add_lane">线路</Label>
+                <Label htmlFor="add_lane">{t("add.lane")}</Label>
                 <Select
                   value={lane}
                   onValueChange={(v) => setLane((v ?? "") as DeviceLane)}
                 >
                   <SelectTrigger id="add_lane">
-                    <SelectValue placeholder="未分线" />
+                    <SelectValue placeholder={t("lane.none")} />
                   </SelectTrigger>
                   <SelectContent>
                     {DEVICE_LANES.map((opt) => (
                       <SelectItem key={opt.value || "none"} value={opt.value}>
-                        {opt.label}
+                        {t(opt.labelKey)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  国内线或国外线。不根据 SIM 的 MCC 自动判断，添加后可再改。
+                  {t("add.laneHint")}
                 </p>
               </div>
             </div>

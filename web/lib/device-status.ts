@@ -10,6 +10,7 @@
  */
 
 import type { DeviceOverview, LifecyclePhase } from "@/types/device";
+import { t, type MessageKey } from "@/lib/i18n";
 
 export type StatusTone = "ok" | "warn" | "danger" | "neutral" | "progress";
 
@@ -21,74 +22,38 @@ interface PhaseMeta {
   hint: string;
 }
 
-const PHASE_META: Record<LifecyclePhase, PhaseMeta> = {
-  online: {
-    label: "在线",
-    tone: "ok",
-    transient: false,
-    hint: "设备已就绪",
-  },
-  degraded: {
-    label: "降级",
-    tone: "warn",
-    transient: false,
-    hint: "设备在线但部分能力异常",
-  },
-  offline: {
-    label: "离线",
-    tone: "neutral",
-    transient: false,
-    hint: "设备未连接或未启动",
-  },
-  rebooting: {
-    label: "重启中",
-    tone: "progress",
-    transient: true,
-    hint: "模组正在重启",
-  },
-  usb_wait: {
-    label: "等待 USB",
-    tone: "progress",
-    transient: true,
-    hint: "等待 USB 设备重新枚举",
-  },
-  worker_starting: {
-    label: "启动中",
-    tone: "progress",
-    transient: true,
-    hint: "工作线程启动中",
-  },
-  qmi_starting: {
-    label: "QMI 启动中",
-    tone: "progress",
-    transient: true,
-    hint: "QMI 通道建立中",
-  },
-  recovering: {
-    label: "恢复中",
-    tone: "progress",
-    transient: true,
-    hint: "正在从异常中恢复",
-  },
-  evicting: {
-    label: "移除中",
-    tone: "danger",
-    transient: true,
-    hint: "设备正在被移出设备池",
-  },
+const PHASE_META: Record<
+  LifecyclePhase,
+  { label: MessageKey; tone: StatusTone; transient: boolean; hint: MessageKey }
+> = {
+  online: { label: "status.online", tone: "ok", transient: false, hint: "status.hint.online" },
+  degraded: { label: "status.degraded", tone: "warn", transient: false, hint: "status.hint.degraded" },
+  offline: { label: "status.offline", tone: "neutral", transient: false, hint: "status.hint.offline" },
+  rebooting: { label: "status.rebooting", tone: "progress", transient: true, hint: "status.hint.rebooting" },
+  usb_wait: { label: "status.usbWait", tone: "progress", transient: true, hint: "status.hint.usbWait" },
+  worker_starting: { label: "status.starting", tone: "progress", transient: true, hint: "status.hint.starting" },
+  qmi_starting: { label: "status.qmiStarting", tone: "progress", transient: true, hint: "status.hint.qmiStarting" },
+  recovering: { label: "status.recovering", tone: "progress", transient: true, hint: "status.hint.recovering" },
+  evicting: { label: "status.evicting", tone: "danger", transient: true, hint: "status.hint.evicting" },
 };
 
-/** 未知 phase 也要有确定的展示，不能出现空白。 */
-const UNKNOWN_PHASE: PhaseMeta = {
-  label: "未知",
-  tone: "neutral",
+const UNKNOWN_PHASE = {
+  label: "status.unknown" as MessageKey,
+  tone: "neutral" as StatusTone,
   transient: false,
-  hint: "后端返回了未识别的生命周期状态",
+  hint: "status.hint.unknown" as MessageKey,
 };
 
 export function phaseMeta(phase: string | undefined): PhaseMeta {
-  if (!phase) return UNKNOWN_PHASE;
-  return PHASE_META[phase as LifecyclePhase] ?? UNKNOWN_PHASE;
+  const raw = !phase
+    ? UNKNOWN_PHASE
+    : (PHASE_META[phase as LifecyclePhase] ?? UNKNOWN_PHASE);
+  return {
+    label: t(raw.label),
+    tone: raw.tone,
+    transient: raw.transient,
+    hint: t(raw.hint),
+  };
 }
 
 export interface DeviceStatusSummary {
@@ -122,14 +87,14 @@ export function summarizeDeviceStatus(d: DeviceOverview): DeviceStatusSummary {
     return {
       label: meta.label,
       tone: "neutral",
-      detail: d.lifecycle_reason || (d.physical_present ? "硬件在位但未启动" : "硬件不在位"),
+      detail: d.lifecycle_reason || (d.physical_present ? t("status.hwPresent") : t("status.hwMissing")),
       transient: false,
     };
   }
 
   if (d.lifecycle_phase === "degraded" || !d.healthy) {
     return {
-      label: "降级",
+      label: t("status.degraded"),
       tone: "warn",
       detail: d.lifecycle_reason || describeDegradation(d),
       transient: false,
@@ -139,18 +104,18 @@ export function summarizeDeviceStatus(d: DeviceOverview): DeviceStatusSummary {
   // online 且健康：进一步区分是否真正可用
   if (!d.radio_registered) {
     return {
-      label: "未注册",
+      label: t("status.unregistered"),
       tone: "warn",
-      detail: "已在线但未注册到运营商网络",
+      detail: t("status.unregisteredHint"),
       transient: false,
     };
   }
 
   if (d.network_enabled && !d.data_connected) {
     return {
-      label: "未联网",
+      label: t("status.noData"),
       tone: "warn",
-      detail: "已注册网络但数据连接未建立",
+      detail: t("status.noDataHint"),
       transient: false,
     };
   }
@@ -158,19 +123,19 @@ export function summarizeDeviceStatus(d: DeviceOverview): DeviceStatusSummary {
   return {
     label: meta.label,
     tone: meta.tone,
-    detail: d.public_ip ? `出口 IP ${d.public_ip}` : meta.hint,
+    detail: d.public_ip ? t("status.exitIp", { ip: d.public_ip }) : meta.hint,
     transient: false,
   };
 }
 
 function describeDegradation(d: DeviceOverview): string {
   const problems: string[] = [];
-  if (!d.control_online) problems.push("控制通道断开");
-  if (!d.worker_running) problems.push("工作线程未运行");
-  if (!d.physical_present) problems.push("硬件不在位");
-  if (!d.radio_registered) problems.push("未注册网络");
-  if (d.network_enabled && !d.data_connected) problems.push("数据未连接");
-  return problems.length > 0 ? problems.join("、") : "健康检查未通过";
+  if (!d.control_online) problems.push(t("status.ctrlDown"));
+  if (!d.worker_running) problems.push(t("status.workerDown"));
+  if (!d.physical_present) problems.push(t("status.hwMissing"));
+  if (!d.radio_registered) problems.push(t("status.noRadio"));
+  if (d.network_enabled && !d.data_connected) problems.push(t("status.dataDown"));
+  return problems.length > 0 ? problems.join("、") : t("status.unhealthy");
 }
 
 /** 信号强度分级。RSRP 为 0 通常表示无有效读数。 */
@@ -178,11 +143,11 @@ export function signalLevel(rsrp: number | undefined): {
   label: string;
   tone: StatusTone;
 } {
-  if (!rsrp || rsrp === 0) return { label: "无信号", tone: "neutral" };
-  if (rsrp >= -85) return { label: "优", tone: "ok" };
-  if (rsrp >= -100) return { label: "良", tone: "ok" };
-  if (rsrp >= -110) return { label: "中", tone: "warn" };
-  return { label: "弱", tone: "danger" };
+  if (!rsrp || rsrp === 0) return { label: t("signal.none"), tone: "neutral" };
+  if (rsrp >= -85) return { label: t("signal.excellent"), tone: "ok" };
+  if (rsrp >= -100) return { label: t("signal.good"), tone: "ok" };
+  if (rsrp >= -110) return { label: t("signal.fair"), tone: "warn" };
+  return { label: t("signal.weak"), tone: "danger" };
 }
 
 export const TONE_CLASS: Record<StatusTone, string> = {

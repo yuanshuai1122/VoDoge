@@ -23,11 +23,32 @@ type Channel struct {
 	hCard   int32
 	channel byte
 	inTxn   bool
+	gate    func() func()
 	mu      sync.Mutex
 }
 
 func NewChannel(reader string) *Channel {
 	return &Channel{reader: NormalizeReaderName(reader)}
+}
+
+// SetGate 在每次 APDU 前后加读卡器互斥。eSIM 与 VoWiFi AKA 共用。
+func (c *Channel) SetGate(gate func() func()) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.gate = gate
+	c.mu.Unlock()
+}
+
+func (c *Channel) enterGate() func() {
+	c.mu.Lock()
+	gate := c.gate
+	c.mu.Unlock()
+	if gate == nil {
+		return func() {}
+	}
+	return gate()
 }
 
 var _ driver.SmartCardChannel = (*Channel)(nil)
@@ -39,6 +60,8 @@ func (c *Channel) CurrentChannel() byte {
 }
 
 func (c *Channel) Connect() error {
+	unlock := c.enterGate()
+	defer unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.client != nil {
@@ -90,6 +113,8 @@ func (c *Channel) Disconnect() error {
 }
 
 func (c *Channel) OpenLogicalChannel(aid []byte) (byte, error) {
+	unlock := c.enterGate()
+	defer unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.client == nil {
@@ -113,6 +138,8 @@ func (c *Channel) OpenLogicalChannel(aid []byte) (byte, error) {
 }
 
 func (c *Channel) Transmit(command []byte) ([]byte, error) {
+	unlock := c.enterGate()
+	defer unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.client == nil {
@@ -124,6 +151,8 @@ func (c *Channel) Transmit(command []byte) ([]byte, error) {
 }
 
 func (c *Channel) CloseLogicalChannel(channel byte) error {
+	unlock := c.enterGate()
+	defer unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.client == nil {

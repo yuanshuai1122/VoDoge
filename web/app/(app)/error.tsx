@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n";
 
 /**
  * 应用区错误边界。
@@ -16,17 +17,17 @@ export default function AppError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  const t = useT();
   useEffect(() => {
-    // 没有接入前端监控，至少留在控制台便于排查
     console.error(error);
   }, [error]);
 
   return (
     <div className="flex min-h-[60svh] flex-col items-center justify-center gap-4 text-center">
       <div>
-        <h2 className="text-lg font-semibold">页面出错了</h2>
+        <h2 className="text-lg font-semibold">{t("error.title")}</h2>
         <p className="mt-1 max-w-md text-sm text-muted-foreground">
-          {error.message || "发生了未预期的错误。"}
+          {error.message || t("error.fallback")}
         </p>
         {error.digest && (
           <p className="mt-1 font-mono text-xs text-muted-foreground">
@@ -36,7 +37,7 @@ export default function AppError({
       </div>
 
       <Button size="sm" onClick={() => retry()}>
-        重试
+        {t("common.retry")}
       </Button>
     </div>
   );

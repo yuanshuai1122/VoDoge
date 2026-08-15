@@ -9,6 +9,7 @@
 
 import { parseApiError, ApiError } from "./errors";
 import { getToken, triggerLogout } from "../auth/token";
+import { t } from "@/lib/i18n";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
@@ -101,7 +102,7 @@ export async function apiFetch<T = unknown>(
     // 调用方主动取消不应变成错误提示
     if (signal?.aborted) throw e;
     const aborted = e instanceof DOMException && e.name === "AbortError";
-    throw new ApiError(aborted ? "请求超时" : "网络连接失败", { httpStatus: 0 });
+    throw new ApiError(aborted ? t("err.timeout") : t("err.network"), { httpStatus: 0 });
   }
   clearTimeout(timer);
 
@@ -137,7 +138,7 @@ function unwrapEnvelope<T>(payload: unknown): ApiResult<T> {
   if (!("data" in rec)) {
     // 2xx 却没有 data：要么是漏改的端点，要么是代理插了一脚。
     // 静默当成载荷会让问题一路飘到渲染层，不如在此处说清楚。
-    throw new ApiError("响应不符合信封结构（缺少 data 字段）", {
+    throw new ApiError(t("err.envelope"), {
       httpStatus: 200,
       body: rec,
     });

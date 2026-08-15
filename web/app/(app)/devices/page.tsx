@@ -32,10 +32,12 @@ import { ApiError } from "@/lib/api/errors";
 import { Sensitive } from "@/components/common/sensitive";
 import { AddDeviceDialog } from "@/components/devices/add-device-dialog";
 import { LaneBadge } from "@/components/common/lane-badge";
+import { useT } from "@/lib/i18n";
 
 export default function DevicesPage() {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  const t = useT();
 
   const query = useQuery({
     queryKey: ["devices", "list"],
@@ -49,28 +51,28 @@ export default function DevicesPage() {
   const rescan = useMutation({
     mutationFn: rescanDevices,
     onSuccess: () => {
-      toast.success("已触发重新扫描");
+      toast.success(t("devices.rescanned"));
       invalidate();
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : "扫描失败"),
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t("devices.scanFailed")),
   });
 
   const refresh = useMutation({
     mutationFn: refreshDevice,
     onSuccess: () => {
-      toast.success("已刷新设备信息");
+      toast.success(t("devices.refreshed"));
       invalidate();
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : "刷新失败"),
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t("devices.refreshFailed")),
   });
 
   const remove = useMutation({
     mutationFn: deleteDevice,
     onSuccess: () => {
-      toast.success("设备已删除");
+      toast.success(t("devices.deleted"));
       invalidate();
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : "删除失败"),
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t("devices.deleteFailed")),
   });
 
   const devices = query.data?.devices ?? [];
@@ -79,11 +81,11 @@ export default function DevicesPage() {
   return (
     <>
       <PageHeader
-        title="设备管理"
+        title={t("devices.title")}
         description={
           limit != null
-            ? `已接入 ${devices.length} / ${limit} 台设备`
-            : "模组发现、状态与配置"
+            ? t("devices.count", { n: devices.length, limit })
+            : t("devices.desc")
         }
         actions={
           <>
@@ -96,11 +98,11 @@ export default function DevicesPage() {
               <RotateCw
                 className={rescan.isPending ? "size-4 animate-spin" : "size-4"}
               />
-              重新扫描
+              {t("devices.rescan")}
             </Button>
             <Button size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="size-4" />
-              添加设备
+              {t("devices.add")}
             </Button>
           </>
         }
@@ -116,11 +118,11 @@ export default function DevicesPage() {
         </div>
       ) : devices.length === 0 ? (
         <EmptyState
-          title="暂无设备"
-          description="插入模组后点击「重新扫描」，或确认容器已透传 /dev 与 USB 设备。"
+          title={t("devices.empty")}
+          description={t("devices.emptyHint")}
           action={
             <Button size="sm" onClick={() => setAddOpen(true)}>
-              添加设备
+              {t("devices.add")}
             </Button>
           }
         />
@@ -129,13 +131,13 @@ export default function DevicesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>设备</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>信号</TableHead>
-                <TableHead>运营商</TableHead>
-                <TableHead>出口 IP</TableHead>
-                <TableHead>ICCID</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead>{t("devices.colDevice")}</TableHead>
+                <TableHead>{t("devices.colStatus")}</TableHead>
+                <TableHead>{t("devices.colSignal")}</TableHead>
+                <TableHead>{t("devices.colOperator")}</TableHead>
+                <TableHead>{t("devices.colIp")}</TableHead>
+                <TableHead>{t("devices.colIccid")}</TableHead>
+                <TableHead className="text-right">{t("devices.colActions")}</TableHead>
               </TableRow>
             </TableHeader>
 

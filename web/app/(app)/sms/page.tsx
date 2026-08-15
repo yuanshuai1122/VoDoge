@@ -6,22 +6,24 @@ import { ContactList, type ContactKey } from "@/components/sms/contact-list";
 import { ThreadView } from "@/components/sms/thread-view";
 import { cn } from "@/lib/utils";
 import { DEVICE_LANES, type DeviceLane } from "@/lib/lane";
+import { useT } from "@/lib/i18n";
 
 export default function SmsPage() {
   const [selected, setSelected] = useState<ContactKey | null>(null);
   const [lane, setLane] = useState<DeviceLane>("");
+  const t = useT();
 
   return (
     <>
       <PageHeader
-        title="短信中心"
-        description="短信按 ICCID 归属：更换 eSIM Profile 后，历史记录跟随卡而非设备。"
+        title={t("sms.title")}
+        description={t("sms.desc")}
       />
 
       <div
         className="mb-3 flex gap-1"
         role="tablist"
-        aria-label="按线路过滤短信"
+        aria-label={t("sms.filterLane")}
       >
         {DEVICE_LANES.map((opt) => {
           const active = lane === opt.value;
@@ -42,7 +44,7 @@ export default function SmsPage() {
                 setSelected(null);
               }}
             >
-              {opt.value === "" ? "全部" : opt.label}
+              {opt.value === "" ? t("sms.all") : t(opt.labelKey)}
             </button>
           );
         })}
@@ -77,7 +79,7 @@ export default function SmsPage() {
           ) : (
             <div className="flex h-full items-center justify-center">
               <p className="text-sm text-muted-foreground">
-                选择左侧会话查看短信
+                {t("sms.pickThread")}
               </p>
             </div>
           )}

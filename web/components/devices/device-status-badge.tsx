@@ -7,6 +7,7 @@ import {
   TONE_CLASS,
 } from "@/lib/device-status";
 import type { DeviceOverview } from "@/types/device";
+import { useLocale } from "@/lib/i18n";
 
 export function DeviceStatusBadge({
   device,
@@ -15,6 +16,7 @@ export function DeviceStatusBadge({
   device: DeviceOverview;
   showDetail?: boolean;
 }) {
+  useLocale();
   const status = summarizeDeviceStatus(device);
 
   return (
@@ -42,6 +44,7 @@ export function DeviceStatusBadge({
 }
 
 export function SignalIndicator({ rsrp }: { rsrp: number | undefined }) {
+  useLocale();
   const level = signalLevel(rsrp);
 
   return (

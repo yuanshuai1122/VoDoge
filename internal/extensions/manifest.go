@@ -28,6 +28,7 @@ type Contribution struct {
 	ID       string `json:"id"`
 	Label    string `json:"label"`
 	LabelZH  string `json:"label_zh,omitempty"`
+	LabelEN  string `json:"label_en,omitempty"`
 	Location string `json:"location"`
 	After    string `json:"after,omitempty"`
 	Entry    string `json:"entry"`

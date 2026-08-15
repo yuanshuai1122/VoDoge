@@ -32,8 +32,9 @@ func (p *Pool) startPCSCReaderWorker(devCfg config.DeviceConfig) (*Worker, error
 	}
 	devCfg.DeviceBackend = config.DeviceBackendPCSC
 	devCfg.NetworkEnabled = false
-	devCfg.VoWiFiEnabled = false
 	devCfg.SMSEnabled = true
+	// 读卡器没有蜂窝射频，VoWiFi / IMS 是它的短信和通话出口。
+	devCfg.VoWiFiEnabled = true
 
 	w := &Worker{
 		ID:     devCfg.ID,
@@ -50,16 +51,19 @@ func (p *Pool) startPCSCReaderWorker(devCfg config.DeviceConfig) (*Worker, error
 		if err := occ.Acquire(holder); err != nil {
 			return nil, err
 		}
-		ch := &occupiedChannel{
-			SmartCardChannel: pcsc.NewChannel(name),
+		ch := pcsc.NewChannel(name)
+		ch.SetGate(func() func() { return occ.GuardReader(name) })
+		client, err := esim.NewClientWithChannel(&occupiedChannel{
+			SmartCardChannel: ch,
 			release:          func() { occ.Release(devCfg.ID) },
-		}
-		client, err := esim.NewClientWithChannel(ch, aid)
+		}, aid)
 		if err != nil {
 			return nil, err
 		}
 		return client, nil
 	}, nil, nil, nil)
+
+	seedPCSCIdentity(w)
 
 	p.mu.Lock()
 	p.workers[devCfg.ID] = w

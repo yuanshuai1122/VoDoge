@@ -22,6 +22,7 @@ import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ContactKey } from "./contact-list";
 import { DeliveryStatus } from "./delivery-status";
+import { useT } from "@/lib/i18n";
 
 export function ThreadView({
   contact,
@@ -30,6 +31,7 @@ export function ThreadView({
   contact: ContactKey;
   onBack?: () => void;
 }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
   // 仅 VoWiFi 通道会返回 message_id，用它追踪刚发出那条的回执
@@ -64,24 +66,24 @@ export function ThreadView({
       setDraft("");
       // 长短信会被拆成多条分片，按条计费，值得告知
       const parts =
-        result?.parts_total > 1 ? `（拆分为 ${result.parts_total} 条）` : "";
+        result?.parts_total > 1 ? t("sms.parts", { n: result.parts_total }) : "";
       const via =
         result?.transport === "ims"
-          ? "（IMS）"
+          ? t("sms.viaIms")
           : result?.transport === "cellular"
-            ? "（蜂窝）"
+            ? t("sms.viaCellular")
             : "";
-      toast.success(`短信已发送${via}${parts}`);
+      toast.success(`${t("sms.sent")}${via}${parts}`);
       setTrackedMessageId(result?.message_id || null);
       queryClient.invalidateQueries({ queryKey: threadKey });
       queryClient.invalidateQueries({ queryKey: ["sms", "contacts"] });
     },
     onError: (e) => {
       if (e instanceof ApiError && e.isRateLimited) {
-        toast.error(e.message || "发送过于频繁，请稍后再试");
+        toast.error(e.message || t("sms.rateLimited"));
         return;
       }
-      toast.error(e instanceof ApiError ? e.message : "发送失败");
+      toast.error(e instanceof ApiError ? e.message : t("sms.sendFailed"));
     },
   });
 
@@ -93,13 +95,13 @@ export function ThreadView({
         device_id: contact.device_id || undefined,
       }),
     onSuccess: () => {
-      toast.success("会话已删除");
+      toast.success(t("sms.threadDeleted"));
       queryClient.invalidateQueries({ queryKey: ["sms", "contacts"] });
       queryClient.removeQueries({ queryKey: threadKey });
       onBack?.();
     },
     onError: (e) => {
-      toast.error(e instanceof ApiError ? e.message : "删除失败");
+      toast.error(e instanceof ApiError ? e.message : t("sms.deleteFailed"));
     },
   });
 
@@ -121,7 +123,7 @@ export function ThreadView({
               variant="ghost"
               size="icon"
               className="md:hidden"
-              aria-label="返回会话列表"
+              aria-label={t("sms.back")}
               onClick={onBack}
             >
               <ArrowLeft className="size-4" />
@@ -130,8 +132,8 @@ export function ThreadView({
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{contact.peer}</p>
             <p className="truncate text-xs text-muted-foreground">
-              {contact.device_name || "设备未在线"}
-              {contact.local_phone && ` · 本机 ${contact.local_phone}`}
+              {contact.device_name || t("sms.deviceOffline")}
+              {contact.local_phone && ` · ${t("sms.localPhone", { phone: contact.local_phone })}`}
             </p>
           </div>
         </div>
@@ -139,10 +141,10 @@ export function ThreadView({
         <Button
           variant="ghost"
           size="icon"
-          aria-label="删除会话"
+          aria-label={t("sms.deleteThread")}
           disabled={removeThread.isPending}
           onClick={() => {
-            if (confirm(`确定删除与 ${contact.peer} 的全部短信记录？此操作不可撤销。`)) {
+            if (confirm(t("sms.deleteConfirm", { peer: contact.peer }))) {
               removeThread.mutate();
             }
           }}
@@ -161,7 +163,7 @@ export function ThreadView({
             ))}
           </div>
         ) : messages.length === 0 ? (
-          <EmptyState title="暂无消息" description="发送一条短信开始会话。" />
+          <EmptyState title={t("sms.emptyThread")} description={t("sms.emptyThreadHint")} />
         ) : (
           <>
             {query.hasNextPage && (
@@ -172,7 +174,7 @@ export function ThreadView({
                   disabled={query.isFetchingNextPage}
                   onClick={() => query.fetchNextPage()}
                 >
-                  {query.isFetchingNextPage ? "加载中…" : "加载更早的消息"}
+                  {query.isFetchingNextPage ? t("sms.loading") : t("sms.loadEarlier")}
                 </Button>
               </div>
             )}
@@ -201,7 +203,7 @@ export function ThreadView({
           <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder={`发送到 ${contact.peer}`}
+            placeholder={t("sms.to", { peer: contact.peer })}
             rows={2}
             className="min-h-0 resize-none"
             onKeyDown={(e) => {
@@ -212,7 +214,7 @@ export function ThreadView({
           />
           <Button
             size="icon"
-            aria-label="发送"
+            aria-label={t("sms.send")}
             disabled={!draft.trim() || send.isPending}
             onClick={() => send.mutate(draft.trim())}
           >

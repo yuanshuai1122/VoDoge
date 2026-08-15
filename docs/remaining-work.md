@@ -46,7 +46,7 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 `qmi-proxy`，容器与 CI 都没有，改为条件跳过并注明原因——它测的是重绑定逻辑，
 却要经完整的 QMI 启动才能到达断言点。
 
-> 以上全部在本机 Docker 中验证——本项目不使用 GitHub Actions，`bash scripts/ci.sh` 就是完整的验证入口。
+> 以上全部在本机 Docker 中验证。日常验证入口仍是 `bash scripts/ci.sh`。打 `v*` 标签会走 GitHub Actions：推 GHCR 并挂发行二进制。
 
 ---
 
@@ -108,7 +108,10 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 | 项 | 状态 | 说明 |
 |----|------|------|
 | 备份说明改 `pg_dump` | ✅ 已做 | README 与 DEPLOY.md 均已更新 |
-| 构建与验证入口 | ✅ 已做 | `scripts/ci.sh`。**本项目不使用 GitHub Actions**，构建全部在本机完成 |
+| 构建与验证入口 | ✅ 已做 | 本机 `scripts/ci.sh`；发版 `.github/workflows/release.yml` 推 `ghcr.io/yuanshuai1122/vodog` 并挂 GitHub Release |
+| 一键安装 | ✅ 已做 | `scripts/install.sh`：优先 Compose + GHCR，否则发行二进制 + systemd |
+| 读卡器 VoWiFi / AKA | ✅ 已做 | 无射频，AKA 走 PC/SC APDU，跳过飞行模式 |
+| 深色 / 中英界面 | ✅ 已做 | next-themes + `web/lib/i18n` 完整中英目录，顶栏可切换 |
 | `cmd/dbmigrate` | ✅ 已做 | PG 计划阶段 D。见 [db-migrate-runbook.md](./db-migrate-runbook.md) |
 | 前端测试 | ✅ 已做 | vitest + testing-library，55 例；已接入 `scripts/ci.sh web` |
 | gofmt 进流水线 | ✅ 已做 | `.gitattributes` 把源码钉成 LF 后才可用——此前 Windows 检出为 CRLF，gofmt 会把 548 个 Go 文件里的 450 个都报成未格式化 |
@@ -120,6 +123,9 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 
 ```
 P1 现场验证（需硬件）──► 发现的问题回流 P2
+
+读卡器 VoWiFi / AKA、中英界面、一键安装与 GHCR 发版已软件先行。
+真机仍要：CCID 读卡器 + `pcscd` + 能做 IMS 的卡。
 
 产品对照与分期见 [vocat-adopt-plan.md](./vocat-adopt-plan.md)。
 UFI 不承担短信验收；第 1 期真机改为 EC25-CN。

@@ -28,11 +28,13 @@ import {
   type ProfileItem,
 } from "@/types/esim";
 import { Sensitive } from "@/components/common/sensitive";
+import { useT } from "@/lib/i18n";
 
 export function EsimTab({ deviceId }: { deviceId: string }) {
   const [downloadOpen, setDownloadOpen] = useState(false);
   const lock = useEsimLock(deviceId);
   const queryClient = useQueryClient();
+  const t = useT();
 
   const afterIdentityChange = () => {
     // 切卡后短信身份跟新 ICCID，设备和会话列表都要重拉
@@ -56,10 +58,10 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
     operation: "switch_profile",
     mutationFn: (args) => switchProfile(deviceId, args),
     successMessage: (r) => {
-      if (r?.degraded_reason) return `已切换，但设备降级：${r.degraded_reason}`;
-      if (r?.sim_reload_warning) return `已切换（${r.sim_reload_warning}）`;
-      if (r?.recovery_pending) return "已切换，正在恢复射频，短信身份稍后更新";
-      return "已切换 Profile。短信将跟这张卡走。";
+      if (r?.degraded_reason) return t("esim.switchedDegraded", { reason: r.degraded_reason });
+      if (r?.sim_reload_warning) return t("esim.switchedWarn", { warning: r.sim_reload_warning });
+      if (r?.recovery_pending) return t("esim.switchedRecover");
+      return t("esim.switched");
     },
     onSuccess: afterIdentityChange,
   });
@@ -70,7 +72,7 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
     mutationFn: (args: { iccid: string; aid_hex?: string }) =>
       disableProfile(deviceId, args),
     successMessage: (r) =>
-      r?.message || "已禁用 Profile。该卡槽现在没有活动号码。",
+      r?.message || t("esim.disabled"),
     onSuccess: afterIdentityChange,
   });
 
@@ -82,7 +84,7 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
         name: args.name,
         aid_hex: args.aid_hex,
       }),
-    successMessage: "已重命名",
+    successMessage: t("esim.renamed"),
   });
 
   const doDelete = useEsimMutation<
@@ -94,7 +96,7 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
     mutationFn: (args) => deleteProfile(deviceId, args.iccid, args.aid_hex),
     // 删除可能带 warning（如空间回收异常），不能吞掉
     successMessage: (r) =>
-      r?.warning ? `Profile 已删除（${r.warning}）` : "Profile 已删除",
+      r?.warning ? t("esim.deletedWarn", { warning: r.warning }) : t("esim.deleted"),
   });
 
   return (
@@ -107,7 +109,7 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
             onClick={() => setDownloadOpen(true)}
           >
             <Download className="size-4" />
-            下载 Profile
+            {t("esim.download")}
           </Button>
           <Button
             variant="outline"
@@ -118,15 +120,15 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
             {query.isFetching ? (
               <Loader2 className="size-4 animate-spin" />
             ) : null}
-            刷新
+            {t("common.refresh")}
           </Button>
         </div>
 
         {lock.locked && (
           <Badge variant="secondary">
             {lock.running
-              ? "操作进行中…"
-              : `eSIM 忙碌，${Math.ceil(lock.remainingMs / 1000)} 秒后可重试`}
+              ? t("esim.running")
+              : t("esim.busy", { seconds: Math.ceil(lock.remainingMs / 1000) })}
           </Badge>
         )}
       </div>
@@ -134,7 +136,7 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
       {lock.remainingMs > 0 && lock.reason && (
         <Alert>
           <AlertDescription>
-            eSIM 通道被占用（{lock.reason}）。占用方可能是其它客户端或后台任务。
+            {t("esim.held", { reason: lock.reason ?? "" })}
           </AlertDescription>
         </Alert>
       )}
@@ -145,8 +147,8 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
         <Skeleton className="h-64" />
       ) : query.data.length === 0 ? (
         <EmptyState
-          title="未检测到 eUICC"
-          description="设备可能不支持 eSIM，或 eSIM 通道未就绪。"
+          title={t("esim.noEuicc")}
+          description={t("esim.noEuiccHint")}
         />
       ) : (
         <>
@@ -156,7 +158,7 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
             onDisable={(iccid, aidHex) => {
               if (
                 confirm(
-                  `确定禁用当前 Profile（${iccid}）吗？禁用后此卡槽没有活动号码，短信会停到重新启用一张为止。`,
+                  t("esim.confirmDisable", { iccid }),
                 )
               ) {
                 doDisable.mutate({ iccid, aid_hex: aidHex });
@@ -177,7 +179,7 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
               <CardContent>
                 {group.profiles.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    该 eUICC 暂无 Profile。
+                    {t("esim.noProfiles")}
                   </p>
                 ) : (
                   <div className="flex flex-col divide-y">
@@ -189,7 +191,7 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
                         onSwitch={() => {
                           if (
                             confirm(
-                              `确定启用此 Profile（${p.iccid}）吗？切换后设备会短暂断网，短信将改跟这张卡走。`,
+                              t("esim.confirmEnable", { iccid: p.iccid }),
                             )
                           ) {
                             doSwitch.mutate({
@@ -201,7 +203,7 @@ export function EsimTab({ deviceId }: { deviceId: string }) {
                         onDisable={() => {
                           if (
                             confirm(
-                              `确定禁用当前 Profile（${p.iccid}）吗？禁用后此卡槽没有活动号码，短信会停到重新启用一张为止。`,
+                              t("esim.confirmDisable", { iccid: p.iccid }),
                             )
                           ) {
                             doDisable.mutate({
@@ -255,11 +257,12 @@ function CurrentProfileCard({
   locked: boolean;
   onDisable: (iccid: string, aidHex: string) => void;
 }) {
+  const t = useT();
   if (!current) {
     return (
       <Alert>
         <AlertDescription>
-          当前没有启用的 Profile。短信不会发出，直到启用一张卡。
+          {t("esim.noActive")}
         </AlertDescription>
       </Alert>
     );
@@ -267,11 +270,11 @@ function CurrentProfileCard({
   const label =
     current.profile.name ||
     current.profile.service_provider_name ||
-    "未命名 Profile";
+    t("esim.unnamed");
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">当前号码</CardTitle>
+        <CardTitle className="text-base">{t("esim.current")}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
@@ -282,7 +285,7 @@ function CurrentProfileCard({
               ` · ${current.profile.service_provider_name}`}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            短信按这张卡的 ICCID 落库。切到另一张后，新短信走新身份，旧会话还在。
+            {t("esim.currentHint")}
           </p>
         </div>
         <Button
@@ -291,7 +294,7 @@ function CurrentProfileCard({
           disabled={locked}
           onClick={() => onDisable(current.profile.iccid, current.aid_hex)}
         >
-          禁用当前卡
+          {t("esim.disableCurrent")}
         </Button>
       </CardContent>
     </Card>
@@ -313,6 +316,7 @@ function ProfileRow({
   onRename: (name: string) => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   const enabled = isProfileEnabled(profile);
 
   return (
@@ -320,12 +324,12 @@ function ProfileRow({
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">
-            {profile.name || profile.service_provider_name || "未命名 Profile"}
+            {profile.name || profile.service_provider_name || t("esim.unnamed")}
           </span>
           {enabled && (
             <Badge variant="default" className="gap-1">
               <Check className="size-3" />
-              使用中
+              {t("esim.inUse")}
             </Badge>
           )}
         </div>
@@ -344,7 +348,7 @@ function ProfileRow({
             disabled={locked}
             onClick={onDisable}
           >
-            禁用
+            {t("esim.disable")}
           </Button>
         ) : (
           <Button
@@ -353,17 +357,17 @@ function ProfileRow({
             disabled={locked}
             onClick={onSwitch}
           >
-            启用
+            {t("esim.enable")}
           </Button>
         )}
 
         <Button
           variant="ghost"
           size="icon"
-          aria-label="重命名"
+          aria-label={t("esim.rename")}
           disabled={locked}
           onClick={() => {
-            const name = prompt("输入新的 Profile 名称", profile.name);
+            const name = prompt(t("esim.renamePrompt"), profile.name);
             if (name && name.trim()) onRename(name.trim());
           }}
         >
@@ -373,14 +377,14 @@ function ProfileRow({
         <Button
           variant="ghost"
           size="icon"
-          aria-label="删除"
+          aria-label={t("common.delete")}
           // 使用中的 Profile 删除会导致断网，禁止直接删
           disabled={locked || enabled}
-          title={enabled ? "请先切换到其它 Profile 再删除" : undefined}
+          title={enabled ? t("esim.deleteFirst") : undefined}
           onClick={() => {
             if (
               confirm(
-                `确定删除 Profile「${profile.name || profile.iccid}」？删除后无法恢复，需要重新下载。`,
+                t("esim.confirmDelete", { name: profile.name || profile.iccid }),
               )
             ) {
               onDelete();

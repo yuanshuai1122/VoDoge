@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+
 /**
  * 错误响应归一化。
  *
@@ -125,18 +127,18 @@ export function parseApiError(httpStatus: number, body: unknown): ApiError {
 function defaultMessageFor(httpStatus: number): string {
   switch (httpStatus) {
     case 0:
-      return "网络连接失败";
+      return t("err.network");
     case 401:
-      return "未授权，请重新登录";
+      return t("err.unauthorized");
     case 403:
-      return "没有权限";
+      return t("err.forbidden");
     case 404:
-      return "资源不存在";
+      return t("err.notFound");
     case 409:
-      return "操作冲突，请稍后重试";
+      return t("err.conflict");
     case 429:
-      return "请求过于频繁，请稍后再试";
+      return t("err.rateLimited");
     default:
-      return httpStatus >= 500 ? "服务端错误" : "请求失败";
+      return httpStatus >= 500 ? t("err.server") : t("err.request");
   }
 }

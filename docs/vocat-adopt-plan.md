@@ -22,7 +22,7 @@
 | eSIM | `AT+CSIM` LPA；XeSIM / eSTK 多 AID | `internal/esim` 已列 eSTK / 5ber / XeSIM / eSIM.me / GlocalMe AID | 先打通**卡槽 eUICC 列表+切换**；写卡用读卡器 |
 | USB 读卡器 | `internal/pcsc` + `pcscd` | Manager 注释里有 PC/SC 通道工厂，**无读卡器发现/加设备** | 第二期抄发现与加设备，不抄 SQLite |
 | 代理 | 设备绑定 + **按国家**上游 | 按 `wwan` 绑 SOCKS/HTTP | 第三期；国内/国外用不同出口规则 |
-| 交付 | 单二进制、SQLite、一键装、自更新 | Compose + PostgreSQL，已在 PVE | **保持 PG**，不抄 SQLite |
+| 交付 | 单二进制、SQLite、一键装、自更新 | Compose + PostgreSQL + `install.sh` + GHCR + tag 发版 | **保持 PG**，不抄 SQLite |
 | 硬件 | EC20/EC25/EG25/EG600 | lab 两根 UFI103S-CT，管理面能见、短信不能 | UFI 退出产品承诺 |
 
 VoCat 比我们超前的、值得抄的三块：
@@ -149,6 +149,8 @@ VoCat 比我们超前的、值得抄的三块：
 4. 读卡器与模组 APDU 不能同时占同一张卡。
 
 下一步硬件验证时只插读卡器跑列/写/启用，不必再改加设备/互斥/通道。
+
+读卡器上的 VoWiFi / AKA 也已软件先行：加设备默认 `vowifi_enabled=true`，身份从卡读，AKA 用 USIM 逻辑通道，启动不切飞行模式。真机仍要一张能做 IMS 的卡 + 可达的 ePDG。
 
 ### 第 3b / 4g 期 — 插件体系
 

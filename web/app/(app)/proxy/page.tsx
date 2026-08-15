@@ -35,18 +35,20 @@ import { UpstreamDialog } from "@/components/proxy/upstream-dialog";
 import { CountryRules } from "@/components/proxy/country-rules";
 import { ProfileBindings } from "@/components/proxy/profile-bindings";
 import { InstanceDialog } from "@/components/proxy/instance-dialog";
+import { useT } from "@/lib/i18n";
 
 export default function ProxyPage() {
+  const t = useT();
   return (
     <>
-      <PageHeader title="代理管理" description="本机代理、上游、国家规则与 Profile 绑定" />
+      <PageHeader title={t("proxy.title")} description={t("proxy.desc")} />
 
       <Tabs defaultValue="instances">
         <TabsList>
-          <TabsTrigger value="instances">本机实例</TabsTrigger>
-          <TabsTrigger value="upstream">上游代理</TabsTrigger>
-          <TabsTrigger value="countries">国家路由</TabsTrigger>
-          <TabsTrigger value="profiles">Profile 绑定</TabsTrigger>
+          <TabsTrigger value="instances">{t("proxy.instances")}</TabsTrigger>
+          <TabsTrigger value="upstream">{t("proxy.upstream")}</TabsTrigger>
+          <TabsTrigger value="countries">{t("proxy.countries")}</TabsTrigger>
+          <TabsTrigger value="profiles">{t("proxy.profiles")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="instances" className="mt-4">

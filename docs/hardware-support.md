@@ -37,6 +37,7 @@
 - 发现：`GET /api/readers`。优先问 pcscd Unix 协议，没有 `pcsc_scan` 也能列出。
 - 设备：`device_backend=pcsc` + `reader_name`，不启无线电。
 - 写卡：CGO-free pcscd 通道，Connect 后 `BeginTransaction`，断开前 `EndTransaction`；走标准 LPA。
+- **VoWiFi / AKA**：读卡器没有蜂窝射频，IMS 是它的短信出口。身份从 USIM 读 ICCID/IMSI，IMEI 用配置或从读卡器名派生；AKA 走同一条 APDU 通道。启动时跳过飞行模式。eSIM 写卡与 AKA 按读卡器名排队。
 - 读卡器名与 ICCID 互斥，避免和模组同时摸同一张卡。
 - 生产二进制 `CGO_ENABLED=0`，不链接 libpcsclite。
 

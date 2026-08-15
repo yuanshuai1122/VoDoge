@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { ApiError } from "@/lib/api/errors";
+import { useLocale } from "@/lib/i18n";
 
 function makeQueryClient() {
   return new QueryClient({
@@ -30,6 +31,14 @@ function makeQueryClient() {
   });
 }
 
+function DocumentLang() {
+  const locale = useLocale();
+  useEffect(() => {
+    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+  }, [locale]);
+  return null;
+}
+
 export function Providers({ children }: { children: React.ReactNode }) {
   // 每个浏览器会话一个实例；放 state 里避免 HMR/重渲染时重建缓存
   const [queryClient] = useState(makeQueryClient);
@@ -42,6 +51,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         enableSystem
         disableTransitionOnChange
       >
+        <DocumentLang />
         {children}
         <Toaster position="top-right" richColors />
       </ThemeProvider>

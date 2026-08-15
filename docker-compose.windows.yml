@@ -20,7 +20,7 @@ services:
       retries: 10
 
   vodog:
-    image: vodog:latest
+    image: ${VODOG_IMAGE:-ghcr.io/yuanshuai1122/vodog:latest}
     container_name: vodog
     restart: unless-stopped
     ports:

@@ -544,6 +544,9 @@ func (w *Worker) refreshIdentityLive(ctx context.Context, reason string) (liveSI
 	if w == nil {
 		return liveSIMIdentityRefreshResult{}, fmt.Errorf("worker_nil")
 	}
+	if isPCSCWorker(w) {
+		return w.refreshPCSCIdentityLive(reason)
+	}
 	if w.Backend == nil {
 		return liveSIMIdentityRefreshResult{}, fmt.Errorf("backend_not_available")
 	}

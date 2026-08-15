@@ -14,11 +14,13 @@ import {
 import { useEventSource, type SSEStatus } from "@/lib/sse/use-event-source";
 import { cn } from "@/lib/utils";
 import { LOG_LEVELS, type LogEntry } from "@/types/log";
+import { useT } from "@/lib/i18n";
 
 /** 只保留最近 N 条，避免长时间挂着把内存吃满。 */
 const MAX_ENTRIES = 2000;
 
 export default function LogsPage() {
+  const t = useT();
   const [level, setLevel] = useState<string>("info");
   const [autoScroll, setAutoScroll] = useState(true);
   // 切换等级或点清空时用 key 重建流组件，比在 effect 里重置 state 更直接
@@ -28,8 +30,8 @@ export default function LogsPage() {
   return (
     <>
       <PageHeader
-        title="实时日志"
-        description="服务端日志流"
+        title={t("logs.title")}
+        description={t("logs.desc")}
         actions={
           <div className="flex items-center gap-2">
             <StatusBadge status={status} />
@@ -50,14 +52,14 @@ export default function LogsPage() {
               size="sm"
               onClick={() => setAutoScroll((v) => !v)}
             >
-              {autoScroll ? "跟随" : "已暂停"}
+              {autoScroll ? t("logs.follow") : t("logs.paused")}
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => setClearNonce((n) => n + 1)}
             >
-              清空
+              {t("logs.clear")}
             </Button>
           </div>
         }

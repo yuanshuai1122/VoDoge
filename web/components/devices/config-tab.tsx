@@ -26,6 +26,7 @@ import {
 import { ApiError } from "@/lib/api/errors";
 import type { DeviceConfigDTO } from "@/types/device-config";
 import { DEVICE_LANES, type DeviceLane } from "@/lib/lane";
+import { useT } from "@/lib/i18n";
 
 const ESIM_TRANSPORTS = ["", "at", "qmi", "mbim"];
 const BACKENDS = ["", "qmi", "mbim", "at"];
@@ -39,6 +40,7 @@ const BACKENDS = ["", "qmi", "mbim", "at"];
  */
 export function ConfigTab({ deviceId }: { deviceId: string }) {
   const queryClient = useQueryClient();
+  const t = useT();
 
   const query = useQuery({
     queryKey: ["devices", "config", deviceId],
@@ -49,11 +51,11 @@ export function ConfigTab({ deviceId }: { deviceId: string }) {
     mutationFn: (cfg: DeviceConfigDTO) => updateDevice(deviceId, cfg),
     onSuccess: (r) => {
       if (r?.warning) toast.warning(r.warning);
-      else if (r?.requires_restart) toast.success("已保存，设备将重启以生效");
-      else toast.success("配置已保存");
+      else if (r?.requires_restart) toast.success(t("cfg.savedRestart"));
+      else toast.success(t("cfg.saved"));
       queryClient.invalidateQueries({ queryKey: ["devices"] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : "保存失败"),
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t("cfg.saveFailed")),
   });
 
   if (query.isError) {
@@ -84,6 +86,7 @@ function ConfigForm({
   saving: boolean;
   onSave: (v: DeviceConfigDTO) => void;
 }) {
+  const t = useT();
   // 保存是整体替换，因此草稿必须从完整配置起步，未编辑的字段也要原样回传
   const [draft, setDraft] = useState<DeviceConfigDTO>(initial);
 
@@ -99,7 +102,7 @@ function ConfigForm({
         </AlertDescription>
       </Alert>
 
-      <Field id="name" label="设备名称" hint="留空则显示设备 ID">
+      <Field id="name" label={t("cfg.name")} hint={t("cfg.nameHint")}>
         <Input
           id="name"
           value={draft.name ?? ""}
@@ -109,8 +112,8 @@ function ConfigForm({
 
       <Field
         id="proxy_port"
-        label="代理端口"
-        hint="0 表示不为该设备单独监听端口"
+        label={t("cfg.proxyPort")}
+        hint={t("cfg.proxyPortHint")}
       >
         <Input
           id="proxy_port"
@@ -122,38 +125,38 @@ function ConfigForm({
 
       <Field
         id="lane"
-        label="线路"
-        hint="人工分线，用来过滤短信。不根据 SIM 的 MCC 自动判断。"
+        label={t("cfg.lane")}
+        hint={t("cfg.laneHint")}
       >
         <Select
           value={draft.lane || ""}
           onValueChange={(v) => patch({ lane: (v ?? "") as DeviceLane })}
         >
           <SelectTrigger id="lane">
-            <SelectValue placeholder="未分线" />
+            <SelectValue placeholder={t("lane.none")} />
           </SelectTrigger>
           <SelectContent>
             {DEVICE_LANES.map((opt) => (
               <SelectItem key={opt.value || "none"} value={opt.value}>
-                {opt.label}
+                {t(opt.labelKey)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </Field>
 
-      <Field id="esim_transport" label="eSIM 通道">
+      <Field id="esim_transport" label={t("cfg.esim")}>
         <Select
           value={draft.esim_transport || ""}
           onValueChange={(v) => patch({ esim_transport: v ?? "" })}
         >
           <SelectTrigger id="esim_transport">
-            <SelectValue placeholder="自动" />
+            <SelectValue placeholder={t("common.auto")} />
           </SelectTrigger>
           <SelectContent>
             {ESIM_TRANSPORTS.map((v) => (
               <SelectItem key={v || "auto"} value={v}>
-                {v || "自动"}
+                {v || t("common.auto")}
               </SelectItem>
             ))}
           </SelectContent>
@@ -162,27 +165,27 @@ function ConfigForm({
 
       <Field
         id="device_backend"
-        label="接入后端"
-        hint="改动会导致设备重建连接"
+        label={t("cfg.backend")}
+        hint={t("cfg.backendHint")}
       >
         <Select
           value={draft.device_backend || ""}
           onValueChange={(v) => patch({ device_backend: v ?? "" })}
         >
           <SelectTrigger id="device_backend">
-            <SelectValue placeholder="自动" />
+            <SelectValue placeholder={t("common.auto")} />
           </SelectTrigger>
           <SelectContent>
             {BACKENDS.map((v) => (
               <SelectItem key={v || "auto"} value={v}>
-                {v || "自动"}
+                {v || t("common.auto")}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </Field>
 
-      <Field id="module_vendor" label="模组厂商" hint="留空自动识别">
+      <Field id="module_vendor" label={t("cfg.vendor")} hint={t("cfg.vendorHint")}>
         <Input
           id="module_vendor"
           value={draft.module_vendor ?? ""}
@@ -196,12 +199,12 @@ function ConfigForm({
       <div className="rounded-lg border p-3">
         <p className="mb-2 text-sm font-medium">运行时识别（只读）</p>
         <dl className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-          <ReadOnly label="设备 ID" value={draft.id} mono />
+          <ReadOnly label={t("cfg.id")} value={draft.id} mono />
           <ReadOnly label="IMEI" value={<Sensitive value={draft.modem_imei} />} />
-          <ReadOnly label="网卡" value={draft.interface || "-"} mono />
-          <ReadOnly label="控制节点" value={draft.control_device || "-"} mono />
-          <ReadOnly label="AT 端口" value={draft.at_port || "-"} mono />
-          <ReadOnly label="USB 路径" value={draft.usb_path || "-"} mono />
+          <ReadOnly label={t("cfg.iface")} value={draft.interface || "-"} mono />
+          <ReadOnly label={t("cfg.control")} value={draft.control_device || "-"} mono />
+          <ReadOnly label={t("cfg.atPort")} value={draft.at_port || "-"} mono />
+          <ReadOnly label={t("cfg.usb")} value={draft.usb_path || "-"} mono />
         </dl>
         <p className="mt-2 text-xs text-muted-foreground">
           这些字段由运行时按 IMEI 发现并回写，不在此处编辑。
@@ -213,7 +216,7 @@ function ConfigForm({
         disabled={saving}
         onClick={() => onSave(draft)}
       >
-        {saving ? "保存中…" : "保存配置"}
+        {saving ? t("cfg.saving") : t("cfg.save")}
       </Button>
     </div>
   );

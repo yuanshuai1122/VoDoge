@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/format";
 import { LaneBadge } from "@/components/common/lane-badge";
 import type { DeviceLane } from "@/lib/lane";
+import { useT } from "@/lib/i18n";
 
 export interface ContactKey {
   peer: string;
@@ -34,6 +35,7 @@ export function ContactList({
   onSelect: (c: ContactKey) => void;
   lane?: DeviceLane;
 }) {
+  const t = useT();
   // 后端无短信 SSE，只能轮询；会话列表变化频率低，15s 足够
   const query = useInfiniteQuery({
     queryKey: ["sms", "contacts", lane],
@@ -63,8 +65,8 @@ export function ContactList({
   if (contacts.length === 0) {
     return (
       <EmptyState
-        title="暂无短信会话"
-        description="设备收到或发出短信后会在这里显示。"
+        title={t("sms.empty")}
+        description={t("sms.emptyHint")}
         className="m-2"
       />
     );
@@ -90,7 +92,7 @@ export function ContactList({
             disabled={query.isFetchingNextPage}
             onClick={() => query.fetchNextPage()}
           >
-            {query.isFetchingNextPage ? "加载中…" : "加载更多"}
+            {query.isFetchingNextPage ? t("sms.loading") : t("sms.loadMore")}
           </Button>
         </div>
       )}
@@ -107,6 +109,7 @@ function ContactRow({
   active: boolean;
   onSelect: (c: ContactKey) => void;
 }) {
+  const t = useT();
   return (
     <button
       type="button"
@@ -132,7 +135,7 @@ function ContactRow({
       </div>
 
       <p className="line-clamp-1 text-xs text-muted-foreground">
-        {contact.last_content || "（无内容）"}
+        {contact.last_content || t("sms.noContent")}
       </p>
 
       <div className="flex items-center gap-1.5">

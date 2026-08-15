@@ -11,26 +11,28 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT, type MessageKey } from "@/lib/i18n";
 
-const NAV = [
-  { href: "/", label: "首页", icon: LayoutDashboard },
-  { href: "/devices", label: "设备", icon: Smartphone },
-  { href: "/sms", label: "短信", icon: MessageSquare },
-  { href: "/proxy", label: "代理", icon: Network },
-  { href: "/logs", label: "日志", icon: ScrollText },
-  { href: "/settings", label: "设置", icon: Settings },
-] as const;
+const NAV: { href: string; labelKey: MessageKey; icon: typeof LayoutDashboard }[] = [
+  { href: "/", labelKey: "nav.home", icon: LayoutDashboard },
+  { href: "/devices", labelKey: "nav.devicesShort", icon: Smartphone },
+  { href: "/sms", labelKey: "nav.smsShort", icon: MessageSquare },
+  { href: "/proxy", labelKey: "nav.proxyShort", icon: Network },
+  { href: "/logs", labelKey: "nav.logsShort", icon: ScrollText },
+  { href: "/settings", labelKey: "nav.settingsShort", icon: Settings },
+];
 
 export function MobileNav() {
   const pathname = usePathname();
+  const t = useT();
 
   return (
     <nav
-      aria-label="主导航"
+      aria-label={t("nav.main")}
       className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
     >
       <ul className="grid grid-cols-6">
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {NAV.map(({ href, labelKey, icon: Icon }) => {
           const active =
             href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
@@ -45,7 +47,7 @@ export function MobileNav() {
                 )}
               >
                 <Icon className="size-4" />
-                {label}
+                {t(labelKey)}
               </Link>
             </li>
           );

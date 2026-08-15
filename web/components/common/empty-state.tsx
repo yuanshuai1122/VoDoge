@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 export function EmptyState({
   title,
@@ -35,8 +36,9 @@ export function ErrorState({
   error: unknown;
   onRetry?: () => void;
 }) {
+  const t = useT();
   const message =
-    error instanceof Error ? error.message : "加载失败，请稍后重试";
+    error instanceof Error ? error.message : t("common.loadFailed");
 
   return (
     <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4">
@@ -47,7 +49,7 @@ export function ErrorState({
           onClick={onRetry}
           className="mt-2 text-xs underline underline-offset-4"
         >
-          重试
+          {t("common.retry")}
         </button>
       )}
     </div>

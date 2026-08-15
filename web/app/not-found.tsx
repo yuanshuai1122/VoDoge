@@ -1,18 +1,20 @@
+"use client";
+
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
+import { useT } from "@/lib/i18n";
 
 export default function NotFound() {
+  const t = useT();
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-4 text-center">
       <div>
-        <h2 className="text-lg font-semibold">页面不存在</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          请求的地址没有对应的页面。
-        </p>
+        <h2 className="text-lg font-semibold">{t("notFound.title")}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{t("notFound.body")}</p>
       </div>
 
       <Link href="/" className={buttonVariants({ size: "sm" })}>
-        返回仪表盘
+        {t("notFound.back")}
       </Link>
     </div>
   );

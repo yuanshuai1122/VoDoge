@@ -606,11 +606,11 @@ func (s *Server) handleDeviceMgmtAddDevice(c *gin.Context) {
 		fail(c, http.StatusConflict, "", err.Error())
 		return
 	}
-	// 读卡器没有模组 IMEI；MBIM 走 DeviceCaps，其余走 QMI。
+	// 读卡器没有模组 IMEI 和蜂窝射频；VoWiFi / IMS 是它的短信出口。
 	if config.IsPCSCBackend(newCfg.DeviceBackend) {
 		newCfg.ModemIMEI = ""
 		newCfg.NetworkEnabled = false
-		newCfg.VoWiFiEnabled = false
+		newCfg.VoWiFiEnabled = true
 	} else if strings.ToLower(strings.TrimSpace(newCfg.DeviceBackend)) == "mbim" {
 		if config.NormalizeIMEI(newCfg.ModemIMEI) == "" && strings.TrimSpace(newCfg.ControlDevice) != "" {
 			if mbimIMEI, err := device.ProbeIMEIViaMBIM(newCfg.ControlDevice); err == nil && mbimIMEI != "" {

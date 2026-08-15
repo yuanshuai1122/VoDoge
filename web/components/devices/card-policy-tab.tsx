@@ -26,6 +26,7 @@ import {
 } from "@/lib/api/endpoints/card-policy";
 import { ApiError } from "@/lib/api/errors";
 import { Sensitive } from "@/components/common/sensitive";
+import { useT } from "@/lib/i18n";
 
 const IP_VERSIONS = ["", "ipv4", "ipv6", "ipv4v6"];
 
@@ -34,6 +35,7 @@ const IP_VERSIONS = ["", "ipv4", "ipv6", "ipv4v6"];
  * 因此这里先从设备概览取出当前 ICCID，再按它读写策略。
  */
 export function CardPolicyTab({ deviceId }: { deviceId: string }) {
+  const t = useT();
   const queryClient = useQueryClient();
 
   const deviceQuery = useQuery({
@@ -52,11 +54,11 @@ export function CardPolicyTab({ deviceId }: { deviceId: string }) {
   const save = useMutation({
     mutationFn: (input: CardPolicy) => putCardPolicy(iccid, input),
     onSuccess: () => {
-      toast.success("策略已保存");
+      toast.success(t("policy.saved"));
       queryClient.invalidateQueries({ queryKey: ["card-policy", iccid] });
       queryClient.invalidateQueries({ queryKey: ["devices"] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : "保存失败"),
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t("cfg.saveFailed")),
   });
 
   if (deviceQuery.isPending) return <Skeleton className="h-64" />;
@@ -64,8 +66,8 @@ export function CardPolicyTab({ deviceId }: { deviceId: string }) {
   if (!iccid) {
     return (
       <EmptyState
-        title="未读取到 ICCID"
-        description="设备可能未插卡或尚未就绪，无法定位对应的卡策略。"
+        title={t("policy.noIccid")}
+        description={t("policy.noIccidHint")}
       />
     );
   }
@@ -104,6 +106,7 @@ function PolicyForm({
   saving: boolean;
   onSave: (v: CardPolicy) => void;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState<CardPolicy>(initial);
 
   return (
@@ -113,7 +116,7 @@ function PolicyForm({
         <Sensitive value={iccid} className="font-mono text-xs" />
         {draft.source && (
           <Badge variant="outline">
-            {draft.source === "user" ? "用户设置" : "系统推导"}
+            {draft.source === "user" ? t("policy.user") : t("policy.system")}
           </Badge>
         )}
       </div>
@@ -126,19 +129,19 @@ function PolicyForm({
 
       <ToggleRow
         id="network_enabled"
-        label="启用数据网络"
+        label={t("policy.network")}
         checked={draft.network_enabled}
         onChange={(v) => setDraft({ ...draft, network_enabled: v })}
       />
       <ToggleRow
         id="vowifi_enabled"
-        label="启用 VoWiFi"
+        label={t("policy.vowifi")}
         checked={draft.vowifi_enabled}
         onChange={(v) => setDraft({ ...draft, vowifi_enabled: v })}
       />
       <ToggleRow
         id="airplane_enabled"
-        label="飞行模式"
+        label={t("policy.flight")}
         checked={draft.airplane_enabled}
         onChange={(v) => setDraft({ ...draft, airplane_enabled: v })}
       />
@@ -150,12 +153,12 @@ function PolicyForm({
           onValueChange={(v) => setDraft({ ...draft, ip_version: v ?? "" })}
         >
           <SelectTrigger id="ip_version">
-            <SelectValue placeholder="默认" />
+            <SelectValue placeholder={t("policy.default")} />
           </SelectTrigger>
           <SelectContent>
             {IP_VERSIONS.map((v) => (
               <SelectItem key={v || "default"} value={v}>
-                {v || "默认"}
+                {v || t("policy.default")}
               </SelectItem>
             ))}
           </SelectContent>
@@ -167,7 +170,7 @@ function PolicyForm({
         <Input
           id="apn"
           value={draft.apn ?? ""}
-          placeholder="留空则使用运营商默认值"
+          placeholder={t("policy.apnPh")}
           onChange={(e) => setDraft({ ...draft, apn: e.target.value })}
         />
         <p className="text-xs text-muted-foreground">
@@ -180,7 +183,7 @@ function PolicyForm({
         disabled={saving}
         onClick={() => onSave(draft)}
       >
-        {saving ? "保存中…" : "保存策略"}
+        {saving ? t("policy.saving") : t("policy.save")}
       </Button>
     </div>
   );

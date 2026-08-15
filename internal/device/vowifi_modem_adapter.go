@@ -10,8 +10,13 @@ import (
 	"github.com/boa-z/vowifi-go/runtimehost/identity"
 	"github.com/yuanshuai1122/vodog/internal/apduarbiter"
 	"github.com/yuanshuai1122/vodog/internal/backend"
+	"github.com/yuanshuai1122/vodog/internal/config"
 	"github.com/yuanshuai1122/vodog/internal/modem"
 )
+
+func isPCSCWorker(w *Worker) bool {
+	return w != nil && config.IsPCSCBackend(w.Config.DeviceBackend)
+}
 
 func newVoWiFiModemInterface(w *Worker, deviceID string) (runtimehost.Modem, error) {
 	if w == nil {
@@ -19,6 +24,9 @@ func newVoWiFiModemInterface(w *Worker, deviceID string) (runtimehost.Modem, err
 	}
 	if strings.TrimSpace(deviceID) == "" {
 		deviceID = strings.TrimSpace(w.ID)
+	}
+	if isPCSCWorker(w) {
+		return newPCSCModemAdapter(w)
 	}
 	if w.Backend != nil {
 		mode := strings.ToLower(strings.TrimSpace(w.Backend.Mode()))

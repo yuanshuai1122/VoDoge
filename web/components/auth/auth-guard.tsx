@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useToken, useHydrated } from "@/hooks/use-token";
+import { useT } from "@/lib/i18n";
 
 /**
  * 客户端路由守卫。
@@ -18,6 +19,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const hydrated = useHydrated();
   const token = useToken();
+  const t = useT();
 
   useEffect(() => {
     if (hydrated && !token) router.replace("/login");
@@ -26,7 +28,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   if (!hydrated || !token) {
     return (
       <div className="flex min-h-svh items-center justify-center">
-        <div className="text-sm text-muted-foreground">加载中…</div>
+        <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
       </div>
     );
   }

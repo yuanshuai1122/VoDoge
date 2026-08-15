@@ -34,13 +34,39 @@ type Occupancy struct {
 	mu       sync.Mutex
 	byReader map[string]Holder
 	byICCID  map[string]Holder
+	gates    map[string]*sync.Mutex
 }
 
 func NewOccupancy() *Occupancy {
 	return &Occupancy{
 		byReader: map[string]Holder{},
 		byICCID:  map[string]Holder{},
+		gates:    map[string]*sync.Mutex{},
 	}
+}
+
+// GuardReader 串行同一把读卡器上的 APDU（eSIM 写卡与 VoWiFi AKA）。
+// 与 Acquire 独立：同一设备 ID 的 eSIM / AKA 仍要排队，但不能用 Release 互相拆台。
+func (o *Occupancy) GuardReader(name string) func() {
+	if o == nil {
+		return func() {}
+	}
+	name = NormalizeReaderName(name)
+	if name == "" {
+		return func() {}
+	}
+	o.mu.Lock()
+	if o.gates == nil {
+		o.gates = map[string]*sync.Mutex{}
+	}
+	g, ok := o.gates[name]
+	if !ok {
+		g = &sync.Mutex{}
+		o.gates[name] = g
+	}
+	o.mu.Unlock()
+	g.Lock()
+	return g.Unlock
 }
 
 func NormalizeReaderName(in string) string {

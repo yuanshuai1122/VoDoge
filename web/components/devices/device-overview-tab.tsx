@@ -30,8 +30,10 @@ import { E911Card } from "@/components/devices/e911-card";
 import { LaneBadge } from "@/components/common/lane-badge";
 import { TrafficChart } from "@/components/traffic/traffic-chart";
 import type { DeviceOverview } from "@/types/device";
+import { useT } from "@/lib/i18n";
 
 export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const queryKey = ["devices", "overview", deviceId] as const;
   const [streamed, setStreamed] = useState<DeviceOverview | null>(null);
@@ -56,12 +58,12 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
   const onError = (e: unknown) =>
-    toast.error(e instanceof ApiError ? e.message : "操作失败");
+    toast.error(e instanceof ApiError ? e.message : t("ov.failed"));
 
   const network = useMutation({
     mutationFn: (enabled: boolean) => setDeviceNetwork(deviceId, { enabled }),
     onSuccess: () => {
-      toast.success("已提交网络切换");
+      toast.success(t("ov.netSwitched"));
       invalidate();
     },
     onError,
@@ -70,7 +72,7 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
   const vowifi = useMutation({
     mutationFn: (enabled: boolean) => setVoWiFi(deviceId, enabled),
     onSuccess: () => {
-      toast.success("已提交 VoWiFi 切换");
+      toast.success(t("ov.vowifiSwitched"));
       invalidate();
     },
     onError,
@@ -79,7 +81,7 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
   const flight = useMutation({
     mutationFn: (enabled: boolean) => setFlightMode(deviceId, enabled),
     onSuccess: () => {
-      toast.success("已提交飞行模式切换");
+      toast.success(t("ov.flightSwitched"));
       invalidate();
     },
     onError,
@@ -88,7 +90,7 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
   const reconnect = useMutation({
     mutationFn: () => reconnectVoWiFi(deviceId),
     onSuccess: () => {
-      toast.success("已发起 IMS 重新注册");
+      toast.success(t("ov.imsReReg"));
       invalidate();
     },
     onError,
@@ -114,48 +116,48 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
       <div className="flex flex-wrap items-center gap-3">
         <DeviceStatusBadge device={device} showDetail />
         <Badge variant={status === "open" ? "secondary" : "outline"}>
-          {status === "open" ? "实时" : status === "error" ? "流中断" : "连接中"}
+          {status === "open" ? t("ov.live") : status === "error" ? t("ov.streamDown") : t("ov.connecting")}
         </Badge>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">网络</CardTitle>
+            <CardTitle className="text-base">{t("ov.network")}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            <Row label="注册状态" value={device.registration_state_label || "-"} />
-            <Row label="运营商" value={m?.operator || "-"} />
+            <Row label={t("ov.reg")} value={device.registration_state_label || "-"} />
+            <Row label={t("ov.operator")} value={m?.operator || "-"} />
             <Row
-              label="信号"
+              label={t("ov.signal")}
               value={<SignalIndicator rsrp={m?.signal_rsrp} />}
             />
-            <Row label="网络制式" value={m?.network_mode || "-"} />
-            <Row label="APN" value={m?.apn || "-"} />
-            <Row label="出口 IP" value={device.public_ip || "-"} />
-            <Row label="内网 IP" value={device.private_ip || "-"} />
-            <Row label="小区 / LAC" value={`${m?.cell_id || "-"} / ${m?.lac || "-"}`} />
+            <Row label={t("ov.mode")} value={m?.network_mode || "-"} />
+            <Row label={t("ov.apn")} value={m?.apn || "-"} />
+            <Row label={t("ov.publicIp")} value={device.public_ip || "-"} />
+            <Row label={t("ov.privateIp")} value={device.private_ip || "-"} />
+            <Row label={t("ov.cell")} value={`${m?.cell_id || "-"} / ${m?.lac || "-"}`} />
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">标识</CardTitle>
+            <CardTitle className="text-base">{t("ov.identity")}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <Row
-              label="线路"
-              value={device.lane ? <LaneBadge lane={device.lane} /> : "未分线"}
+              label={t("ov.lane")}
+              value={device.lane ? <LaneBadge lane={device.lane} /> : t("lane.none")}
             />
-            <Row label="设备 ID" value={<code className="text-xs">{device.id}</code>} />
+            <Row label={t("ov.id")} value={<code className="text-xs">{device.id}</code>} />
             <Row label="IMEI" value={<Sensitive value={m?.imei} />} mono />
             <Row label="ICCID" value={<Sensitive value={m?.iccid} />} mono />
             <Row label="IMSI" value={<Sensitive value={m?.imsi} />} mono />
-            <Row label="本机号码" value={device.local_phone || "-"} />
-            <Row label="固件" value={m?.firmware || "-"} />
-            <Row label="接入方式" value={device.backend_mode || "-"} />
+            <Row label={t("ov.phone")} value={device.local_phone || "-"} />
+            <Row label={t("ov.fw")} value={m?.firmware || "-"} />
+            <Row label={t("ov.backend")} value={device.backend_mode || "-"} />
             <Row
-              label="当前 eSIM"
+              label={t("ov.esim")}
               value={device.active_esim_profile_name || "-"}
             />
           </CardContent>
@@ -164,22 +166,22 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">开关</CardTitle>
+          <CardTitle className="text-base">{t("ov.toggles")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <Toggle
             id="network"
-            label="数据网络"
-            description="关闭后设备不再建立数据连接"
+            label={t("ov.data")}
+            description={t("ov.dataHint")}
             checked={device.network_enabled}
             disabled={network.isPending}
             onChange={(v) => network.mutate(v)}
           />
           <Toggle
             id="vowifi"
-            label="VoWiFi"
+            label={t("ov.vowifi")}
             description={
-              device.vowifi_active ? "IMS 已注册" : "未注册或未启用"
+              device.vowifi_active ? t("ov.imsOn") : t("ov.imsOff")
             }
             checked={device.vowifi_enabled}
             disabled={vowifi.isPending}
@@ -199,15 +201,15 @@ export function DeviceOverviewTab({ deviceId }: { deviceId: string }) {
                       reconnect.isPending && "animate-spin",
                     )}
                   />
-                  {reconnect.isPending ? "注册中…" : "重新注册"}
+                  {reconnect.isPending ? t("ov.reReging") : t("ov.reReg")}
                 </Button>
               ) : null
             }
           />
           <Toggle
             id="flight"
-            label="飞行模式"
-            description="开启后模组停止射频"
+            label={t("ov.flight")}
+            description={t("ov.flightHint")}
             checked={m?.operating_mode === 1}
             disabled={flight.isPending}
             onChange={(v) => flight.mutate(v)}

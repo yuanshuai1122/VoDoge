@@ -10,6 +10,7 @@ import {
   listPlugins,
   pluginAssetURL,
 } from "@/lib/api/endpoints/extensions";
+import { pluginLabel, useLocale, useT } from "@/lib/i18n";
 
 export default function PluginPage() {
   return (
@@ -23,6 +24,8 @@ function PluginFrame() {
   const params = useSearchParams();
   const pluginId = params.get("plugin") ?? "";
   const contributionId = params.get("contribution") ?? "";
+  const t = useT();
+  const locale = useLocale();
 
   const query = useQuery({
     queryKey: ["extensions"],
@@ -43,13 +46,13 @@ function PluginFrame() {
   if (!plugin || !contribution) {
     return (
       <EmptyState
-        title="插件不可用"
-        description="插件可能已被禁用、卸载或没有注册此页面。"
+        title={t("plugin.unavailable")}
+        description={t("plugin.unavailableHint")}
       />
     );
   }
 
-  const title = contribution.label_zh || contribution.label;
+  const title = pluginLabel(locale, contribution);
   return (
     <>
       <PageHeader

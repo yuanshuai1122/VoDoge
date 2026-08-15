@@ -16,6 +16,9 @@ func (p *Pool) buildVoWiFiStartProfile(worker *Worker, traceID string) (identity
 	if worker == nil {
 		return identity.Profile{}, fmt.Errorf("worker_nil")
 	}
+	if isPCSCWorker(worker) {
+		return p.buildPCSCVoWiFiStartProfile(worker, traceID)
+	}
 	if worker.Backend == nil {
 		return identity.Profile{}, fmt.Errorf("backend_not_available")
 	}
@@ -137,6 +140,62 @@ func newVoWiFiSIMReadyStartupState(deviceID, dataplaneMode, networkMode string, 
 		LastReason:    "sim_ready",
 		UpdatedAt:     now,
 	}
+}
+
+func (p *Pool) buildPCSCVoWiFiStartProfile(worker *Worker, traceID string) (identity.Profile, error) {
+	adapter, err := newPCSCModemAdapter(worker)
+	if err != nil {
+		return identity.Profile{}, err
+	}
+	defer adapter.Stop()
+
+	imsi, err := adapter.ReadIMSI()
+	if err != nil {
+		return identity.Profile{}, fmt.Errorf("读卡器读取 IMSI 失败: %w", err)
+	}
+	imsi = strings.TrimSpace(imsi)
+	if imsi == "" {
+		return identity.Profile{}, fmt.Errorf("读卡器 IMSI 为空")
+	}
+
+	status := worker.ProjectDeviceStatus()
+	mcc, mnc := "", ""
+	if len(imsi) >= 5 {
+		mcc = imsi[:3]
+		mnc = imsi[3:5]
+	}
+	if strings.TrimSpace(status.NativeMCC) != "" && strings.TrimSpace(status.NativeMNC) != "" {
+		mcc = strings.TrimSpace(status.NativeMCC)
+		mnc = strings.TrimSpace(status.NativeMNC)
+	}
+	if mcc == "" || mnc == "" {
+		return identity.Profile{}, fmt.Errorf("缺少 SIM 归属 MCC/MNC，无法构建 VoWiFi 启动画像: %s", imsi)
+	}
+
+	imei := strings.TrimSpace(status.IMEI)
+	if imei == "" {
+		imei = adapter.IMEI()
+	}
+	iccid := strings.TrimSpace(status.ICCID)
+	if iccid == "" {
+		if v, err := adapter.ReadICCID(); err == nil {
+			iccid = strings.TrimSpace(v)
+		}
+	}
+
+	logger.Info("VoWiFi 启动画像将基于读卡器 USIM 构建",
+		"trace_id", traceID,
+		"device", worker.ID,
+		"source", "pcsc_usim",
+		"plmn_source", "imsi",
+		"iccid", iccid,
+		"imsi", imsi,
+		"mcc", mcc,
+		"mnc", mnc,
+		"imei", imei)
+
+	cacheVoWiFiProfileMCCMNC(worker, mcc, mnc)
+	return buildVoWiFiRawProfile(imsi, mcc, mnc, imei, ""), nil
 }
 
 func (p *Pool) BuildVoWiFiStartProfile(worker *Worker) (identity.Profile, error) {

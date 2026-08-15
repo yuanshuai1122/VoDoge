@@ -98,10 +98,18 @@ docker compose up -d
 
 ## 📦 构建镜像
 
-本项目**不发布预构建镜像**，也不使用 CI 服务，镜像在本机构建：
+预构建镜像：`ghcr.io/yuanshuai1122/vodog`（打 `v*` 标签由 GitHub Actions 推送）。
+
+本机构建：
 
 ```bash
-docker build -t vohive:latest .
+docker build -t vodog:latest .
+```
+
+一键安装：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yuanshuai1122/VoDog/main/scripts/install.sh | bash
 ```
 
 完整的本地流水线（编码检查、路由校验、前端构建、编译、测试、镜像）：

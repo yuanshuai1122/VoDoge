@@ -19,19 +19,20 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { login } from "@/lib/api/endpoints/auth";
 import { ApiError } from "@/lib/api/errors";
 import { useToken, useHydrated } from "@/hooks/use-token";
+import { useT } from "@/lib/i18n";
 
-const schema = z.object({
-  username: z.string().min(1, "请输入用户名"),
-  password: z.string().min(1, "请输入密码"),
-});
-
-type FormValues = z.infer<typeof schema>;
+type FormValues = { username: string; password: string };
 
 export default function LoginPage() {
   const router = useRouter();
   const hydrated = useHydrated();
   const token = useToken();
+  const t = useT();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const schema = z.object({
+    username: z.string().min(1, t("login.needUsername")),
+    password: z.string().min(1, t("login.needPassword")),
+  });
 
   const {
     register,
@@ -57,10 +58,10 @@ export default function LoginPage() {
       if (e instanceof ApiError) {
         // 后端对登录有 2 分钟 10 次/IP 的限流，需与凭证错误区分提示
         setSubmitError(
-          e.isRateLimited ? "尝试过于频繁，请稍后再试" : e.message,
+          e.isRateLimited ? t("login.rateLimited") : e.message,
         );
       } else {
-        setSubmitError("登录失败，请重试");
+        setSubmitError(t("login.failed"));
       }
     }
   }
@@ -69,14 +70,14 @@ export default function LoginPage() {
     <div className="flex min-h-svh items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-xl">VoDog</CardTitle>
-          <CardDescription>登录管理后台</CardDescription>
+          <CardTitle className="text-xl">{t("app.name")}</CardTitle>
+          <CardDescription>{t("login.title")}</CardDescription>
         </CardHeader>
 
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="username">用户名</Label>
+              <Label htmlFor="username">{t("login.username")}</Label>
               <Input
                 id="username"
                 autoComplete="username"
@@ -91,7 +92,7 @@ export default function LoginPage() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password">密码</Label>
+              <Label htmlFor="password">{t("login.password")}</Label>
               <Input
                 id="password"
                 type="password"
@@ -112,7 +113,7 @@ export default function LoginPage() {
             )}
 
             <Button type="submit" disabled={isSubmitting} className="w-full">
-              {isSubmitting ? "登录中…" : "登录"}
+              {isSubmitting ? t("login.submitting") : t("login.submit")}
             </Button>
           </form>
         </CardContent>

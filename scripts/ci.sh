@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # VoDog 本地流水线。
 #
-# 本项目不使用 GitHub Actions——构建与验证全部在本机完成。
+# 本机验证流水线。发版镜像与 GitHub Release 走 .github/workflows/release.yml。
 # 需要 Docker 的环节（vet-all / test）会自动起容器，见各任务说明。
 set -euo pipefail
 
@@ -202,8 +202,8 @@ image_build() {
 
 # 交叉构建 arm64 与 armv7，验证目标平台产物真的能出来。
 #
-# 只构建、不推送：本项目不发布镜像（不使用 GHCR）。这一步要回答的问题是
-# "换个架构还编得过吗"，而不是"能不能发布"。
+# 只构建、不推送。发版推 GHCR 由 tag v* 的 GitHub Actions 负责。
+# 这一步回答「换个架构还编得过吗」。
 #
 # 前端与 Go 编译都固定在 BUILDPLATFORM 上跑（见 Dockerfile），走 Go 自己的
 # 交叉编译而不是 QEMU 模拟——后者会把每个架构的构建时间从一分半拖到十几分钟。

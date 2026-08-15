@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api/errors";
 import { useEsimLockStore } from "@/stores/esim-lock";
+import { t } from "@/lib/i18n";
 
 /**
  * 统一封装 eSIM 写操作：
@@ -49,10 +50,10 @@ export function useEsimMutation<TArgs, TResult>(options: {
         // 占用方可能是其它客户端或后台任务，按后端给的窗口等待
         markBusy(deviceId, e.retryAfterMs, e.reason);
         const seconds = Math.ceil((e.retryAfterMs ?? 3000) / 1000);
-        toast.warning(`eSIM 正忙，请等待约 ${seconds} 秒后重试`);
+        toast.warning(t("esim.busyWait", { seconds }));
         return;
       }
-      toast.error(e instanceof ApiError ? e.message : "操作失败");
+      toast.error(e instanceof ApiError ? e.message : t("common.failed"));
     },
   });
 }
