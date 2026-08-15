@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	repoOwner = "boa-z"
-	repoName  = "vohive"
+	repoOwner = "yuanshuai1122"
+	repoName  = "VoDog"
 )
 
 type Release struct {
@@ -119,14 +119,14 @@ func ApplyUpdate() error {
 		return fmt.Errorf("failed to decode release info: %w", err)
 	}
 
-	// 拼接对应的 asset name。例如: vohive_v1.0.0_linux_amd64
+	// 拼接对应的 asset name。例如: vodog_v1.0.0_linux_amd64
 	targetGoos := runtime.GOOS
 	targetGoarch := runtime.GOARCH
 	if targetGoarch == "arm" {
-		targetGoarch = "armv7" // 根据 Makefile 中的定义，vohive 编的 arm 是 armv7
+		targetGoarch = "armv7" // 根据 Makefile 中的定义，arm 编的是 armv7
 	}
 
-	binaryName := "vohive"
+	binaryName := "vodog"
 	assetPrefix := fmt.Sprintf("%s_%s_%s_%s", binaryName, release.TagName, targetGoos, targetGoarch)
 
 	var downloadURL string
