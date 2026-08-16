@@ -104,6 +104,38 @@ docker compose up -d
 
 浏览器打开 `http://YOUR_IP:7575`，默认账号 `admin` / `admin123`。
 
+### 5. 公网 HTTPS 反向代理
+
+插件运行时必须与管理面使用不同 origin。由 Caddy、Nginx 等反向代理终止 TLS 时，
+在 `config/config.yaml` 中显式填写浏览器实际访问的两个 origin：
+
+```yaml
+server:
+  port: 7575
+  plugin_port: 7576
+  public_url: https://vodoge.example.com
+  plugin_public_url: https://plugins.vodoge.example.com
+```
+
+这里只接受 `http` 或 `https` origin，不得包含用户名、密码、路径（包括尾斜杠）、
+查询参数或片段；两个 origin 不能相同。反向代理要分别回源两个监听端口，例如：
+
+```caddyfile
+vodoge.example.com {
+    reverse_proxy 127.0.0.1:7575
+}
+
+plugins.vodoge.example.com {
+    reverse_proxy 127.0.0.1:7576
+}
+```
+
+显式 origin 会决定插件启动地址以及 capability Cookie 的 `Secure` 属性，避免 HTTPS
+在代理处终止后生成 HTTP iframe 或非 Secure Cookie。只有无法显式配置 origin、服务又只能
+经可信代理访问时，才设置 `server.access.trust_proxy_headers: true` 以读取标准
+`Forwarded` 或 `X-Forwarded-Proto` / `X-Forwarded-Host`；不要在可被客户端直连的服务上
+信任这些请求头。
+
 ## 📦 构建镜像
 
 预构建镜像：`ghcr.io/yuanshuai1122/vodoge`（打 `v*` 标签由 GitHub Actions 推送）。

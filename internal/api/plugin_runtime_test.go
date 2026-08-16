@@ -78,6 +78,139 @@ func TestPluginLaunchURLEscapesContributionEntryOnce(t *testing.T) {
 	}
 }
 
+func TestPluginLaunchURLPrefersConfiguredPublicOrigin(t *testing.T) {
+	s := &Server{cfg: config.ServerConfig{
+		PluginPort:      "7576",
+		PluginPublicURL: "https://plugins.vodoge.com",
+		Access:          config.AccessPolicy{TrustProxyHeaders: true},
+	}}
+	req := httptest.NewRequest(http.MethodPost, "http://internal.invalid:7575/session", nil)
+	req.Header.Set("Forwarded", "proto=http;host=attacker.invalid")
+	req.Header.Set("X-Forwarded-Proto", "http")
+	req.Header.Set("X-Forwarded-Host", "attacker.invalid")
+
+	got, err := s.pluginLaunchURL(req, "hello-lab", "index.html", "capability")
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch, err := url.Parse(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if launch.Scheme != "https" || launch.Host != "plugins.vodoge.com" {
+		t.Fatalf("launch origin = %s://%s, want https://plugins.vodoge.com", launch.Scheme, launch.Host)
+	}
+}
+
+func TestPluginLaunchURLProxyHeaderFallback(t *testing.T) {
+	tests := []struct {
+		name       string
+		trustProxy bool
+		forwarded  string
+		xProto     string
+		xHost      string
+		wantOrigin string
+	}{
+		{
+			name:       "untrusted headers are ignored",
+			forwarded:  "for=192.0.2.1;proto=https;host=public.example",
+			xProto:     "https",
+			xHost:      "public.example",
+			wantOrigin: "http://device.local:7576",
+		},
+		{
+			name:       "RFC Forwarded is preferred",
+			trustProxy: true,
+			forwarded:  "for=192.0.2.1;proto=https;host=\"public.example:443\"",
+			xProto:     "http",
+			xHost:      "ignored.example",
+			wantOrigin: "https://public.example:7576",
+		},
+		{
+			name:       "X-Forwarded fallback",
+			trustProxy: true,
+			xProto:     "https, http",
+			xHost:      "public.example:443, internal.example",
+			wantOrigin: "https://public.example:7576",
+		},
+		{
+			name:       "malformed trusted headers are ignored",
+			trustProxy: true,
+			forwarded:  "proto=javascript;host=\"attacker.invalid/path\"",
+			xProto:     "javascript",
+			xHost:      "attacker.invalid/path",
+			wantOrigin: "http://device.local:7576",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Server{cfg: config.ServerConfig{
+				PluginPort: "7576",
+				Access:     config.AccessPolicy{TrustProxyHeaders: tt.trustProxy},
+			}}
+			req := httptest.NewRequest(http.MethodPost, "http://device.local:7575/session", nil)
+			if tt.forwarded != "" {
+				req.Header.Set("Forwarded", tt.forwarded)
+			}
+			if tt.xProto != "" {
+				req.Header.Set("X-Forwarded-Proto", tt.xProto)
+			}
+			if tt.xHost != "" {
+				req.Header.Set("X-Forwarded-Host", tt.xHost)
+			}
+			got, err := s.pluginLaunchURL(req, "hello-lab", "index.html", "capability")
+			if err != nil {
+				t.Fatal(err)
+			}
+			launch, err := url.Parse(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			origin := launch.Scheme + "://" + launch.Host
+			if origin != tt.wantOrigin {
+				t.Fatalf("launch origin = %q, want %q", origin, tt.wantOrigin)
+			}
+		})
+	}
+}
+
+func TestPluginCapabilityCookieSecureUsesPublicOrigin(t *testing.T) {
+	tests := []struct {
+		name            string
+		requestURL      string
+		pluginPublicURL string
+		trustProxy      bool
+		forwardedProto  string
+		want            bool
+	}{
+		{name: "configured HTTPS over HTTP upstream", requestURL: "http://internal:7576", pluginPublicURL: "https://plugins.vodoge.com", want: true},
+		{name: "configured HTTP over HTTPS upstream", requestURL: "https://internal:7576", pluginPublicURL: "http://plugins.vodoge.com", forwardedProto: "https", trustProxy: true, want: false},
+		{name: "trusted proxy HTTPS", requestURL: "http://internal:7576", forwardedProto: "https", trustProxy: true, want: true},
+		{name: "untrusted proxy HTTPS", requestURL: "http://internal:7576", forwardedProto: "https", want: false},
+		{name: "direct HTTPS", requestURL: "https://internal:7576", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Server{cfg: config.ServerConfig{
+				PluginPort:      "7576",
+				PluginPublicURL: tt.pluginPublicURL,
+				Access:          config.AccessPolicy{TrustProxyHeaders: tt.trustProxy},
+			}}
+			req := httptest.NewRequest(http.MethodGet, tt.requestURL, nil)
+			if tt.forwardedProto != "" {
+				req.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
+			}
+			got, err := s.pluginCapabilityCookieSecure(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("secure = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPluginLaunchSetsOnlyPathScopedCapabilityCookies(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	s := newPluginRuntimeTestServer(t)

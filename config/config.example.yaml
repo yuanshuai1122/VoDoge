@@ -11,6 +11,10 @@ server:
   port: 7575
   # 插件页面与后端的独立 origin；不得与管理端口相同。
   plugin_port: 7576
+  # 公网反向代理终止 TLS 时，填写浏览器实际访问的两个 origin（不要带尾斜杠）。
+  # 两者必须是不同的 http/https origin；留空时才根据请求回退推导。
+  public_url: ""
+  plugin_public_url: ""
   debug: false
   # 最多可添加的设备数（模组 + 读卡器）。默认 5，允许 1–10。也可在网页「系统设置」里改。
   max_devices: 5
@@ -20,6 +24,7 @@ server:
   access:
     mode: internal
     allowed_cidrs: []
+    # 仅当服务只能经可信反向代理访问时启用；显式配置上述 origin 时通常无需启用。
     trust_proxy_headers: false
 
 # 持久化：仅支持 PostgreSQL，无 SQLite 回退路径。

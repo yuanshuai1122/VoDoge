@@ -2,6 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -376,10 +379,85 @@ type WebConfig struct {
 type ServerConfig struct {
 	Port            string       `mapstructure:"port"`
 	PluginPort      string       `mapstructure:"plugin_port"`
+	PublicURL       string       `mapstructure:"public_url"`
+	PluginPublicURL string       `mapstructure:"plugin_public_url"`
 	Debug           bool         `mapstructure:"debug"`
 	MaxDevices      int          `mapstructure:"max_devices"`
 	SelfSignedHTTPS bool         `mapstructure:"self_signed_https"`
 	Access          AccessPolicy `mapstructure:"access"`
+}
+
+// NormalizePublicOrigin validates and serializes an optional HTTP(S) origin.
+// Public origins are deliberately narrower than general URLs: they cannot carry
+// credentials, paths, queries, or fragments.
+func NormalizePublicOrigin(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", fmt.Errorf("scheme must be http or https")
+	}
+	if u.Opaque != "" || u.Host == "" || u.Hostname() == "" {
+		return "", fmt.Errorf("host is required")
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("userinfo is not allowed")
+	}
+	if u.Path != "" || u.RawPath != "" {
+		return "", fmt.Errorf("path is not allowed")
+	}
+	if u.RawQuery != "" || u.ForceQuery {
+		return "", fmt.Errorf("query is not allowed")
+	}
+	if u.Fragment != "" || u.RawFragment != "" || strings.Contains(raw, "#") {
+		return "", fmt.Errorf("fragment is not allowed")
+	}
+
+	hostname := strings.ToLower(u.Hostname())
+	port := u.Port()
+	if port == "" && strings.HasSuffix(u.Host, ":") {
+		return "", fmt.Errorf("port is empty")
+	}
+	if port != "" {
+		portNumber, err := strconv.ParseUint(port, 10, 16)
+		if err != nil || portNumber == 0 {
+			return "", fmt.Errorf("port is invalid")
+		}
+		if (scheme == "http" && portNumber == 80) || (scheme == "https" && portNumber == 443) {
+			port = ""
+		}
+	}
+
+	host := hostname
+	if port != "" {
+		host = net.JoinHostPort(hostname, port)
+	} else if strings.Contains(hostname, ":") {
+		host = "[" + hostname + "]"
+	}
+	return scheme + "://" + host, nil
+}
+
+func normalizeServerPublicOrigins(server *ServerConfig) error {
+	publicURL, err := NormalizePublicOrigin(server.PublicURL)
+	if err != nil {
+		return fmt.Errorf("server.public_url invalid: %w", err)
+	}
+	pluginPublicURL, err := NormalizePublicOrigin(server.PluginPublicURL)
+	if err != nil {
+		return fmt.Errorf("server.plugin_public_url invalid: %w", err)
+	}
+	if publicURL != "" && pluginPublicURL != "" && publicURL == pluginPublicURL {
+		return fmt.Errorf("server.public_url and server.plugin_public_url must use different origins")
+	}
+	server.PublicURL = publicURL
+	server.PluginPublicURL = pluginPublicURL
+	return nil
 }
 
 // AccessPolicy 是管理面的来源网段策略。
@@ -568,6 +646,9 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
+	}
+	if err := normalizeServerPublicOrigins(&cfg.Server); err != nil {
+		return nil, err
 	}
 
 	// 兼容旧版单值配置: feishu.chat_id

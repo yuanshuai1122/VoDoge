@@ -8,13 +8,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/yuanshuai1122/vodoge/internal/config"
 )
 
 const pluginSessionTTL = 30 * time.Minute
@@ -77,31 +80,147 @@ func (s *Server) pluginContributionEntry(pluginID, contributionID string) (strin
 }
 
 func (s *Server) pluginLaunchURL(r *http.Request, pluginID, entry, token string) (string, error) {
-	if r == nil {
-		return "", fmt.Errorf("request is required")
+	u, err := s.pluginPublicOrigin(r)
+	if err != nil {
+		return "", err
 	}
-	host := (&url.URL{Host: r.Host}).Hostname()
-	if host == "" {
-		return "", fmt.Errorf("request host is required")
+	entry = strings.ReplaceAll(strings.TrimSpace(entry), `\`, "/")
+	u.Path = "/plugin-assets/" + pluginID + "/" + entry
+	q := u.Query()
+	q.Set("token", token)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+func (s *Server) pluginPublicOrigin(r *http.Request) (*url.URL, error) {
+	if raw := strings.TrimSpace(s.cfg.PluginPublicURL); raw != "" {
+		normalized, err := config.NormalizePublicOrigin(raw)
+		if err != nil {
+			return nil, fmt.Errorf("plugin public URL is invalid: %w", err)
+		}
+		return url.Parse(normalized)
+	}
+	if r == nil {
+		return nil, fmt.Errorf("request is required")
+	}
+
+	scheme, hostname, err := requestOriginParts(r, s.trustsProxyHeaders())
+	if err != nil {
+		return nil, err
 	}
 	port := configuredPort(s.cfg.PluginPort, "7576")
 	if port == "" {
-		return "", fmt.Errorf("plugin port is invalid")
+		return nil, fmt.Errorf("plugin port is invalid")
+	}
+	return &url.URL{Scheme: scheme, Host: net.JoinHostPort(hostname, port)}, nil
+}
+
+func (s *Server) trustsProxyHeaders() bool {
+	if s == nil {
+		return false
+	}
+	s.accessMu.RLock()
+	defer s.accessMu.RUnlock()
+	if s.access.Mode != "" {
+		return s.access.TrustProxy
+	}
+	return s.cfg.Access.TrustProxyHeaders
+}
+
+func requestOriginParts(r *http.Request, trustProxy bool) (string, string, error) {
+	if r == nil {
+		return "", "", fmt.Errorf("request is required")
 	}
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	entry = strings.ReplaceAll(strings.TrimSpace(entry), `\`, "/")
-	u := url.URL{
-		Scheme: scheme,
-		Host:   net.JoinHostPort(host, port),
-		Path:   "/plugin-assets/" + pluginID + "/" + entry,
+	hostname, err := hostnameFromAuthority(r.Host)
+	if err != nil {
+		return "", "", fmt.Errorf("request host is invalid: %w", err)
 	}
-	q := u.Query()
-	q.Set("token", token)
-	u.RawQuery = q.Encode()
-	return u.String(), nil
+	if !trustProxy {
+		return scheme, hostname, nil
+	}
+
+	forwardedScheme, forwardedHost := forwardedOriginHints(r.Header)
+	if forwardedScheme != "" {
+		scheme = forwardedScheme
+	}
+	if forwardedHost != "" {
+		hostname = forwardedHost
+	}
+	return scheme, hostname, nil
+}
+
+func forwardedOriginHints(header http.Header) (string, string) {
+	var scheme, hostname string
+	if element := firstHeaderListValue(header.Values("Forwarded")); element != "" {
+		_, params, err := mime.ParseMediaType("application/forwarded; " + element)
+		if err == nil {
+			scheme = validHTTPForwardedScheme(params["proto"])
+			if host, err := hostnameFromAuthority(params["host"]); err == nil {
+				hostname = host
+			}
+		}
+	}
+	if scheme == "" {
+		scheme = validHTTPForwardedScheme(firstHeaderListValue(header.Values("X-Forwarded-Proto")))
+	}
+	if hostname == "" {
+		if host, err := hostnameFromAuthority(firstHeaderListValue(header.Values("X-Forwarded-Host"))); err == nil {
+			hostname = host
+		}
+	}
+	return scheme, hostname
+}
+
+func firstHeaderListValue(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	raw := strings.Join(values, ",")
+	if before, _, ok := strings.Cut(raw, ","); ok {
+		raw = before
+	}
+	return strings.TrimSpace(raw)
+}
+
+func validHTTPForwardedScheme(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "http":
+		return "http"
+	case "https":
+		return "https"
+	default:
+		return ""
+	}
+}
+
+func hostnameFromAuthority(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("host is required")
+	}
+	u, err := url.Parse("//" + raw)
+	if err != nil {
+		return "", err
+	}
+	if u.Opaque != "" || u.User != nil || u.Host == "" || u.Hostname() == "" || u.Path != "" || u.RawPath != "" ||
+		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" || strings.Contains(raw, "#") {
+		return "", fmt.Errorf("host is invalid")
+	}
+	port := u.Port()
+	if port == "" && strings.HasSuffix(u.Host, ":") {
+		return "", fmt.Errorf("port is empty")
+	}
+	if port != "" {
+		portNumber, err := strconv.ParseUint(port, 10, 16)
+		if err != nil || portNumber == 0 {
+			return "", fmt.Errorf("port is invalid")
+		}
+	}
+	return strings.ToLower(u.Hostname()), nil
 }
 
 func configuredPort(raw, fallback string) string {
@@ -110,9 +229,15 @@ func configuredPort(raw, fallback string) string {
 		return fallback
 	}
 	if _, port, err := net.SplitHostPort(raw); err == nil {
-		return port
+		raw = port
+	} else {
+		raw = strings.TrimPrefix(raw, ":")
 	}
-	return strings.TrimPrefix(raw, ":")
+	portNumber, err := strconv.ParseUint(raw, 10, 16)
+	if err != nil || portNumber == 0 {
+		return ""
+	}
+	return raw
 }
 
 func (s *Server) issuePluginCapability(pluginID string, now time.Time) (string, time.Time, error) {
@@ -192,7 +317,11 @@ func pluginBackendCookiePath(pluginID string) string {
 	return "/api/extensions/" + pluginID + "/backend"
 }
 
-func (s *Server) setPluginCapabilityCookies(c *gin.Context, pluginID, token string) {
+func (s *Server) setPluginCapabilityCookies(c *gin.Context, pluginID, token string) error {
+	secure, err := s.pluginCapabilityCookieSecure(c.Request)
+	if err != nil {
+		return err
+	}
 	maxAge := int(pluginSessionTTL.Seconds())
 	for _, path := range []string{pluginAssetCookiePath(pluginID), pluginBackendCookiePath(pluginID)} {
 		http.SetCookie(c.Writer, &http.Cookie{
@@ -200,11 +329,20 @@ func (s *Server) setPluginCapabilityCookies(c *gin.Context, pluginID, token stri
 			Value:    token,
 			Path:     path,
 			MaxAge:   maxAge,
-			Secure:   c.Request.TLS != nil,
+			Secure:   secure,
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
 		})
 	}
+	return nil
+}
+
+func (s *Server) pluginCapabilityCookieSecure(r *http.Request) (bool, error) {
+	origin, err := s.pluginPublicOrigin(r)
+	if err != nil {
+		return false, err
+	}
+	return origin.Scheme == "https", nil
 }
 
 func (s *Server) pluginCapabilityMiddleware(allowLaunchToken bool) gin.HandlerFunc {
@@ -227,7 +365,11 @@ func (s *Server) pluginCapabilityMiddleware(allowLaunchToken bool) gin.HandlerFu
 			return
 		}
 		if fromLaunch {
-			s.setPluginCapabilityCookies(c, pluginID, token)
+			if err := s.setPluginCapabilityCookies(c, pluginID, token); err != nil {
+				fail(c, http.StatusInternalServerError, "plugin_origin_invalid", err.Error())
+				c.Abort()
+				return
+			}
 			clean := *c.Request.URL
 			query := clean.Query()
 			query.Del("token")
