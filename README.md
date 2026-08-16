@@ -3,63 +3,77 @@
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go)](go.mod)
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 
-一台机器上管多根 USB 模组的 **短信中枢**：国内线、国外线分开，网页看会话、发短信、切 eSIM。
+**English** · [简体中文](README.zh-CN.md)
 
-仓库：[github.com/yuanshuai1122/VoDoge](https://github.com/yuanshuai1122/VoDoge)
+An **SMS hub** for a rack of USB cellular modules on one machine: domestic and
+international lines kept apart, threads and sending in the browser, eSIM profiles
+switchable from the same page.
 
-产品不是「全球一张卡」，也不是代理池。代理和 VoWiFi 有，但排在短信后面。不拉黑中国卡。
+Repository: [github.com/yuanshuai1122/VoDoge](https://github.com/yuanshuai1122/VoDoge)
 
-## 它做什么
+This is **not** a "one global SIM" product and **not** a proxy pool. Proxying and VoWiFi
+are here, but they rank behind SMS. Chinese SIMs are never blocklisted.
+
+## What it does
 
 | | |
 |---|---|
-| 多 USB 模组 | 按 IMEI 添加和重绑，不写死 `cdc-wdmN`。默认最多 5 台，设置里可调 1–10 |
-| 国内线 / 国外线 | 设备上标 `lane=cn` 或 `intl`，人工分线，不按 MCC 推断 |
-| 短信 | 按 ICCID 进会话；国外线已驻网走蜂窝，否则 IMS 补通路；国内线 VoWiFi 开着只走 IMS。全局每小时发送限额（默认 20） |
-| eSIM | 列出 / 切换 / 禁用 / 下载当前卡上的 profile。写套餐用 USB 读卡器，模组只当「当前启用的那张 USIM」 |
-| 读卡器 | `pcscd` 发现并写卡，无 CGO。读卡器与模组不能同时摸同一张卡 |
-| 通知 | 新短信走 Telegram / Bark 等，不靠网页推送 |
-| 个人入口 | 同一套 Web，可装成 PWA（要 HTTPS）。Service Worker 只缓存壳，不缓存 `/api`。顶栏切深色 / 浅色，中英界面 |
-| 插件 | zip 安装侧栏页和本机后端。以管理员权限跑，只装信任的包 |
+| Multiple USB modules | Added and rebound **by IMEI**, never by a hardcoded `cdc-wdmN` — USB renumbers on replug. Up to 5 by default, 1–10 in settings |
+| Domestic / international lanes | Each device is tagged `lane=cn` or `lane=intl` **by hand**. Never inferred from MCC |
+| SMS | Threaded per ICCID. An international line that is registered sends over cellular and falls back to IMS; a domestic line with VoWiFi on sends over IMS only. Global rolling hourly send cap (default 20) |
+| eSIM | List / switch / disable / download profiles on the card in the module. Writing a plan uses a USB reader; the module only ever sees "the USIM currently enabled" |
+| Card reader | Discovery and writing via `pcscd`, no CGO. A reader and a module must never hold the same card at once |
+| Notifications | New SMS goes out over Telegram / Bark and friends — not web push |
+| Web UI | Installable as a PWA (needs HTTPS). The service worker caches the shell only, never `/api`. Dark / light toggle, **English and Chinese** |
+| Plugins | Sidebar pages and local backends installed from a zip. They run with backend privileges — install only what you trust |
 
-可选：按设备出站的 SOCKS/HTTP、按 ICCID 或国家绑前置代理（国内线仍直连模组出口）、本机自签 HTTPS、只放行内网打开管理面。
+Optional: per-device SOCKS/HTTP egress, upstream proxies bound per ICCID or per country
+(domestic lines still egress straight out of the module), local self-signed HTTPS, and
+LAN-only access to the admin UI.
 
-## 支持什么硬件
+## Supported hardware
 
-产品承诺只覆盖 Quectel **EC20 / EC25 / EG25** USB 成品。实验室里的 UFI103S **不进承诺**。
+The product covers Quectel **EC20 / EC25 / EG25** USB modules. The UFI103S in the lab is
+**explicitly out of scope**.
 
-| 硬件 | 用途 | 软件 | 真机 |
+| Hardware | Role | Software | On real hardware |
 |---|---|---|---|
-| EC25-CN | 国内线短信 | 已通 | 要报到后再验收发 |
-| EG25-G | 国外线短信 + IMS | 已通 | 棒子到了再验 |
-| EC20 | 备用，蜂窝短信 | 已通 | 能管、能发即可 |
-| USB CCID 读卡器 | 写 eSIM，并跑 VoWiFi / AKA | 已接 pcscd | 要读卡器 + `pcscd` |
+| EC25-CN | Domestic SMS | Done | Awaiting the stick, then send/receive acceptance |
+| EG25-G | International SMS + IMS | Done | Awaiting the stick |
+| EC20 | Spare, cellular SMS | Done | Manage and send is enough |
+| USB CCID reader | eSIM writing, plus VoWiFi / AKA | On `pcscd` | Needs a reader + `pcscd` |
 
-数据面是 **QMI**，不是 RNDIS。一台进程。详见 [docs/hardware-support.md](docs/hardware-support.md)。
+The data plane is **QMI**, not RNDIS. One process. See
+[docs/hardware-support.md](docs/hardware-support.md).
 
-## 快速开始
+## Quick start
 
-一键安装（优先 Docker Compose，拉 GHCR 镜像 `ghcr.io/yuanshuai1122/vodoge`）：
+One-line install — prefers Docker Compose and pulls the GHCR image
+`ghcr.io/yuanshuai1122/vodoge`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yuanshuai1122/VoDoge/main/scripts/install.sh | bash
 ```
 
-本机已有仓库时：
+If you already have the repository checked out:
 
 ```bash
 cp config/config.example.yaml config/config.yaml
 docker compose up -d
 ```
 
-- 管理面：`http://127.0.0.1:7575`（默认账密见配置里的 `web`，登录后立刻改）
-- Compose 自带 PostgreSQL，后端用 `VODOGE_DB_DSN` 连（也认 `DATABASE_URL`）
-- 一键安装首次运行会生成 PostgreSQL 随机密码，并以 `0600` 权限保存在 `${VODOGE_DIR:-/opt/vodoge}/.postgres-credentials`；重跑安装器会继续使用原凭据
-- 默认只放行内网访问；公网要先在设置里改网络策略，并上 HTTPS
+- Admin UI at `http://127.0.0.1:7575`. Default credentials are in the `web` block of the
+  config — change them the moment you log in.
+- Compose ships PostgreSQL; the backend connects via `VODOGE_DB_DSN` (`DATABASE_URL` also
+  works).
+- On first run the installer generates a random PostgreSQL password and stores it `0600`
+  at `${VODOGE_DIR:-/opt/vodoge}/.postgres-credentials`. Re-running reuses it.
+- Only LAN access is allowed by default. Going public means changing the network policy in
+  settings **and** putting HTTPS in front.
 
-没有可用的 PostgreSQL 时进程会退出。没有 SQLite。
+Without a reachable PostgreSQL the process exits. There is no SQLite.
 
-### 本机开发
+### Local development
 
 ```bash
 docker compose up -d postgres
@@ -67,48 +81,54 @@ go run ./cmd/vodoge -c config/config.yaml
 npm install --prefix web && npm run dev --prefix web
 ```
 
-前端 `:3000`，`/api/*` 反代到 `:7575`。后端没有全局 CORS，不要跨源直连。
+The frontend serves on `:3000` and rewrites `/api/*` to `:7575`. The backend has **no
+global CORS** — don't call it cross-origin.
 
-生产二进制要先打前端再编 Go：
+A production binary needs the frontend built and embedded first:
 
 ```bash
 make frontend-dist
 go build -o vodoge ./cmd/vodoge
 ```
 
-### 验证
+### Verifying
 
 ```bash
-node scripts/smoke-api.mjs          # 登录 / 设备 / 短信 / 代理
-bash scripts/ci.sh                  # 本机验证流水线；打 tag v* 会走 GitHub Actions 发版
-bash scripts/testdb.sh ensure       # 一次性测试库
+node scripts/smoke-api.mjs          # login / devices / SMS / proxy
+bash scripts/ci.sh                  # local pipeline; tagging v* runs GitHub Actions release
+bash scripts/testdb.sh ensure       # throwaway test database
 ```
 
-**不要**把 `TEST_DATABASE_URL` 指到正在跑业务的库，测试会清空所有表。
+**Never** point `TEST_DATABASE_URL` at a database serving real traffic — the tests
+truncate every table.
 
-备份用 `pg_dump`：
+Back up with `pg_dump`:
 
 ```bash
 docker exec vodoge-postgres pg_dump -U vodoge vodoge > vodoge-$(date +%F).sql
 ```
 
-## 文档
+## Documentation
 
-| 文档 | 内容 |
+| Document | Contents |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | 架构总览：代码怎么摆、改东西去哪儿 |
-| [docs/hardware-support.md](docs/hardware-support.md) | 模组、短信通道、读卡器、插件 |
-| [docs/frontend-api-matrix.md](docs/frontend-api-matrix.md) | HTTP 契约 |
-| [docs/pve-lab-deploy.md](docs/pve-lab-deploy.md) | PVE 实验室落点 |
-| [docs/README.md](docs/README.md) | 其余索引 |
+| [docs/architecture.md](docs/architecture.md) | How the code is laid out and where to change things |
+| [docs/hardware-support.md](docs/hardware-support.md) | Modules, SMS paths, card readers, plugins |
+| [docs/frontend-api-matrix.md](docs/frontend-api-matrix.md) | The HTTP contract |
+| [docs/pve-lab-deploy.md](docs/pve-lab-deploy.md) | PVE lab deployment |
+| [docs/README.md](docs/README.md) | Index of everything else |
 
-## 免责声明
+> The design documents under `docs/` are written in Chinese. This README and the web UI
+> are available in both English and Chinese.
 
-- 涉及底层通信，硬件、资费和网络风险由使用者承担。
-- 与 Quectel / 高通无官方关联。
-- 遵守当地法律和运营商条款。禁止违法用途。
-- 按现状提供，不作担保。
+## Disclaimer
+
+- This software drives low-level cellular hardware. Hardware, carrier-billing and network
+  risks are yours to carry.
+- Not affiliated with or endorsed by Quectel or Qualcomm.
+- Follow your local laws and your carrier's terms of service. Unlawful use is prohibited.
+- Provided as is, without warranty of any kind.
 
 ## License
 
-Copyright (c) 2026 yuanshuai1122。专有软件，见 [LICENSE](LICENSE)。
+Copyright (c) 2026 yuanshuai1122. Proprietary software — see [LICENSE](LICENSE).
