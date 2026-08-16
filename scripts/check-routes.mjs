@@ -36,9 +36,7 @@ const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
  */
 const INTERNAL_ROUTE_PATTERNS = [
   /^\/websheets\/:id$/,
-  /^\/websheets\/:id\/proxy/,
-  /^\/websheets\/:id\/callback$/,
-  /^\/websheets\/:id\/done$/,
+  /^\/websheets\/:id\/session\/:token\/(proxy|callback|done)/,
   /^\/docs\/assets\//,
   /^\/extensions\/:id\/backend/,
 ];

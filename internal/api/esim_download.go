@@ -273,11 +273,7 @@ func (s *Server) handleEsimDownloadStream(c *gin.Context) {
 		return
 	}
 
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
-	s.setSSECORSHeaders(c)
+	s.prepareSSE(c)
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -301,12 +297,17 @@ func (s *Server) handleEsimDownloadStream(c *gin.Context) {
 	}
 
 	clientGone := c.Request.Context().Done()
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
 	for {
 		select {
 		case <-clientGone:
 			return
 		case <-s.shutdownCh:
 			return
+		case <-heartbeat.C:
+			_, _ = io.WriteString(c.Writer, ": keepalive\n\n")
+			flusher.Flush()
 		case ev, open := <-ch:
 			if !open {
 				return

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -96,13 +97,15 @@ func TestWebsheetCallbackMarksTerminalSessionDone(t *testing.T) {
 	api := router.Group("/api")
 	server.registerWebsheetRoutes(api)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/websheets/"+session.Info().ID+"/callback?token="+websheetToken(session), strings.NewReader(`{
+	req := httptest.NewRequest(http.MethodPost, websheetSessionPath(session, "/callback"), strings.NewReader(`{
 		"source":"vowifi",
 		"event":"entitlementChanged",
 		"method":"e911AddressValidated",
 		"resultCode":"success"
 	}`))
-	req.Header.Set("Content-Type", "application/json")
+	// Sandboxed opaque-origin documents use a CORS-simple content type so the
+	// callback can be delivered with mode=no-cors and no ambient credentials.
+	req.Header.Set("Content-Type", "text/plain;charset=UTF-8")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -117,11 +120,15 @@ func TestWebsheetCallbackMarksTerminalSessionDone(t *testing.T) {
 }
 
 func websheetToken(session *websheet.Session) string {
-	parts := strings.SplitN(session.Info().EmbedURL, "token=", 2)
-	if len(parts) != 2 {
+	parsed, err := url.Parse(session.Info().EmbedURL)
+	if err != nil {
 		return ""
 	}
-	return parts[1]
+	return parsed.Query().Get("token")
+}
+
+func websheetSessionPath(session *websheet.Session, suffix string) string {
+	return "/api/websheets/" + url.PathEscape(session.Info().ID) + "/session/" + url.PathEscape(websheetToken(session)) + suffix
 }
 
 // 前端靠轮询 /status 判断流程结束——终态回调之后会话必须还在，否则前端永远
@@ -154,7 +161,7 @@ func TestWebsheetStatusSurvivesDoneAndReportsTerminalState(t *testing.T) {
 	}
 
 	done := httptest.NewRecorder()
-	router.ServeHTTP(done, httptest.NewRequest(http.MethodPost, "/api/websheets/"+id+"/done?token="+token, nil))
+	router.ServeHTTP(done, httptest.NewRequest(http.MethodPost, websheetSessionPath(session, "/done"), nil))
 	if done.Code != http.StatusOK {
 		t.Fatalf("done status=%d body=%s", done.Code, done.Body.String())
 	}
@@ -202,5 +209,175 @@ func TestWebsheetStatusAcceptsLoggedInUserWithoutSessionToken(t *testing.T) {
 	router.ServeHTTP(anon, httptest.NewRequest(http.MethodGet, "/api/websheets/"+session.Info().ID+"/status", nil))
 	if anon.Code != http.StatusUnauthorized {
 		t.Fatalf("status without any credential=%d want 401", anon.Code)
+	}
+
+	cookieOnly := httptest.NewRecorder()
+	cookieReq := httptest.NewRequest(http.MethodGet, "/api/websheets/"+session.Info().ID+"/status", nil)
+	cookieReq.AddCookie(&http.Cookie{Name: "vodoge_session", Value: token})
+	router.ServeHTTP(cookieOnly, cookieReq)
+	if cookieOnly.Code != http.StatusUnauthorized {
+		t.Fatalf("status with legacy management cookie=%d want 401", cookieOnly.Code)
+	}
+}
+
+func TestWebsheetRuntimeRoutesRejectManagementBearerWithoutCapability(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	broker := websheet.New(websheet.Config{AllowPrivateHosts: true})
+	session, err := broker.Create(context.Background(), websheet.Request{URL: "https://203.0.113.10/start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{auth: config.WebConfig{Password: "secret"}, websheets: broker}
+	managementToken, _, err := server.issueSessionToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	server.registerWebsheetRoutes(router.Group("/api"))
+
+	tests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodGet, path: "/api/websheets/" + session.Info().ID},
+		{method: http.MethodGet, path: "/api/websheets/" + session.Info().ID + "/session/wrong/proxy/https/203.0.113.10/start"},
+		{method: http.MethodPost, path: "/api/websheets/" + session.Info().ID + "/session/wrong/callback", body: `{}`},
+		{method: http.MethodPost, path: "/api/websheets/" + session.Info().ID + "/session/wrong/done"},
+	}
+	for _, tc := range tests {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Authorization", "Bearer "+managementToken)
+		if tc.body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s with management bearer=%d want 401 body=%s", tc.method, tc.path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestWebsheetSandboxAndOpaqueOriginCORS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", "sandbox allow-same-origin")
+		w.Header().Set("Referrer-Policy", "unsafe-url")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		_, _ = w.Write([]byte(`<!doctype html><html><body>carrier</body></html>`))
+	}))
+	defer upstream.Close()
+
+	broker := websheet.New(websheet.Config{AllowPrivateHosts: true})
+	session, err := broker.Create(context.Background(), websheet.Request{URL: upstream.URL + "/start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{websheets: broker}
+	router := gin.New()
+	server.registerWebsheetRoutes(router.Group("/api"))
+
+	bootstrap := httptest.NewRecorder()
+	router.ServeHTTP(bootstrap, httptest.NewRequest(http.MethodGet, session.Info().EmbedURL, nil))
+	if bootstrap.Code != http.StatusFound {
+		t.Fatalf("bootstrap=%d body=%s", bootstrap.Code, bootstrap.Body.String())
+	}
+	assertWebsheetSandboxHeaders(t, bootstrap.Header())
+	location := bootstrap.Header().Get("Location")
+	tokenSegment := "/session/" + url.PathEscape(websheetToken(session)) + "/proxy/"
+	if !strings.Contains(location, tokenSegment) || strings.Contains(location, "token=") {
+		t.Fatalf("bootstrap Location=%q want path-scoped capability without token query", location)
+	}
+
+	proxied := httptest.NewRecorder()
+	proxyReq := httptest.NewRequest(http.MethodGet, location, nil)
+	proxyReq.Header.Set("Origin", "null")
+	router.ServeHTTP(proxied, proxyReq)
+	if proxied.Code != http.StatusOK {
+		t.Fatalf("proxy=%d body=%s", proxied.Code, proxied.Body.String())
+	}
+	assertWebsheetSandboxHeaders(t, proxied.Header())
+	if got := proxied.Header().Values("Access-Control-Allow-Origin"); len(got) != 1 || got[0] != "null" {
+		t.Fatalf("Access-Control-Allow-Origin=%q want only null", got)
+	}
+	if got := proxied.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("Access-Control-Allow-Credentials=%q want omitted", got)
+	}
+	if !headerListContains(proxied.Header(), "Vary", "Origin") {
+		t.Fatalf("Vary=%q want Origin", proxied.Header().Values("Vary"))
+	}
+
+	preflight := httptest.NewRecorder()
+	preflightReq := httptest.NewRequest(http.MethodOptions, location, nil)
+	preflightReq.Header.Set("Origin", "null")
+	preflightReq.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	preflightReq.Header.Set("Access-Control-Request-Headers", "content-type, x-requested-with")
+	router.ServeHTTP(preflight, preflightReq)
+	if preflight.Code != http.StatusNoContent {
+		t.Fatalf("preflight=%d body=%s", preflight.Code, preflight.Body.String())
+	}
+	if got := preflight.Header().Get("Access-Control-Allow-Headers"); got != "Content-Type, X-Requested-With" {
+		t.Fatalf("Access-Control-Allow-Headers=%q", got)
+	}
+	if got := preflight.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, http.MethodPost) || strings.Contains(got, "*") {
+		t.Fatalf("Access-Control-Allow-Methods=%q", got)
+	}
+	if got := preflight.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("preflight credentials=%q want omitted", got)
+	}
+
+	badPreflight := httptest.NewRecorder()
+	badPath := strings.Replace(location, tokenSegment, "/session/wrong/proxy/", 1)
+	badReq := httptest.NewRequest(http.MethodOptions, badPath, nil)
+	badReq.Header.Set("Origin", "null")
+	badReq.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	router.ServeHTTP(badPreflight, badReq)
+	if badPreflight.Code != http.StatusUnauthorized {
+		t.Fatalf("preflight with wrong path capability=%d want 401", badPreflight.Code)
+	}
+}
+
+func assertWebsheetSandboxHeaders(t *testing.T, header http.Header) {
+	t.Helper()
+	if got := header.Get("Content-Security-Policy"); got != websheetSandboxPolicy || strings.Contains(got, "allow-same-origin") {
+		t.Fatalf("Content-Security-Policy=%q", got)
+	}
+	if got := header.Get("Referrer-Policy"); got != "no-referrer" {
+		t.Fatalf("Referrer-Policy=%q", got)
+	}
+	if got := header.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control=%q", got)
+	}
+}
+
+func headerListContains(header http.Header, key, want string) bool {
+	for _, value := range header.Values(key) {
+		for _, item := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(item), want) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestAccessLogRedactsWebsheetPathCapability(t *testing.T) {
+	const capability = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	out := accessLogFormatter(gin.LogFormatterParams{
+		Method:     http.MethodGet,
+		Path:       "/api/websheets/session-id/session/" + capability + "/proxy/https/carrier.example/app.js?target_query=a%3Db",
+		StatusCode: http.StatusOK,
+	})
+	if strings.Contains(out, capability) {
+		t.Fatalf("access log leaked WebSheet capability: %s", out)
+	}
+	if !strings.Contains(out, "/api/websheets/session-id/session/***/proxy/") {
+		t.Fatalf("access log did not preserve a useful redacted path: %s", out)
 	}
 }

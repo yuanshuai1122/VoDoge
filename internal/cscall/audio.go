@@ -25,20 +25,26 @@ type AudioBridge struct {
 	pcmReady atomic.Bool
 
 	// 进程管理
-	captureCmd  *exec.Cmd
-	playbackCmd *exec.Cmd
-	captureOut  io.ReadCloser
-	playbackIn  io.WriteCloser
+	captureCmd   *exec.Cmd
+	playbackCmd  *exec.Cmd
+	captureOut   io.ReadCloser
+	playbackIn   io.WriteCloser
+	command      func(name string, arg ...string) *exec.Cmd
+	captureWait  <-chan error
+	playbackWait <-chan error
 
 	// RTP 状态
+	rtpMu     sync.Mutex
 	seqNum    uint16
 	timestamp uint32
 	ssrc      uint32
 
 	// 生命周期
-	stop     chan struct{}
-	stopOnce sync.Once
-	wg       sync.WaitGroup
+	lifecycleMu sync.Mutex
+	startCalled bool
+	stop        chan struct{}
+	stopOnce    sync.Once
+	wg          sync.WaitGroup
 }
 
 // NewAudioBridge 创建音频桥接器
@@ -79,9 +85,21 @@ func (ab *AudioBridge) SetPCMReady(ready bool) {
 
 // Start 启动双向桥接
 func (ab *AudioBridge) Start() error {
+	ab.lifecycleMu.Lock()
+	defer ab.lifecycleMu.Unlock()
+	select {
+	case <-ab.stop:
+		return fmt.Errorf("AudioBridge 已停止")
+	default:
+	}
+	if ab.startCalled {
+		return fmt.Errorf("AudioBridge 已启动或启动过")
+	}
+	ab.startCalled = true
+
 	// 启动 ALSA 采集 (下行: EC20 → Linphone)
 	// 每 40ms 输出 640 字节 (320 samples × 2B, 8kHz S16_LE mono)
-	ab.captureCmd = exec.Command("arecord",
+	ab.captureCmd = ab.newCommand("arecord",
 		"-D", ab.alsaDev,
 		"-f", "S16_LE",
 		"-r", "8000",
@@ -97,11 +115,13 @@ func (ab *AudioBridge) Start() error {
 		return fmt.Errorf("创建 arecord 管道失败: %w", err)
 	}
 	if err := ab.captureCmd.Start(); err != nil {
+		_ = ab.captureOut.Close()
 		return fmt.Errorf("启动 arecord 失败: %w", err)
 	}
+	ab.captureWait = reapCommand(ab.captureCmd)
 
 	// 启动 ALSA 播放 (上行: Linphone → EC20)
-	ab.playbackCmd = exec.Command("aplay",
+	ab.playbackCmd = ab.newCommand("aplay",
 		"-D", ab.alsaDev,
 		"-f", "S16_LE",
 		"-r", "8000",
@@ -113,13 +133,15 @@ func (ab *AudioBridge) Start() error {
 
 	ab.playbackIn, err = ab.playbackCmd.StdinPipe()
 	if err != nil {
-		ab.captureCmd.Process.Kill()
+		ab.stopCaptureProcess()
 		return fmt.Errorf("创建 aplay 管道失败: %w", err)
 	}
 	if err := ab.playbackCmd.Start(); err != nil {
-		ab.captureCmd.Process.Kill()
+		_ = ab.playbackIn.Close()
+		ab.stopCaptureProcess()
 		return fmt.Errorf("启动 aplay 失败: %w", err)
 	}
+	ab.playbackWait = reapCommand(ab.playbackCmd)
 
 	logger.Info(fmt.Sprintf("[%s] AudioBridge: 已启动 (ALSA=%s, RTP=%d)", ab.deviceID, ab.alsaDev, ab.LocalPort()))
 
@@ -152,8 +174,6 @@ func (ab *AudioBridge) Start() error {
 				}
 				ulawPayload := EncodePCMToUlaw(silencePCM)
 				rtpPacket := ab.buildRTPPacket(ulawPayload)
-				ab.seqNum++
-				ab.timestamp += 160
 				ab.rtpConn.WriteToUDP(rtpPacket, clientAddr)
 			}
 		}
@@ -164,39 +184,85 @@ func (ab *AudioBridge) Start() error {
 
 // Stop 停止桥接并释放资源
 func (ab *AudioBridge) Stop() {
+	ab.lifecycleMu.Lock()
+	defer ab.lifecycleMu.Unlock()
 	ab.stopOnce.Do(func() {
 		close(ab.stop)
 
 		// 关闭 UDP
-		ab.rtpConn.Close()
+		if ab.rtpConn != nil {
+			_ = ab.rtpConn.Close()
+		}
 
 		// 停止 ALSA 进程
+		if ab.captureOut != nil {
+			_ = ab.captureOut.Close()
+		}
 		if ab.captureCmd != nil && ab.captureCmd.Process != nil {
-			ab.captureCmd.Process.Kill()
+			_ = ab.captureCmd.Process.Kill()
 		}
 		if ab.playbackIn != nil {
-			ab.playbackIn.Close()
+			_ = ab.playbackIn.Close()
 		}
 		if ab.playbackCmd != nil && ab.playbackCmd.Process != nil {
-			ab.playbackCmd.Process.Kill()
+			_ = ab.playbackCmd.Process.Kill()
 		}
 
-		// 启动一个后台 Goroutine 去等 Wait，并设置超时，防止 arecord 管道卡死
+		// Cmd.Wait 必须恰好执行一次，统一等待子进程与桥接协程完成。
+		shutdownDone := make(chan struct{})
 		go func() {
-			waitCh := make(chan struct{})
-			go func() {
-				ab.wg.Wait()
-				close(waitCh)
-			}()
-
-			select {
-			case <-waitCh:
-				logger.Info(fmt.Sprintf("[%s] AudioBridge: 正常停止结束", ab.deviceID))
-			case <-time.After(2 * time.Second):
-				logger.Warn(fmt.Sprintf("[%s] AudioBridge: 停止超时，强制放弃等待", ab.deviceID))
-			}
+			waitCommand(ab.captureWait)
+			waitCommand(ab.playbackWait)
+			ab.wg.Wait()
+			close(shutdownDone)
 		}()
+
+		select {
+		case <-shutdownDone:
+			logger.Info(fmt.Sprintf("[%s] AudioBridge: 正常停止结束", ab.deviceID))
+		case <-time.After(2 * time.Second):
+			logger.Warn(fmt.Sprintf("[%s] AudioBridge: 停止超时，强制放弃等待", ab.deviceID))
+		}
 	})
+}
+
+func (ab *AudioBridge) newCommand(name string, arg ...string) *exec.Cmd {
+	if ab.command != nil {
+		return ab.command(name, arg...)
+	}
+	return exec.Command(name, arg...)
+}
+
+func reapCommand(cmd *exec.Cmd) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+		close(done)
+	}()
+	return done
+}
+
+func waitCommand(done <-chan error) {
+	if done != nil {
+		<-done
+	}
+}
+
+func (ab *AudioBridge) stopCaptureProcess() {
+	if ab.captureOut != nil {
+		_ = ab.captureOut.Close()
+	}
+	if ab.captureCmd != nil && ab.captureCmd.Process != nil {
+		_ = ab.captureCmd.Process.Kill()
+	}
+	if ab.captureWait == nil {
+		return
+	}
+	select {
+	case <-ab.captureWait:
+	case <-time.After(2 * time.Second):
+		logger.Warn(fmt.Sprintf("[%s] AudioBridge: arecord 停止超时", ab.deviceID))
+	}
 }
 
 // loopCapture 下行: arecord stdout → G.711μ encode → RTP → Linphone
@@ -246,8 +312,6 @@ func (ab *AudioBridge) loopCapture() {
 
 			// 构造 RTP 包
 			rtpPacket := ab.buildRTPPacket(ulawPayload)
-			ab.seqNum++
-			ab.timestamp += 160 // 20ms × 8000Hz
 
 			// 发送
 			ab.rtpConn.WriteToUDP(rtpPacket, clientAddr)
@@ -335,6 +399,9 @@ func (ab *AudioBridge) loopPlayback() {
 // buildRTPPacket 构造 RTP 数据包
 // PT=0 (PCMU), 8000Hz
 func (ab *AudioBridge) buildRTPPacket(payload []byte) []byte {
+	ab.rtpMu.Lock()
+	defer ab.rtpMu.Unlock()
+
 	pkt := make([]byte, 12+len(payload))
 
 	// V=2, P=0, X=0, CC=0
@@ -351,5 +418,7 @@ func (ab *AudioBridge) buildRTPPacket(payload []byte) []byte {
 
 	// Payload
 	copy(pkt[12:], payload)
+	ab.seqNum++
+	ab.timestamp += 160 // 20ms × 8000Hz
 	return pkt
 }

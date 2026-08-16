@@ -111,15 +111,9 @@ func (d *fakeDaemon) handle(conn net.Conn) {
 		case cmdGetReadersStateSize:
 			n := make([]byte, 4)
 			binary.LittleEndian.PutUint32(n, uint32(len(d.readers)))
-			if len(d.readers) == 0 {
-				binary.LittleEndian.PutUint32(n, 1)
-			}
 			_, _ = conn.Write(n)
 		case cmdGetReadersStateArray, cmdGetReadersState:
 			count := len(d.readers)
-			if count == 0 {
-				count = 1
-			}
 			buf := make([]byte, count*readerStateSize)
 			for i, r := range d.readers {
 				off := i * readerStateSize

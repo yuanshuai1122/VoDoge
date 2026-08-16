@@ -175,7 +175,7 @@ func failWith(c *gin.Context, status int, code, message string, details gin.H)
 
 ## 7. 验收记录（2026-08-14）
 
-`bash scripts/ci.sh` 全绿：hygiene / encoding / routes / web（含 55 例前端测试）/
+`bash scripts/ci.sh` 全绿：hygiene / encoding / routes / web（当前 22 个测试文件 / 104 例）/
 vet-all / test（32 个 Go 包）/ image。
 
 ### 实测（Docker 起 `vohive:latest` + `postgres:16-alpine`）

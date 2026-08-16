@@ -602,8 +602,19 @@ func minInt(a, b int) int {
 }
 
 func (p *Pool) schedulePublicIPRetry(worker *Worker) {
+	if p == nil || worker == nil {
+		return
+	}
 	worker.publicIPRetryMu.Lock()
 	defer worker.publicIPRetryMu.Unlock()
+	poolDone := p.Context().Done()
+	select {
+	case <-poolDone:
+		return
+	case <-worker.stop:
+		return
+	default:
+	}
 
 	worker.publicIPRetryCount++
 	attempt := worker.publicIPRetryCount
@@ -619,7 +630,9 @@ func (p *Pool) schedulePublicIPRetry(worker *Worker) {
 	}
 	worker.publicIPRetryTimer = time.AfterFunc(delay, func() {
 		select {
-		case <-p.ctx.Done():
+		case <-poolDone:
+			return
+		case <-worker.stop:
 			return
 		default:
 		}

@@ -7,7 +7,7 @@ WORKDIR /app/web
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ .
-RUN npm run build
+RUN npm run build -- --webpack
 
 # 构建阶段 2: 后端构建 (Backend)
 #
@@ -65,7 +65,8 @@ WORKDIR /app
 
 # 安装运行时依赖
 # - ca-certificates / tzdata: 基础 HTTPS 与时区支持
-RUN apk add --no-cache ca-certificates tzdata
+# - alsa-utils: CS 语音桥运行时通过 arecord/aplay 访问模组声卡
+RUN apk add --no-cache alsa-utils ca-certificates tzdata
 
 # 复制二进制文件
 COPY --from=backend-builder /app/vodoge .
@@ -73,8 +74,8 @@ COPY --from=backend-builder /app/vodoge .
 # 创建配置和数据目录
 RUN mkdir -p config data logs
 
-# 暴露端口 (API)
-EXPOSE 7575
+# 管理 API 与隔离的插件运行时 origin
+EXPOSE 7575 7576
 
 # 默认配置路径环境变量
 ENV CONFIG_PATH=/app/config/config.yaml

@@ -31,6 +31,7 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - /dev:/dev
+      - /run/pcscd:/run/pcscd
     environment:
       - TZ=Asia/Shanghai
       - VODOGE_DB_DSN=host=127.0.0.1 user=vodoge password=${VODOGE_POSTGRES_PASSWORD:-vodoge} dbname=vodoge port=5432 sslmode=disable TimeZone=UTC

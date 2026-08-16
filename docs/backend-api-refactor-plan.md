@@ -261,7 +261,8 @@ eSIM 那对顺带改好了形状：`esimNotificationListExec(run, args)` 把真�
 
 此前前端**零测试**：8 个页面、20+ 组件、整个 API 归一化层全靠人工点。
 
-引入 vitest + testing-library，**67 例**，接进 `scripts/ci.sh web`。优先覆盖
+引入 vitest + testing-library，初始 **67 例**，当前为 **22 个测试文件 / 104 例**，
+并接入验证流水线。优先覆盖
 归一化层，因为那里 tsc 帮不上忙——后端响应体在类型系统里是 `unknown`，解析
 错了只会在运行时以"错误提示变成『请求失败』"的形式出现。
 

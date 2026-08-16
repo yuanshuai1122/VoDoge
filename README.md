@@ -54,6 +54,7 @@ docker compose up -d
 
 - 管理面：`http://127.0.0.1:7575`（默认账密见配置里的 `web`，登录后立刻改）
 - Compose 自带 PostgreSQL，后端用 `VODOGE_DB_DSN` 连（也认 `DATABASE_URL`）
+- 一键安装首次运行会生成 PostgreSQL 随机密码，并以 `0600` 权限保存在 `${VODOGE_DIR:-/opt/vodoge}/.postgres-credentials`；重跑安装器会继续使用原凭据
 - 默认只放行内网访问；公网要先在设置里改网络策略，并上 HTTPS
 
 没有可用的 PostgreSQL 时进程会退出。没有 SQLite。

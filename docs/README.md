@@ -17,6 +17,7 @@
 | [backend-db-decisions.md](./backend-db-decisions.md) | 数据库决策 |
 | [backend-db-progress.md](./backend-db-progress.md) | 数据库改造进度 |
 | [db-migrate-runbook.md](./db-migrate-runbook.md) | 旧 SQLite 数据导入 PostgreSQL 的运维手册 |
+| [production-readiness-acceptance.md](./production-readiness-acceptance.md) | **生产就绪审阅与软件验收**：改动范围、自动化证据、真机待验清单 |
 | [hardware-bringup-windows.md](./hardware-bringup-windows.md) | **Windows + WSL2 硬件联调环境**：自建内核、host 网络陷阱、棒子识别结果 |
 | [ufi103s-qmi-host.md](./ufi103s-qmi-host.md) | **UFI103S 原厂 QMI 接入**：单根验收、Debian 主机与多棒部署边界 |
 | [pve-lab-deploy.md](./pve-lab-deploy.md) | **PVE lab 落点**：VM 113 / `192.168.2.80`、xHCI 直通、两根棒子台账与当日验收 |

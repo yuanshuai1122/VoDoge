@@ -2,7 +2,7 @@
  * /api/*、/ping、text/event-stream 一律不拦截，走浏览器默认网络。
  * 规则与 web/lib/pwa/cache-policy.ts 对齐。
  */
-const CACHE = "vodoge-shell-v1";
+const CACHE = "vodoge-shell-v2";
 const PRECACHE = ["/", "/sms", "/login", "/manifest.webmanifest", "/icons/icon.svg"];
 
 function bypass(url, accept) {
@@ -33,7 +33,11 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
+      Promise.all(
+        keys
+          .filter((k) => k.startsWith("vodoge-shell-") && k !== CACHE)
+          .map((k) => caches.delete(k)),
+      ),
       )
       .then(() => self.clients.claim()),
   );
@@ -56,12 +60,14 @@ self.addEventListener("fetch", (event) => {
 
   if (req.mode === "navigate") {
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((cache) => cache.put("/", copy)).catch(() => {});
-          return res;
-        })
+    fetch(req)
+      .then(async (res) => {
+        if (res && res.ok) {
+          const cache = await caches.open(CACHE);
+          await cache.put(req, res.clone());
+        }
+        return res;
+      })
         .catch(() => caches.match(req).then((hit) => hit || caches.match("/"))),
     );
     return;

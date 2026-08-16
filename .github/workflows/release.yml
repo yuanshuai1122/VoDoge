@@ -15,7 +15,11 @@ env:
   CGO_ENABLED: "0"
 
 jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+
   docker:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +35,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           build-args: |
             VERSION=${{ github.ref_name }}
@@ -40,6 +44,7 @@ jobs:
             ${{ env.IMAGE }}:latest
 
   binaries:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +59,7 @@ jobs:
       - name: Frontend
         run: |
           npm ci --prefix web
-          npm run build --prefix web
+          npm run build --prefix web -- --webpack
           rm -rf internal/web/dist
           mkdir -p internal/web/dist
           cp -R web/dist/. internal/web/dist/
@@ -71,6 +76,14 @@ jobs:
           CGO_ENABLED=0 GOARCH=arm64 go build -trimpath -buildvcs=false -tags "with_utls nomsgpack" -ldflags "$LDFLAGS" -o "dist/vodoge_${VERSION}_linux_arm64" ./cmd/vodoge
           CGO_ENABLED=0 GOARCH=arm GOARM=7 go build -trimpath -buildvcs=false -tags "with_utls nomsgpack" -ldflags "$LDFLAGS" -o "dist/vodoge_${VERSION}_linux_armv7" ./cmd/vodoge
           cp scripts/install.sh dist/install.sh
+      - name: Generate SHA-256 checksums
+        working-directory: dist
+        run: |
+          sha256sum \
+            "vodoge_${GITHUB_REF_NAME}_linux_amd64" \
+            "vodoge_${GITHUB_REF_NAME}_linux_arm64" \
+            "vodoge_${GITHUB_REF_NAME}_linux_armv7" \
+            install.sh > SHA256SUMS
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -80,3 +93,4 @@ jobs:
             dist/vodoge_${{ github.ref_name }}_linux_arm64
             dist/vodoge_${{ github.ref_name }}_linux_armv7
             dist/install.sh
+            dist/SHA256SUMS

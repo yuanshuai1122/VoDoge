@@ -67,7 +67,12 @@ export function Header() {
           )}
         </Button>
 
-        <Button variant="ghost" size="icon" aria-label={t("header.logout")} onClick={logout}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={t("header.logout")}
+          onClick={() => void logout()}
+        >
           <LogOut className="size-4" />
         </Button>
       </div>

@@ -25,10 +25,10 @@ func (p *Pool) occupancy() *pcsc.Occupancy {
 	return p.readerOccupancy
 }
 
-func (p *Pool) startPCSCReaderWorker(devCfg config.DeviceConfig) (*Worker, error) {
+func (p *Pool) startPCSCReaderWorker(devCfg config.DeviceConfig, bootstrapDone <-chan struct{}) (*Worker, error) {
 	name := strings.TrimSpace(devCfg.ReaderName)
-	if name == "" {
-		return nil, fmt.Errorf("pcsc 设备必须填写 reader_name")
+	if err := pcsc.ValidateReaderName(name); err != nil {
+		return nil, fmt.Errorf("pcsc reader_name 无效: %w", err)
 	}
 	devCfg.DeviceBackend = config.DeviceBackendPCSC
 	devCfg.NetworkEnabled = false
@@ -37,10 +37,11 @@ func (p *Pool) startPCSCReaderWorker(devCfg config.DeviceConfig) (*Worker, error
 	devCfg.VoWiFiEnabled = true
 
 	w := &Worker{
-		ID:     devCfg.ID,
-		Config: devCfg,
-		Pool:   p,
-		stop:   make(chan struct{}),
+		ID:            devCfg.ID,
+		Config:        devCfg,
+		Pool:          p,
+		stop:          make(chan struct{}),
+		bootstrapDone: bootstrapDone,
 	}
 	w.state.Runtime.Ready = true
 	w.state.Meta.Healthy = true
@@ -51,6 +52,12 @@ func (p *Pool) startPCSCReaderWorker(devCfg config.DeviceConfig) (*Worker, error
 		if err := occ.Acquire(holder); err != nil {
 			return nil, err
 		}
+		releaseOnError := true
+		defer func() {
+			if releaseOnError {
+				occ.Release(devCfg.ID)
+			}
+		}()
 		ch := pcsc.NewChannel(name)
 		ch.SetGate(func() func() { return occ.GuardReader(name) })
 		client, err := esim.NewClientWithChannel(&occupiedChannel{
@@ -60,6 +67,7 @@ func (p *Pool) startPCSCReaderWorker(devCfg config.DeviceConfig) (*Worker, error
 		if err != nil {
 			return nil, err
 		}
+		releaseOnError = false
 		return client, nil
 	}, nil, nil, nil)
 

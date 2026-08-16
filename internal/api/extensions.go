@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -128,7 +130,22 @@ func (s *Server) handlePluginAsset(c *gin.Context) {
 		failPlugin(c, err)
 		return
 	}
-	http.ServeFile(c.Writer, c.Request, path)
+	file, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			failPlugin(c, extensions.ErrAssetNotFound)
+			return
+		}
+		fail(c, http.StatusInternalServerError, "plugin_asset_unavailable", "读取插件资源失败")
+		return
+	}
+	defer file.Close()
+	stat, err := file.Stat()
+	if err != nil || stat.IsDir() {
+		failPlugin(c, extensions.ErrAssetNotFound)
+		return
+	}
+	http.ServeContent(c.Writer, c.Request, filepath.Base(path), stat.ModTime(), file)
 }
 
 func (s *Server) handleExtensionBackend(c *gin.Context) {

@@ -8,20 +8,11 @@
   const shellStorageKey = "vodoge-websheet-complete";
   let attAddressCompletionPosted = false;
 
-  function appendWebsheetToken(value) {
-    if (!websheetToken || typeof value !== "string" || value.indexOf("/api/websheets/") !== 0) return value;
-    const hashIndex = value.indexOf("#");
-    const hash = hashIndex >= 0 ? value.slice(hashIndex) : "";
-    const withoutHash = hashIndex >= 0 ? value.slice(0, hashIndex) : value;
-    const sep = withoutHash.indexOf("?") >= 0 ? "&" : "?";
-    return withoutHash + sep + "token=" + encodeURIComponent(websheetToken) + hash;
-  }
-
   function rewriteCarrierPath(value) {
     if (!absolutePathProxyPrefix || typeof value !== "string") return value;
     if (value.charAt(0) !== "/" || value.indexOf("//") === 0) return value;
     if (value.indexOf("/api/websheets/") === 0) return value;
-    return appendWebsheetToken(absolutePathProxyPrefix + value);
+    return absolutePathProxyPrefix + value;
   }
 
   function installRequestRewriter() {
@@ -33,6 +24,7 @@
           this.__vodogeMethod = String(method || "GET").toUpperCase();
           this.__vodogeURL = String(url || "");
           args[1] = rewriteCarrierPath(url);
+          this.withCredentials = false;
           return originalOpen.apply(this, args);
         };
       }
@@ -40,6 +32,7 @@
       if (originalSend) {
         window.XMLHttpRequest.prototype.send = function() {
           try {
+            this.withCredentials = false;
             this.addEventListener("load", function() {
               inspectATTAddressResponse(this.__vodogeMethod || "GET", this.__vodogeURL || "", this.responseText || "");
             });
@@ -59,6 +52,7 @@
           if (typeof input === "string") {
             input = rewriteCarrierPath(input);
           }
+          init = Object.assign({}, init || {}, {credentials: "omit"});
           return originalFetch.call(this, input, init).then(function(response) {
             try {
               response.clone().text().then(function(text) {

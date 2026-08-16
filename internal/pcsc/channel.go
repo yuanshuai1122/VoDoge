@@ -2,6 +2,7 @@ package pcsc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -70,6 +71,9 @@ func (c *Channel) Connect() error {
 	if c.reader == "" {
 		return ErrReaderNameEmpty
 	}
+	if err := ValidateReaderName(c.reader); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), channelTimeout)
 	defer cancel()
 	client, err := dialDaemon(ctx, nil)
@@ -78,12 +82,12 @@ func (c *Channel) Connect() error {
 	}
 	hCard, _, err := client.connect(ctx, c.reader)
 	if err != nil {
-		client.close(ctx)
+		_ = client.close(ctx)
 		return err
 	}
 	if err := client.beginTransaction(ctx, hCard); err != nil {
-		client.disconnect(ctx, hCard)
-		client.close(ctx)
+		_ = client.disconnect(ctx, hCard)
+		_ = client.close(ctx)
 		return err
 	}
 	c.client = client
@@ -93,6 +97,8 @@ func (c *Channel) Connect() error {
 }
 
 func (c *Channel) Disconnect() error {
+	unlock := c.enterGate()
+	defer unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.client == nil {
@@ -100,16 +106,23 @@ func (c *Channel) Disconnect() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	var errs []error
 	if c.inTxn {
-		c.client.endTransaction(ctx, c.hCard)
+		if err := c.client.endTransaction(ctx, c.hCard); err != nil {
+			errs = append(errs, err)
+		}
 		c.inTxn = false
 	}
-	c.client.disconnect(ctx, c.hCard)
-	c.client.close(ctx)
+	if err := c.client.disconnect(ctx, c.hCard); err != nil {
+		errs = append(errs, err)
+	}
+	if err := c.client.close(ctx); err != nil {
+		errs = append(errs, err)
+	}
 	c.client = nil
 	c.hCard = 0
 	c.channel = 0
-	return nil
+	return errors.Join(errs...)
 }
 
 func (c *Channel) OpenLogicalChannel(aid []byte) (byte, error) {

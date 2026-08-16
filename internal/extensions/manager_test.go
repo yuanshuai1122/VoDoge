@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -96,6 +98,37 @@ func TestInstallEnableDisableUninstall(t *testing.T) {
 	}
 }
 
+func TestCloseConcurrentIsIdempotent(t *testing.T) {
+	var cancelCalls atomic.Int32
+	mgr := &Manager{
+		procs: map[string]*runningBackend{
+			"demo": {cancel: func() { cancelCalls.Add(1) }},
+		},
+	}
+
+	const callers = 32
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			mgr.Close()
+		}()
+	}
+	close(start)
+	wg.Wait()
+	mgr.Close()
+
+	if got := cancelCalls.Load(); got != 1 {
+		t.Fatalf("backend cancel calls=%d want=1", got)
+	}
+	if _, err := mgr.SetEnabled("demo", true); !errors.Is(err, ErrManagerClosed) {
+		t.Fatalf("SetEnabled after Close error=%v want ErrManagerClosed", err)
+	}
+}
+
 func TestInstallZipRefusesReplace(t *testing.T) {
 	mgr, err := Open(t.TempDir())
 	if err != nil {
@@ -108,6 +141,86 @@ func TestInstallZipRefusesReplace(t *testing.T) {
 	}
 	if _, err := mgr.InstallZip(data, ""); !errors.Is(err, ErrAlreadyInstalled) {
 		t.Fatalf("err=%v want ErrAlreadyInstalled", err)
+	}
+}
+
+func TestInstallPersistenceFailureRollsBackMemoryAndFiles(t *testing.T) {
+	root := t.TempDir()
+	mgr, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.Close()
+
+	statePath := filepath.Join(root, stateFilename)
+	if err := os.Mkdir(statePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := pluginZip(t, sidebarManifest("rollback-install"), map[string]string{"index.html": "x"})
+	if _, err := mgr.InstallZip(data, ""); err == nil {
+		t.Fatal("InstallZip should fail when state cannot be replaced")
+	}
+	if got := mgr.List(); len(got) != 0 {
+		t.Fatalf("memory state committed after persistence failure: %+v", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "rollback-install")); !os.IsNotExist(err) {
+		t.Fatalf("plugin directory remains after persistence failure: %v", err)
+	}
+}
+
+func TestMutationPersistenceFailureLeavesInstalledPluginUnchanged(t *testing.T) {
+	root := t.TempDir()
+	mgr, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.Close()
+	data := pluginZip(t, sidebarManifest("stable-state"), map[string]string{"index.html": "x"})
+	if _, err := mgr.InstallZip(data, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	statePath := filepath.Join(root, stateFilename)
+	if err := os.Remove(statePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(statePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.SetEnabled("stable-state", false); err == nil {
+		t.Fatal("SetEnabled should fail when state cannot be replaced")
+	}
+	list := mgr.List()
+	if len(list) != 1 || !list[0].Enabled {
+		t.Fatalf("enable state changed after persistence failure: %+v", list)
+	}
+	if err := mgr.Uninstall("stable-state"); err == nil {
+		t.Fatal("Uninstall should fail when state cannot be replaced")
+	}
+	if _, err := mgr.AssetPath("stable-state", "index.html"); err != nil {
+		t.Fatalf("plugin files changed after uninstall persistence failure: %v", err)
+	}
+}
+
+func TestLockedBufferConcurrentAccess(t *testing.T) {
+	var buf lockedBuffer
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for range 1000 {
+				_, _ = buf.Write([]byte("stderr\n"))
+				_ = buf.String()
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if got := buf.String(); got == "" {
+		t.Fatal("buffer unexpectedly empty")
 	}
 }
 

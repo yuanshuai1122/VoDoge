@@ -39,14 +39,16 @@ import (
 
 // Server 是 API 服务器的核心结构
 type Server struct {
-	cfg        config.ServerConfig // HTTP 服务器配置
-	fullCfg    *config.Config      // 完整配置引用
-	pool       *device.Pool        // 设备工作器池
-	auth       config.WebConfig    // Web 认证配置
-	fs         http.FileSystem     // 静态文件系统
-	configPath string              // 配置文件路径
-	proxyMgr   *server.Manager     // 代理实例管理器
-	trafficRT  realtimeTrafficSubscriber
+	cfg          config.ServerConfig // HTTP 服务器配置
+	fullCfg      *config.Config      // 完整配置引用
+	pool         *device.Pool        // 设备工作器池
+	authMu       sync.RWMutex
+	authChangeMu sync.Mutex
+	auth         config.WebConfig // Web 认证配置
+	fs           http.FileSystem  // 静态文件系统
+	configPath   string           // 配置文件路径
+	proxyMgr     *server.Manager  // 代理实例管理器
+	trafficRT    realtimeTrafficSubscriber
 	// store 是本层唯一的持久化入口。handler 不再直接调 internal/db，
 	// 因此可以注入假实现来测试，不必连真库（见 internal/data/repo）。
 	store *repo.Store
@@ -71,15 +73,20 @@ type Server struct {
 	accessMu sync.RWMutex
 	access   netaccess.Parsed
 
-	httpSrvMu sync.Mutex
-	httpSrv   *http.Server
-	httpsSrv  *http.Server
-	httpsMux  *httpsmode.Multiplexer
+	httpSrvMu   sync.Mutex
+	httpSrv     *http.Server
+	httpsSrv    *http.Server
+	httpsMux    *httpsmode.Multiplexer
+	pluginHTTP  *http.Server
+	pluginHTTPS *http.Server
+	pluginMux   *httpsmode.Multiplexer
 
 	loginMu       sync.Mutex
 	loginAttempts map[string]loginAttempt
 
-	shutdownCh chan struct{}
+	shutdownCh   chan struct{}
+	shutdownOnce sync.Once
+	shutdownErr  error
 
 	// eSIM 下载任务表：POST 建任务、GET 按 task_id 订阅进度，
 	// 使激活码不必出现在 URL 中（见 esim_download.go）。
@@ -89,6 +96,9 @@ type Server struct {
 	// 每个请求都要查，故缓存；路由表在运行期不会变。
 	sseTokenOnce  sync.Once
 	sseTokenCache map[string]struct{}
+
+	pluginAuthMu  sync.Mutex
+	pluginAuthKey []byte
 }
 
 type realtimeTrafficSubscriber interface {
@@ -161,20 +171,26 @@ func (s *Server) SetRealtimeTraffic(m *proxytraffic.RealtimeManager) {
 
 // pruneExpiredSessionsLocked is removed.
 
-// reTokenQuery 匹配 URL 查询串中的 token 参数值，用于访问日志脱敏。
-var reTokenQuery = regexp.MustCompile(`([?&]token=)[^&]*`)
+var (
+	// 查询 capability 用于初始 WebSheet/plugin launch 与 SSE。
+	reTokenQuery = regexp.MustCompile(`([?&]token=)[^&]*`)
+	// WebSheet runtime 把 capability 放进路径，让相对模块继续继承同一会话。
+	reWebsheetCapabilityPath = regexp.MustCompile(`(/api/websheets/[^/?#]+/session/)[^/?#]+`)
+)
 
 // accessLogFormatter 等价于 gin 默认访问日志格式，但会抹掉 ?token= 的值。
 // SSE 端点允许用 query 传凭证（见 sseTokenQueryRoutes），若沿用 gin.Default()
 // 的 Logger，token 会随 query 串写入 stdout，进而落入 docker logs / journal。
 func accessLogFormatter(p gin.LogFormatterParams) string {
+	path := reWebsheetCapabilityPath.ReplaceAllString(p.Path, "${1}***")
+	path = reTokenQuery.ReplaceAllString(path, "${1}***")
 	return fmt.Sprintf("[GIN] %v | %3d | %13v | %15s | %-7s %#v\n",
 		p.TimeStamp.Format("2006/01/02 - 15:04:05"),
 		p.StatusCode,
 		p.Latency,
 		p.ClientIP,
 		p.Method,
-		reTokenQuery.ReplaceAllString(p.Path, "${1}***"),
+		path,
 	)
 }
 
@@ -201,48 +217,110 @@ func listenAddr(port string) string {
 	return port
 }
 
+func pluginListenAddr(port string) string {
+	if strings.TrimSpace(port) == "" {
+		return ":7576"
+	}
+	return listenAddr(port)
+}
+
 func (s *Server) Run() error {
-	r := s.newRouter()
+	mainRouter := s.newRouter()
+	pluginRouter := s.newPluginRouter()
 	addr := listenAddr(s.cfg.Port)
-	handler := s.wrapHTTPSRedirect(r)
+	pluginAddr := pluginListenAddr(s.cfg.PluginPort)
+	if addr == pluginAddr {
+		return fmt.Errorf("plugin port must differ from management port: %s", addr)
+	}
+	mainHandler := s.wrapHTTPSRedirect(mainRouter)
+	pluginHandler := s.wrapHTTPSRedirect(pluginRouter)
 
 	if s.https == nil {
-		srv := newAPIHTTPServer(addr, handler)
+		mainLn, err := net.Listen("tcp", addr)
+		if err != nil {
+			return err
+		}
+		pluginLn, err := net.Listen("tcp", pluginAddr)
+		if err != nil {
+			_ = mainLn.Close()
+			return err
+		}
+		srv := newAPIHTTPServer(addr, mainHandler)
+		pluginSrv := newAPIHTTPServer(pluginAddr, pluginHandler)
 		s.httpSrvMu.Lock()
 		s.httpSrv = srv
+		s.pluginHTTP = pluginSrv
 		s.httpSrvMu.Unlock()
-		logger.Info("启动 API 服务器", "port", addr, "self_signed_https", false)
-		return srv.ListenAndServe()
+		logger.Info("启动 API 服务器", "port", addr, "plugin_port", pluginAddr, "self_signed_https", false)
+		errCh := make(chan error, 2)
+		go func() { errCh <- srv.Serve(mainLn) }()
+		go func() { errCh <- pluginSrv.Serve(pluginLn) }()
+		err = <-errCh
+		if s.isExpectedShutdownError(err) {
+			return nil
+		}
+		return err
 	}
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
+	pluginLn, err := net.Listen("tcp", pluginAddr)
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
 	mux := httpsmode.NewMultiplexer(ln, s.https)
-	httpSrv := newAPIHTTPServer(addr, handler)
-	httpsSrv := newAPIHTTPServer(addr, r)
+	pluginMux := httpsmode.NewMultiplexer(pluginLn, s.https)
+	httpSrv := newAPIHTTPServer(addr, mainHandler)
+	httpsSrv := newAPIHTTPServer(addr, mainRouter)
 	httpsSrv.TLSConfig = s.https.TLSConfig()
+	pluginHTTP := newAPIHTTPServer(pluginAddr, pluginHandler)
+	pluginHTTPS := newAPIHTTPServer(pluginAddr, pluginRouter)
+	pluginHTTPS.TLSConfig = s.https.TLSConfig()
 
 	s.httpSrvMu.Lock()
 	s.httpSrv = httpSrv
 	s.httpsSrv = httpsSrv
 	s.httpsMux = mux
+	s.pluginHTTP = pluginHTTP
+	s.pluginHTTPS = pluginHTTPS
+	s.pluginMux = pluginMux
 	s.httpSrvMu.Unlock()
 
 	logger.Info("启动 API 服务器",
 		"port", addr,
+		"plugin_port", pluginAddr,
 		"self_signed_https", s.https.Enabled())
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 4)
 	go func() { errCh <- httpSrv.Serve(mux.Plain()) }()
 	go func() { errCh <- httpsSrv.Serve(tls.NewListener(mux.TLS(), s.https.TLSConfig())) }()
+	go func() { errCh <- pluginHTTP.Serve(pluginMux.Plain()) }()
+	go func() { errCh <- pluginHTTPS.Serve(tls.NewListener(pluginMux.TLS(), s.https.TLSConfig())) }()
 	err = <-errCh
 	_ = mux.Close()
-	if errors.Is(err, http.ErrServerClosed) {
+	_ = pluginMux.Close()
+	if s.isExpectedShutdownError(err) {
 		return nil
 	}
 	return err
+}
+
+func (s *Server) isExpectedShutdownError(err error) bool {
+	if errors.Is(err, http.ErrServerClosed) {
+		return true
+	}
+	if !errors.Is(err, net.ErrClosed) || s == nil || s.shutdownCh == nil {
+		return false
+	}
+	select {
+	case <-s.shutdownCh:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) wrapHTTPSRedirect(next http.Handler) http.Handler {
@@ -266,10 +344,22 @@ func httpsRedirectExempt(path string) bool {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	s.shutdownOnce.Do(func() {
+		s.shutdownErr = s.shutdown(ctx)
+	})
+	return s.shutdownErr
+}
+
+func (s *Server) shutdown(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	// 广播关闭信号给所有内部持有的长连接（如 SSE），让它们主动退出
-	select {
-	case <-s.shutdownCh:
-	default:
+	if s.shutdownCh != nil {
 		close(s.shutdownCh)
 	}
 
@@ -277,18 +367,38 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	httpSrv := s.httpSrv
 	httpsSrv := s.httpsSrv
 	mux := s.httpsMux
+	pluginHTTP := s.pluginHTTP
+	pluginHTTPS := s.pluginHTTPS
+	pluginMux := s.pluginMux
 	s.httpSrvMu.Unlock()
 
 	var errs []error
-	if httpSrv != nil {
-		errs = append(errs, httpSrv.Shutdown(ctx))
-	}
-	if httpsSrv != nil {
-		errs = append(errs, httpsSrv.Shutdown(ctx))
-	}
+	// Multiplexer 的子 listener 的 Close 是空操作。必须先关闭底层
+	// listener，让所有 Serve/Accept 退出，http.Server.Shutdown 才不会
+	// 永久卡在 listenerGroup.Wait。
 	if mux != nil {
 		errs = append(errs, mux.Close())
 	}
+	if pluginMux != nil {
+		errs = append(errs, pluginMux.Close())
+	}
+
+	servers := []*http.Server{httpSrv, httpsSrv, pluginHTTP, pluginHTTPS}
+	serverErrs := make([]error, len(servers))
+	var wg sync.WaitGroup
+	for i, srv := range servers {
+		if srv == nil {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			serverErrs[i] = srv.Shutdown(ctx)
+		}()
+	}
+	wg.Wait()
+	errs = append(errs, serverErrs...)
+
 	if s.extensions != nil {
 		s.extensions.Close()
 	}

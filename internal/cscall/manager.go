@@ -33,9 +33,11 @@ type Manager struct {
 	audioDev   string
 	controller Controller
 	registrar  *sipgw.Registrar
+	newAudio   func(alsaDev, deviceID string) (*AudioBridge, error)
 
 	mu               sync.Mutex
 	state            CallState
+	stopped          bool
 	callerID         string
 	sipCallID        string
 	controllerCallID string
@@ -43,6 +45,9 @@ type Manager struct {
 
 	monitorCtx    context.Context
 	monitorCancel context.CancelFunc
+	monitorWG     sync.WaitGroup
+	workflowWG    sync.WaitGroup
+	stopOnce      sync.Once
 }
 
 // CSCall 保存当前通话相关的资源
@@ -55,6 +60,9 @@ type CSCall struct {
 	serverReq  *sip.Request          // Linphone 发来的 INVITE 请求（外呼）
 	cancelFunc context.CancelFunc    // 用于终止等待
 	isOutbound bool                  // 是否是外呼
+
+	serverResponseMu  sync.Mutex
+	serverFinalStatus int
 }
 
 // NewManager 创建 CS 呼叫管理器
@@ -69,6 +77,7 @@ func NewManagerWithController(deviceID, audioDev string, controller Controller, 
 		audioDev:   audioDev,
 		controller: controller,
 		registrar:  r,
+		newAudio:   NewAudioBridge,
 
 		state:         CallStateIdle,
 		monitorCtx:    ctx,
@@ -79,21 +88,182 @@ func NewManagerWithController(deviceID, audioDev string, controller Controller, 
 		if err := controller.Start(ctx); err != nil {
 			logger.Error(fmt.Sprintf("[%s] CSCall: 控制器启动失败", deviceID), "err", err)
 		}
-		go mgr.monitorControllerEvents()
-		go mgr.monitorPCMReady()
+		mgr.monitorWG.Add(2)
+		go func() {
+			defer mgr.monitorWG.Done()
+			mgr.monitorControllerEvents()
+		}()
+		go func() {
+			defer mgr.monitorWG.Done()
+			mgr.monitorPCMReady()
+		}()
 	}
 
 	return mgr
 }
 
-// Stop 停止 CS 呼叫管理器（清理内部 goroutine）
+func (m *Manager) createAudioBridge() (*AudioBridge, error) {
+	if m.newAudio != nil {
+		return m.newAudio(m.audioDev, m.deviceID)
+	}
+	return NewAudioBridge(m.audioDev, m.deviceID)
+}
+
+func (call *CSCall) respondServer(res *sip.Response, final bool) bool {
+	if call == nil || call.serverTx == nil || res == nil {
+		return false
+	}
+	call.serverResponseMu.Lock()
+	defer call.serverResponseMu.Unlock()
+	return call.respondServerLocked(res, final)
+}
+
+func (call *CSCall) respondServerLocked(res *sip.Response, final bool) bool {
+	if call.serverFinalStatus != 0 {
+		return false
+	}
+	if final {
+		call.serverFinalStatus = res.StatusCode
+	}
+	_ = call.serverTx.Respond(res)
+	return true
+}
+
+func (call *CSCall) finalServerStatus() int {
+	if call == nil {
+		return 0
+	}
+	call.serverResponseMu.Lock()
+	defer call.serverResponseMu.Unlock()
+	return call.serverFinalStatus
+}
+
+func (call *CSCall) terminateServerTransaction() {
+	if call == nil || call.serverTx == nil {
+		return
+	}
+	call.serverResponseMu.Lock()
+	defer call.serverResponseMu.Unlock()
+	call.serverTx.Terminate()
+}
+
+// Stop 停止 CS 呼叫管理器，并结束仍在进行的通话。
 func (m *Manager) Stop() {
-	if m.monitorCancel != nil {
-		m.monitorCancel()
+	if m == nil {
+		return
 	}
-	if m.controller != nil {
-		m.controller.Stop()
+	m.stopOnce.Do(func() {
+		m.mu.Lock()
+		m.stopped = true
+		m.mu.Unlock()
+		if m.monitorCancel != nil {
+			m.monitorCancel()
+		}
+
+		// Worker removal closes the modem immediately after this method returns,
+		// so release the call's RTP/audio resources and send both SIP and modem
+		// hangup signals while their dependencies are still available.
+		m.endCallAndHangup(true, true)
+		m.monitorWG.Wait()
+		m.workflowWG.Wait()
+		// A workflow that was already between its active check and a side effect
+		// when Stop began is waited above. Run cleanup once more defensively before
+		// the controller is torn down.
+		m.endCallAndHangup(true, true)
+		if m.controller != nil {
+			m.controller.Stop()
+		}
+	})
+}
+
+// beginCallWorkflow and Stop serialize through m.mu: after stopped becomes
+// true no goroutine can increment workflowWG while Stop is waiting on it.
+func (m *Manager) beginCallWorkflow() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.stopped {
+		return false
 	}
+	m.workflowWG.Add(1)
+	return true
+}
+
+func (m *Manager) launchCallWorkflow(run func()) bool {
+	if run == nil || !m.beginCallWorkflow() {
+		return false
+	}
+	go func() {
+		defer m.workflowWG.Done()
+		run()
+	}()
+	return true
+}
+
+func (m *Manager) callContext() context.Context {
+	if m.monitorCtx != nil {
+		return m.monitorCtx
+	}
+	return context.Background()
+}
+
+func (m *Manager) callActive(call *CSCall) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.stopped && m.currentCall == call && m.state != CallStateIdle
+}
+
+func (m *Manager) respondForActiveCall(call *CSCall, res *sip.Response, final bool) bool {
+	if call == nil || call.serverTx == nil || res == nil {
+		return false
+	}
+	m.mu.Lock()
+	if m.stopped || m.currentCall != call || m.state == CallStateIdle {
+		m.mu.Unlock()
+		return false
+	}
+	call.serverResponseMu.Lock()
+	m.mu.Unlock()
+	defer call.serverResponseMu.Unlock()
+	return call.respondServerLocked(res, final)
+}
+
+func (m *Manager) startCallAudio(call *CSCall) error {
+	if call == nil || call.audio == nil || !m.callActive(call) {
+		return context.Canceled
+	}
+	err := call.audio.Start()
+	if !m.callActive(call) {
+		call.audio.Stop()
+		return context.Canceled
+	}
+	return err
+}
+
+func (m *Manager) answerCallController(call *CSCall) error {
+	m.mu.Lock()
+	if m.stopped || m.currentCall != call || m.state != CallStateConnected {
+		m.mu.Unlock()
+		return context.Canceled
+	}
+	controller := m.controller
+	controllerCallID := m.controllerCallID
+	m.mu.Unlock()
+	if controller == nil {
+		return fmt.Errorf("CS call controller is nil")
+	}
+
+	err := controller.Answer(m.callContext(), controllerCallID)
+	m.mu.Lock()
+	active := !m.stopped && m.currentCall == call && m.state == CallStateConnected
+	m.mu.Unlock()
+	if !active {
+		_ = controller.Hangup(context.Background(), controllerCallID, HangupOptions{SendModemSignal: true})
+		if call.audio != nil {
+			call.audio.Stop()
+		}
+		return context.Canceled
+	}
+	return err
 }
 
 func (m *Manager) monitorControllerEvents() {
@@ -139,7 +309,7 @@ func (m *Manager) monitorPCMReady() {
 				return
 			}
 			m.mu.Lock()
-			if m.currentCall != nil && m.currentCall.audio != nil {
+			if !m.stopped && m.currentCall != nil && m.currentCall.audio != nil {
 				m.currentCall.audio.SetPCMReady(ready)
 				if ready {
 					logger.Debug(fmt.Sprintf("[%s] CSCall: PCM 缓冲已就绪", m.deviceID))
@@ -156,7 +326,7 @@ func (m *Manager) beginIncomingCall(callID, number string) (sipCallID string, sh
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.state != CallStateIdle && m.state != CallStateRinging {
+	if m.stopped || (m.state != CallStateIdle && m.state != CallStateRinging) {
 		return "", false
 	}
 	if trimSpace(number) == "" {
@@ -182,7 +352,13 @@ func (m *Manager) beginIncomingCall(callID, number string) (sipCallID string, sh
 func (m *Manager) onIncoming(callID, number string) {
 	sipCallID, ok := m.beginIncomingCall(callID, number)
 	if ok {
-		go m.initiateSIPCall(sipCallID)
+		m.launchCallWorkflow(func() { m.initiateSIPCall(sipCallID) })
+		return
+	}
+	m.mu.Lock()
+	stopped := m.stopped
+	m.mu.Unlock()
+	if stopped {
 		return
 	}
 	if number == "" || number == "Unknown" {
@@ -191,22 +367,32 @@ func (m *Manager) onIncoming(callID, number string) {
 			sipCallID = m.sipCallID
 			m.mu.Unlock()
 		}
-		go func(callID string) {
-			time.Sleep(3 * time.Second)
+		m.launchCallWorkflow(func() {
+			timer := time.NewTimer(3 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-m.callContext().Done():
+				return
+			case <-timer.C:
+			}
 			m.mu.Lock()
-			if m.state == CallStateRinging && m.sipCallID == callID && m.callerID == "Unknown" {
+			if !m.stopped && m.state == CallStateRinging && m.sipCallID == sipCallID && m.callerID == "Unknown" {
 				m.mu.Unlock()
 				logger.Warn(fmt.Sprintf("[%s] CSCall: 3秒未收到来电号码，使用 Unknown 发起呼叫", m.deviceID))
-				m.initiateSIPCall(callID)
+				m.initiateSIPCall(sipCallID)
 			} else {
 				m.mu.Unlock()
 			}
-		}(sipCallID)
+		})
 	}
 }
 
 func (m *Manager) onControllerConnected(callID string) {
 	m.mu.Lock()
+	if m.stopped {
+		m.mu.Unlock()
+		return
+	}
 	if callID != "" {
 		m.controllerCallID = callID
 	}
@@ -233,7 +419,7 @@ func (m *Manager) onHangup() {
 func (m *Manager) initiateSIPCall(callID string) {
 	m.mu.Lock()
 	// 如果状态因为某些原因变了，取消呼叫
-	if m.state != CallStateRinging || m.sipCallID != callID {
+	if m.stopped || m.state != CallStateRinging || m.sipCallID != callID {
 		m.mu.Unlock()
 		return
 	}
@@ -247,7 +433,10 @@ func (m *Manager) initiateSIPCall(callID string) {
 	}
 	// 异步发推送唤醒 Linphone (iOS CallKit)，不阻塞主流程
 	pushResultCh := make(chan bool, 1)
-	go func() {
+	if !m.launchCallWorkflow(func() {
+		if m.callContext().Err() != nil {
+			return
+		}
 		if err := m.registrar.SendPushNotification(m.deviceID, callID, caller, ""); err != nil {
 			logger.Debug(fmt.Sprintf("[%s] CSCall: 推送唤醒失败 (可能客户端已在线): %v", m.deviceID, err))
 			pushResultCh <- false
@@ -255,7 +444,9 @@ func (m *Manager) initiateSIPCall(callID string) {
 			logger.Info(fmt.Sprintf("[%s] CSCall: 已发送推送唤醒, 来电号码=%s", m.deviceID, caller))
 			pushResultCh <- true
 		}
-	}()
+	}) {
+		return
+	}
 
 	// 等待 SIP 客户端上线或用新端口重新注册
 	// Push 在后台异步进行，这里同时轮询注册表
@@ -301,10 +492,16 @@ func (m *Manager) initiateSIPCall(callID string) {
 			}
 		}
 
-		time.Sleep(200 * time.Millisecond)
+		timer := time.NewTimer(200 * time.Millisecond)
+		select {
+		case <-m.callContext().Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
 		// 检查来电是否已被取消
 		m.mu.Lock()
-		if m.state != CallStateRinging || m.sipCallID != callID {
+		if m.stopped || m.state != CallStateRinging || m.sipCallID != callID {
 			m.mu.Unlock()
 			logger.Info(fmt.Sprintf("[%s] CSCall: 等待客户端期间来电已结束", m.deviceID))
 			return
@@ -323,18 +520,23 @@ func (m *Manager) initiateSIPCall(callID string) {
 	}
 
 	// 准备 AudioBridge，提前绑定本地端口以便塞入 SDP
-	ab, err := NewAudioBridge(m.audioDev, m.deviceID)
+	ab, err := m.createAudioBridge()
 	if err != nil {
 		logger.Error(fmt.Sprintf("[%s] CSCall: 初始化 AudioBridge 失败", m.deviceID), "err", err)
 		m.endCallAndHangup(false, true)
 		return
 	}
 
-	call := &CSCall{
-		audio: ab,
-	}
+	callCtx, callCancel := context.WithCancel(m.callContext())
+	call := &CSCall{audio: ab, cancelFunc: callCancel}
 
 	m.mu.Lock()
+	if m.stopped || m.state != CallStateRinging || m.sipCallID != callID {
+		m.mu.Unlock()
+		callCancel()
+		ab.Stop()
+		return
+	}
 	m.currentCall = call
 	m.mu.Unlock()
 
@@ -368,29 +570,43 @@ func (m *Manager) initiateSIPCall(callID string) {
 	req.AppendHeader(sip.NewHeader("Contact", "<"+contact.String()+">"))
 	req.AppendHeader(sip.NewHeader("Content-Type", "application/sdp"))
 	req.SetBody([]byte(sdpStr))
+	m.mu.Lock()
+	if m.stopped || m.currentCall != call || m.state != CallStateRinging || m.sipCallID != callID {
+		m.mu.Unlock()
+		return
+	}
+	call.clientReq = req
+	m.mu.Unlock()
 
 	logger.Debug(fmt.Sprintf("[%s] CSCall: INVITE 目标=%s, From=%s, To=%s, SDP_IP=%s, SDP_RTP=%d",
 		m.deviceID, user.ContactAddr.String(), caller, user.Username, localIP, ab.LocalPort()))
 
 	// 使用 registrar 的 UA 发送
-	tx, err := m.registrar.GetClient().TransactionRequest(context.Background(), req)
+	tx, err := m.registrar.GetClient().TransactionRequest(callCtx, req)
 	if err != nil {
-		logger.Error(fmt.Sprintf("[%s] CSCall: 发送 SIP INVITE 失败", m.deviceID), "err", err)
+		if callCtx.Err() == nil {
+			logger.Error(fmt.Sprintf("[%s] CSCall: 发送 SIP INVITE 失败", m.deviceID), "err", err)
+		}
 		ab.Stop()
 		m.endCallAndHangup(false, true)
 		return
 	}
 
-	call.clientReq = req
+	m.mu.Lock()
+	if m.stopped || m.currentCall != call || m.state != CallStateRinging || m.sipCallID != callID {
+		m.mu.Unlock()
+		tx.Terminate()
+		return
+	}
 	call.clientTx = tx
-
-	ctx, cancel := context.WithCancel(context.Background())
-	call.cancelFunc = cancel
+	m.mu.Unlock()
 
 	logger.Info(fmt.Sprintf("[%s] CSCall: 已向客户端 %s 发送 INVITE, 等待接听", m.deviceID, user.Username))
 
 	// 等待响应
-	go m.waitClientResponse(ctx, call, callID)
+	if !m.launchCallWorkflow(func() { m.waitClientResponse(callCtx, call, callID) }) {
+		tx.Terminate()
+	}
 }
 
 // detectLocalIP 通过 UDP 出站探测获取本机到达目标 IP 时使用的源地址
@@ -454,7 +670,7 @@ func (m *Manager) waitClientResponse(ctx context.Context, call *CSCall, callID s
 
 func (m *Manager) handleClientAnswer(call *CSCall, callID string, res *sip.Response) {
 	m.mu.Lock()
-	if m.state != CallStateRinging || m.sipCallID != callID {
+	if m.stopped || m.currentCall != call || m.state != CallStateRinging || m.sipCallID != callID {
 		m.mu.Unlock()
 		return
 	}
@@ -548,18 +764,21 @@ func (m *Manager) handleClientAnswer(call *CSCall, callID string, res *sip.Respo
 	}
 
 	// 启动 AudioBridge
-	if err := call.audio.Start(); err != nil {
+	err = m.startCallAudio(call)
+	if err == context.Canceled {
+		return
+	}
+	if err != nil {
 		logger.Error(fmt.Sprintf("[%s] CSCall: AudioBridge 启动失败", m.deviceID), "err", err)
 		m.endCallAndHangup(true, true)
 		return
 	}
 
-	if m.controller == nil {
-		logger.Error(fmt.Sprintf("[%s] CSCall: 控制面未初始化，无法接听", m.deviceID))
-		m.endCallAndHangup(true, false)
+	err = m.answerCallController(call)
+	if err == context.Canceled {
 		return
 	}
-	if err := m.controller.Answer(context.Background(), m.controllerCallID); err != nil {
+	if err != nil {
 		logger.Error(fmt.Sprintf("[%s] CSCall: 接听指令失败", m.deviceID), "err", err)
 		m.endCallAndHangup(true, true)
 		return
@@ -609,6 +828,17 @@ func (m *Manager) HandleClientBye(callID string) bool {
 
 // HandleOutboundInvite 处理来自 Linphone 的外呼 INVITE
 func (m *Manager) HandleOutboundInvite(deviceID string, req *sip.Request, tx sip.ServerTransaction) {
+	if !m.beginCallWorkflow() {
+		if req != nil && tx != nil {
+			_ = tx.Respond(sip.NewResponseFromRequest(req, 503, "Service Unavailable - Call Manager Stopped", nil))
+		}
+		return
+	}
+	defer m.workflowWG.Done()
+	m.handleOutboundInvite(req, tx)
+}
+
+func (m *Manager) handleOutboundInvite(req *sip.Request, tx sip.ServerTransaction) {
 	to := req.To()
 	if to == nil {
 		tx.Respond(sip.NewResponseFromRequest(req, 400, "Bad Request - Missing To", nil))
@@ -623,41 +853,56 @@ func (m *Manager) HandleOutboundInvite(deviceID string, req *sip.Request, tx sip
 
 	logger.Info(fmt.Sprintf("[%s] CSCall: 收到 Linphone 外呼请求, 被叫=%s", m.deviceID, callee))
 
+	callCtx, callCancel := context.WithTimeout(m.callContext(), 60*time.Second)
+	call := &CSCall{
+		serverTx:   tx,
+		serverReq:  req,
+		cancelFunc: callCancel,
+		isOutbound: true,
+	}
 	m.mu.Lock()
+	if m.stopped {
+		m.mu.Unlock()
+		callCancel()
+		_ = tx.Respond(sip.NewResponseFromRequest(req, 503, "Service Unavailable - Call Manager Stopped", nil))
+		return
+	}
 	if m.state != CallStateIdle {
 		m.mu.Unlock()
+		callCancel()
 		logger.Warn(fmt.Sprintf("[%s] CSCall: 外呼失败，当前有通话进行中", m.deviceID))
-		tx.Respond(sip.NewResponseFromRequest(req, 486, "Busy Here", nil))
+		_ = tx.Respond(sip.NewResponseFromRequest(req, 486, "Busy Here", nil))
 		return
 	}
 	m.state = CallStateDialing
 	m.sipCallID = callID
 	m.callerID = callee
+	m.currentCall = call
 	m.mu.Unlock()
 
-	// 准备 AudioBridge
+	// 先挂接 SIP 事务，再创建媒体资源。Stop 因此在任意时刻都能结束 INVITE。
 	localIP := m.registrar.GetExternalIP()
 	if localIP == "" {
 		localIP = "127.0.0.1"
 	}
-	ab, err := NewAudioBridge(m.audioDev, m.deviceID)
+	ab, err := m.createAudioBridge()
 	if err != nil {
-		logger.Error(fmt.Sprintf("[%s] CSCall: 初始化 AudioBridge 失败", m.deviceID), "err", err)
-		tx.Respond(sip.NewResponseFromRequest(req, 500, "Internal Server Error", nil))
-		m.mu.Lock()
-		m.state = CallStateIdle
-		m.mu.Unlock()
+		if m.callActive(call) {
+			logger.Error(fmt.Sprintf("[%s] CSCall: 初始化 AudioBridge 失败", m.deviceID), "err", err)
+			if m.respondForActiveCall(call, sip.NewResponseFromRequest(req, 500, "Internal Server Error", nil), true) {
+				m.endCallAndHangupIfCurrent(call, false, false)
+			}
+		}
 		return
 	}
-
-	call := &CSCall{
-		audio:      ab,
-		serverTx:   tx,
-		serverReq:  req,
-		isOutbound: true,
-	}
 	m.mu.Lock()
-	m.currentCall = call
+	if m.stopped || m.currentCall != call || m.state != CallStateDialing || m.sipCallID != callID {
+		m.mu.Unlock()
+		callCancel()
+		ab.Stop()
+		return
+	}
+	call.audio = ab
 	m.mu.Unlock()
 
 	// 解析 Linphone SDP 中的 RTP 客户端地址
@@ -669,70 +914,86 @@ func (m *Manager) HandleOutboundInvite(deviceID string, req *sip.Request, tx sip
 
 	if m.controller == nil {
 		logger.Error(fmt.Sprintf("[%s] CSCall: 控制面未初始化，无法拨号", m.deviceID))
-		tx.Respond(sip.NewResponseFromRequest(req, 503, "Service Unavailable - Call Control Missing", nil))
-		m.mu.Lock()
-		m.state = CallStateIdle
-		m.currentCall = nil
-		m.mu.Unlock()
-		ab.Stop()
+		if m.respondForActiveCall(call, sip.NewResponseFromRequest(req, 503, "Service Unavailable - Call Control Missing", nil), true) {
+			m.endCallAndHangupIfCurrent(call, false, false)
+		}
 		return
 	}
 
 	// 发起蜂窝拨号
 	logger.Info(fmt.Sprintf("[%s] CSCall: 正在拨打 %s...", m.deviceID, callee))
-	ref, err := m.controller.Dial(context.Background(), callee)
+	ref, err := m.controller.Dial(callCtx, callee)
 	if err != nil {
+		if !m.callActive(call) {
+			return
+		}
 		logger.Error(fmt.Sprintf("[%s] CSCall: 蜂窝拨号失败", m.deviceID), "err", err)
-		tx.Respond(sip.NewResponseFromRequest(req, 503, "Service Unavailable - Dial Failed", nil))
-		m.mu.Lock()
-		m.state = CallStateIdle
-		m.currentCall = nil
-		m.mu.Unlock()
-		ab.Stop()
+		if m.respondForActiveCall(call, sip.NewResponseFromRequest(req, 503, "Service Unavailable - Dial Failed", nil), true) {
+			m.endCallAndHangupIfCurrent(call, false, false)
+		}
 		return
 	}
 	m.mu.Lock()
-	m.controllerCallID = ref.ID
+	activeAfterDial := !m.stopped && m.currentCall == call && m.state != CallStateIdle && m.sipCallID == callID
+	if activeAfterDial {
+		m.controllerCallID = ref.ID
+	}
 	m.mu.Unlock()
+	if !activeAfterDial {
+		_ = m.controller.Hangup(context.Background(), ref.ID, HangupOptions{SendModemSignal: true})
+		ab.Stop()
+		return
+	}
 
 	// ATD 成功（模组返回 OK）说明拨号已发出，向 Linphone 回复 180 Ringing
 	res180 := sip.NewResponseFromRequest(req, 180, "Ringing", nil)
-	tx.Respond(res180)
+	if !m.respondForActiveCall(call, res180, false) {
+		return
+	}
 	logger.Debug(fmt.Sprintf("[%s] CSCall: 已向 Linphone 发送 180 Ringing", m.deviceID))
 
 	// 等待对方接听：通过 +CLCC 轮询检测通话状态
 	// AT+CLCC 返回的 stat 字段: 0=active(接通), 2=dialing, 3=alerting(振铃中)
-	connectCtx, connectCancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer connectCancel()
-
-	call.cancelFunc = connectCancel
 	connected := false
 
 	for {
 		select {
-		case <-connectCtx.Done():
+		case <-callCtx.Done():
+			if !m.callActive(call) {
+				return
+			}
 			logger.Warn(fmt.Sprintf("[%s] CSCall: 外呼超时，对方未接听", m.deviceID))
-			tx.Respond(sip.NewResponseFromRequest(req, 408, "Request Timeout", nil))
-			m.endCallAndHangup(false, true)
+			if m.respondForActiveCall(call, sip.NewResponseFromRequest(req, 408, "Request Timeout", nil), true) {
+				m.endCallAndHangupIfCurrent(call, false, true)
+			}
 			return
 		default:
 		}
 
 		// 检查通话是否已被取消
 		m.mu.Lock()
-		if m.state == CallStateIdle {
+		if m.stopped || m.currentCall != call || m.state == CallStateIdle {
 			m.mu.Unlock()
 			return // 已经被 onHangup 或其他逻辑清理了
 		}
 		m.mu.Unlock()
 
-		time.Sleep(500 * time.Millisecond)
+		timer := time.NewTimer(500 * time.Millisecond)
+		select {
+		case <-callCtx.Done():
+			timer.Stop()
+			continue
+		case <-timer.C:
+		}
 
-		calls, err := m.controller.GetCalls(connectCtx)
+		calls, err := m.controller.GetCalls(callCtx)
 		if err != nil {
 			continue
 		}
-		if hasConnectedCall(calls, m.controllerCallID) {
+		m.mu.Lock()
+		controllerCallID := m.controllerCallID
+		m.mu.Unlock()
+		if hasConnectedCall(calls, controllerCallID) {
 			connected = true
 			break
 		}
@@ -745,6 +1006,10 @@ func (m *Manager) HandleOutboundInvite(deviceID string, req *sip.Request, tx sip
 	logger.Info(fmt.Sprintf("[%s] CSCall: 对方已接听，建立媒体通道", m.deviceID))
 
 	m.mu.Lock()
+	if m.stopped || m.currentCall != call || m.state == CallStateIdle {
+		m.mu.Unlock()
+		return
+	}
 	m.state = CallStateConnected
 	m.mu.Unlock()
 
@@ -757,13 +1022,19 @@ func (m *Manager) HandleOutboundInvite(deviceID string, req *sip.Request, tx sip
 	contact := &sip.Uri{User: callee, Host: localIP}
 	res200.AppendHeader(sip.NewHeader("Contact", "<"+contact.String()+">"))
 
-	tx.Respond(res200)
+	if !m.respondForActiveCall(call, res200, true) {
+		return
+	}
 	logger.Debug(fmt.Sprintf("[%s] CSCall: 已向 Linphone 发送 200 OK (含 SDP, Contact=%s)", m.deviceID, contact.String()))
 
 	// 启动 AudioBridge
-	if err := ab.Start(); err != nil {
+	err = m.startCallAudio(call)
+	if err == context.Canceled {
+		return
+	}
+	if err != nil {
 		logger.Error(fmt.Sprintf("[%s] CSCall: AudioBridge 启动失败", m.deviceID), "err", err)
-		m.endCallAndHangup(false, true)
+		m.endCallAndHangupIfCurrent(call, true, true)
 		return
 	}
 	ab.SetPCMReady(true)
@@ -856,35 +1127,43 @@ func trimSpace(s string) string {
 }
 
 func (m *Manager) endCallAndHangup(sendClientSignal bool, sendATH bool) {
+	m.endCallAndHangupIfCurrent(nil, sendClientSignal, sendATH)
+}
+
+func (m *Manager) endCallAndHangupIfCurrent(expected *CSCall, sendClientSignal bool, sendATH bool) bool {
 	m.mu.Lock()
-	if m.state == CallStateIdle {
+	if expected != nil && m.currentCall != expected {
 		m.mu.Unlock()
-		return
+		return false
+	}
+	if m.state == CallStateIdle && m.currentCall == nil {
+		m.mu.Unlock()
+		return false
 	}
 	stateSnapshot := m.state // 快照当前状态，稍后判断发 CANCEL 还是发 BYE
+	stoppedSnapshot := m.stopped
 	m.state = CallStateIdle
 	call := m.currentCall
 	m.currentCall = nil
+	controllerCallID := m.controllerCallID
+	m.controllerCallID = ""
 	m.mu.Unlock()
 
 	logger.Info(fmt.Sprintf("[%s] CSCall: 挂断并清理通话", m.deviceID))
-
-	if m.controller != nil {
-		_ = m.controller.Hangup(context.Background(), m.controllerCallID, HangupOptions{SendModemSignal: sendATH})
-	}
 
 	if call != nil {
 		if call.cancelFunc != nil {
 			call.cancelFunc()
 		}
-		if call.audio != nil {
-			call.audio.Stop()
-		}
 
 		if call.isOutbound {
-			// 外呼场景：向 Linphone 发 BYE（如果已接通）
-			if sendClientSignal && call.serverReq != nil {
-				if stateSnapshot == CallStateConnected {
+			if sendClientSignal && stoppedSnapshot && call.serverReq != nil {
+				call.respondServer(sip.NewResponseFromRequest(call.serverReq, 503, "Service Unavailable - Call Manager Stopped", nil), true)
+			}
+			// 只有已经向 Linphone 成功回复 2xx 的呼叫才能用 BYE 结束。
+			finalStatus := call.finalServerStatus()
+			if sendClientSignal && finalStatus >= 200 && finalStatus < 300 && call.serverReq != nil && m.registrar != nil {
+				if call.serverReq.From() != nil && call.serverReq.CSeq() != nil {
 					bye := sip.NewRequest(sip.BYE, call.serverReq.From().Address)
 					sip.CopyHeaders("To", call.serverReq, bye)
 					sip.CopyHeaders("From", call.serverReq, bye)
@@ -892,7 +1171,6 @@ func (m *Manager) endCallAndHangup(sendClientSignal bool, sendATH bool) {
 					bye.AppendHeader(sip.NewHeader("CSeq", fmt.Sprintf("%d BYE", call.serverReq.CSeq().SeqNo+1)))
 					m.registrar.GetClient().WriteRequest(bye)
 				}
-				// 拨号中对方未接：serverTx 上的 408/487 已经在调用方发送了
 			}
 		} else if sendClientSignal && call.clientReq != nil && call.clientTx != nil {
 			// 来电场景（原有逻辑）
@@ -913,5 +1191,17 @@ func (m *Manager) endCallAndHangup(sendClientSignal bool, sendATH bool) {
 				m.registrar.GetClient().WriteRequest(bye)
 			}
 		}
+		if call.clientTx != nil {
+			call.clientTx.Terminate()
+		}
+		call.terminateServerTransaction()
+		if call.audio != nil {
+			call.audio.Stop()
+		}
 	}
+
+	if m.controller != nil {
+		_ = m.controller.Hangup(context.Background(), controllerCallID, HangupOptions{SendModemSignal: sendATH})
+	}
+	return true
 }

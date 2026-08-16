@@ -1,6 +1,7 @@
 package extensions
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -33,6 +34,7 @@ var (
 	ErrPluginDisabled   = errors.New("插件已禁用")
 	ErrAssetNotFound    = errors.New("插件资源不存在")
 	ErrAlreadyInstalled = errors.New("插件已安装，请先卸载再覆盖")
+	ErrManagerClosed    = errors.New("插件管理器已关闭")
 )
 
 type Installed struct {
@@ -70,14 +72,33 @@ type runningBackend struct {
 	cancel context.CancelFunc
 }
 
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return string(append([]byte(nil), b.buf.Bytes()...))
+}
+
 type Manager struct {
 	root  string
 	fetch func(ctx context.Context, rawURL string) ([]byte, error)
 
-	mu      sync.Mutex
-	state   stateFile
-	procs   map[string]*runningBackend
-	started bool
+	mu        sync.Mutex
+	state     stateFile
+	procs     map[string]*runningBackend
+	started   bool
+	closed    bool
+	closeOnce sync.Once
 }
 
 func Open(root string) (*Manager, error) {
@@ -106,11 +127,14 @@ func (m *Manager) Close() {
 	if m == nil {
 		return
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for id := range m.procs {
-		m.stopBackendLocked(id)
-	}
+	m.closeOnce.Do(func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		m.closed = true
+		for id := range m.procs {
+			m.stopBackendLocked(id)
+		}
+	})
 }
 
 func (m *Manager) List() []Installed {
@@ -166,22 +190,31 @@ func (m *Manager) InstallZip(data []byte, wantSHA string) (Installed, error) {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		return Installed{}, ErrManagerClosed
+	}
 	if m.indexLocked(manifest.ID) >= 0 {
 		return Installed{}, fmt.Errorf("%w: %s", ErrAlreadyInstalled, manifest.ID)
 	}
 	dest := m.pluginDir(manifest.ID)
-	_ = os.RemoveAll(dest)
+	if err := os.RemoveAll(dest); err != nil {
+		return Installed{}, err
+	}
 	if err := os.Rename(tmp, dest); err != nil {
 		if err := copyDir(tmp, dest); err != nil {
+			_ = os.RemoveAll(dest)
 			return Installed{}, err
 		}
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	rec := record{ID: manifest.ID, Enabled: true, InstalledAt: now, SHA256: got}
-	m.state.Plugins = append(m.state.Plugins, rec)
-	if err := m.saveStateLocked(); err != nil {
+	next := cloneState(m.state)
+	next.Plugins = append(next.Plugins, rec)
+	if err := m.saveStateLocked(next); err != nil {
+		_ = os.RemoveAll(dest)
 		return Installed{}, err
 	}
+	m.state = next
 	if err := m.startBackendLocked(manifest.ID); err != nil {
 		logger.Warn("插件后端启动失败", "id", manifest.ID, "err", err)
 	}
@@ -210,6 +243,9 @@ func (m *Manager) SetEnabled(id string, enabled bool) (Installed, error) {
 	id = strings.TrimSpace(id)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		return Installed{}, ErrManagerClosed
+	}
 	idx := m.indexLocked(id)
 	if idx < 0 {
 		return Installed{}, ErrNotFound
@@ -217,10 +253,12 @@ func (m *Manager) SetEnabled(id string, enabled bool) (Installed, error) {
 	if m.state.Plugins[idx].Enabled == enabled {
 		return m.installedLocked(m.state.Plugins[idx])
 	}
-	m.state.Plugins[idx].Enabled = enabled
-	if err := m.saveStateLocked(); err != nil {
+	next := cloneState(m.state)
+	next.Plugins[idx].Enabled = enabled
+	if err := m.saveStateLocked(next); err != nil {
 		return Installed{}, err
 	}
+	m.state = next
 	if enabled {
 		if err := m.startBackendLocked(id); err != nil {
 			logger.Warn("插件后端启动失败", "id", id, "err", err)
@@ -238,15 +276,24 @@ func (m *Manager) Uninstall(id string) error {
 	id = strings.TrimSpace(id)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		return ErrManagerClosed
+	}
 	idx := m.indexLocked(id)
 	if idx < 0 {
 		return ErrNotFound
 	}
+	next := cloneState(m.state)
+	next.Plugins = append(next.Plugins[:idx], next.Plugins[idx+1:]...)
+	if err := m.saveStateLocked(next); err != nil {
+		return err
+	}
+	m.state = next
 	m.stopBackendLocked(id)
-	_ = os.RemoveAll(m.pluginDir(id))
-	_ = os.RemoveAll(m.dataDir(id))
-	m.state.Plugins = append(m.state.Plugins[:idx], m.state.Plugins[idx+1:]...)
-	return m.saveStateLocked()
+	return errors.Join(
+		os.RemoveAll(m.pluginDir(id)),
+		os.RemoveAll(m.dataDir(id)),
+	)
 }
 
 func (m *Manager) AssetPath(id, rel string) (string, error) {
@@ -363,13 +410,40 @@ func (m *Manager) loadState() error {
 	return nil
 }
 
-func (m *Manager) saveStateLocked() error {
+func cloneState(src stateFile) stateFile {
+	return stateFile{Plugins: append([]record(nil), src.Plugins...)}
+}
+
+func (m *Manager) saveStateLocked(state stateFile) (retErr error) {
 	path := filepath.Join(m.root, stateFilename)
-	raw, err := json.MarshalIndent(m.state, "", "  ")
+	raw, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, raw, 0o644)
+	tmp, err := os.CreateTemp(m.root, "."+stateFilename+"-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		if retErr != nil {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := tmp.Chmod(0o644); err != nil {
+		return err
+	}
+	if _, err := tmp.Write(raw); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 func (m *Manager) startEnabledLocked() {
@@ -384,6 +458,9 @@ func (m *Manager) startEnabledLocked() {
 }
 
 func (m *Manager) startBackendLocked(id string) error {
+	if m.closed {
+		return ErrManagerClosed
+	}
 	m.stopBackendLocked(id)
 	manifest, err := readManifestFile(m.pluginDir(id))
 	if err != nil {
@@ -415,7 +492,7 @@ func (m *Manager) startBackendLocked(id string) error {
 		"VODOGE_PLUGIN_DATA_DIR="+dataDir,
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	var stderr strings.Builder
+	var stderr lockedBuffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		cancel()

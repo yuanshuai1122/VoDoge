@@ -14,20 +14,25 @@ func (p *Pool) startInitialDesiredVoWiFiAutoStart(delay time.Duration) {
 	if p == nil {
 		return
 	}
+	go p.runInitialDesiredVoWiFiAutoStart(delay)
+}
+
+func (p *Pool) runInitialDesiredVoWiFiAutoStart(delay time.Duration) {
+	if p == nil {
+		return
+	}
 	if delay < 0 {
 		delay = 0
 	}
-	go func() {
-		ctx := p.Context()
-		timer := time.NewTimer(delay)
-		defer timer.Stop()
-		select {
-		case <-ctx.Done():
-			return
-		case now := <-timer.C:
-			p.scheduleInitialDesiredVoWiFiStarts(now)
-		}
-	}()
+	ctx := p.Context()
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case now := <-timer.C:
+		p.scheduleInitialDesiredVoWiFiStarts(now)
+	}
 }
 
 func (p *Pool) scheduleInitialDesiredVoWiFiStarts(now time.Time) {

@@ -31,10 +31,14 @@ export async function changePassword(input: {
   confirm_password: string;
 }): Promise<void> {
   await api.post("/settings/password", input);
-  triggerLogout();
+  await logout();
 }
 
-/** 服务端无登出接口，清本地凭证即可。 */
-export function logout(): void {
-  triggerLogout();
+/** 清理升级前遗留的 HttpOnly Cookie，并始终删除浏览器中的 bearer token。 */
+export async function logout(): Promise<void> {
+  try {
+    await api.post("/auth/logout", undefined, { skipAuthRedirect: true });
+  } finally {
+    triggerLogout();
+  }
 }

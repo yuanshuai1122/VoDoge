@@ -39,11 +39,33 @@ func checkPassword(stored, input string) bool {
 	return stored == input
 }
 
+func (s *Server) authSnapshot() config.WebConfig {
+	if s == nil {
+		return config.WebConfig{}
+	}
+	s.authMu.RLock()
+	defer s.authMu.RUnlock()
+	return s.auth
+}
+
+func (s *Server) setAuthPassword(password string) {
+	if s == nil {
+		return
+	}
+	s.authMu.Lock()
+	s.auth.Password = password
+	s.authMu.Unlock()
+}
+
 func (s *Server) issueSessionToken() (string, time.Time, error) {
+	return issueSessionToken(s.authSnapshot().Password)
+}
+
+func issueSessionToken(password string) (string, time.Time, error) {
 	exp := time.Now().Add(30 * 24 * time.Hour) // 有效期 30 天
 	expStr := strconv.FormatInt(exp.Unix(), 10)
 
-	h := hmac.New(sha256.New, []byte(s.auth.Password))
+	h := hmac.New(sha256.New, []byte(password))
 	h.Write([]byte(expStr))
 	sig := hex.EncodeToString(h.Sum(nil))
 
@@ -86,14 +108,15 @@ func (s *Server) handleLogin(c *gin.Context) {
 		return
 	}
 
-	clientIP := c.ClientIP()
+	clientIP := s.currentAccessPolicy().ClientIP(c.Request).String()
 	if !s.allowLoginAttempt(clientIP, time.Now()) {
 		fail(c, http.StatusTooManyRequests, "rate_limited", "登录尝试过于频繁，请稍后再试")
 		return
 	}
 
-	if req.Username == s.auth.Username && checkPassword(s.auth.Password, req.Password) {
-		token, exp, err := s.issueSessionToken()
+	credentials := s.authSnapshot()
+	if req.Username == credentials.Username && checkPassword(credentials.Password, req.Password) {
+		token, exp, err := issueSessionToken(credentials.Password)
 		if err != nil {
 			logger.Error("生成登录 token 失败", "err", err)
 			fail(c, http.StatusInternalServerError, "internal_error", "登录失败")
@@ -101,7 +124,7 @@ func (s *Server) handleLogin(c *gin.Context) {
 		}
 		logger.Info("登录成功", "ip", clientIP, "username", req.Username)
 
-		s.attachSessionCookie(c, token)
+		s.clearLegacySessionCookies(c)
 		respondOK(c, gin.H{
 			"token":      token,
 			"expires_at": exp.Format(time.RFC3339),
@@ -110,6 +133,14 @@ func (s *Server) handleLogin(c *gin.Context) {
 		logger.Warn("登录失败", "ip", clientIP, "username", req.Username)
 		fail(c, http.StatusUnauthorized, "invalid_credentials", "用户名或密码错误")
 	}
+}
+
+// handleLogout clears cookies issued by versions that allowed ambient cookie
+// authentication. Management bearer tokens are stateless; the browser drops
+// its copy after this endpoint returns.
+func (s *Server) handleLogout(c *gin.Context) {
+	s.clearLegacySessionCookies(c)
+	respondOK(c, nil)
 }
 
 // handleChangePassword 处理修改密码请求
@@ -121,12 +152,6 @@ func (s *Server) handleChangePassword(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "", "参数错误")
-		return
-	}
-
-	// 校验当前密码
-	if !checkPassword(s.auth.Password, req.OldPassword) {
-		fail(c, http.StatusUnauthorized, "invalid_password", "当前密码错误")
 		return
 	}
 
@@ -142,6 +167,15 @@ func (s *Server) handleChangePassword(c *gin.Context) {
 		return
 	}
 
+	// 序列化改密事务，避免并发请求让配置文件与内存凭证指向不同哈希。
+	s.authChangeMu.Lock()
+	defer s.authChangeMu.Unlock()
+	credentials := s.authSnapshot()
+	if !checkPassword(credentials.Password, req.OldPassword) {
+		fail(c, http.StatusUnauthorized, "invalid_password", "当前密码错误")
+		return
+	}
+
 	// 生成 bcrypt 哈希
 	hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
@@ -152,16 +186,16 @@ func (s *Server) handleChangePassword(c *gin.Context) {
 	hashedPassword := string(hashed)
 
 	// 持久化到配置文件
-	if err := config.UpdateWebCredentialsInFile(s.configPath, s.auth.Username, hashedPassword); err != nil {
+	if err := config.UpdateWebCredentialsInFile(s.configPath, credentials.Username, hashedPassword); err != nil {
 		logger.Error("更新密码配置失败", "err", err)
 		fail(c, http.StatusInternalServerError, "", "保存配置失败: "+err.Error())
 		return
 	}
 
 	// 更新内存中的密码（已哈希）
-	s.auth.Password = hashedPassword
+	s.setAuthPassword(hashedPassword)
 
-	logger.Info("密码已更新", "username", s.auth.Username, "ip", c.ClientIP())
+	logger.Info("密码已更新", "username", credentials.Username, "ip", s.currentAccessPolicy().ClientIP(c.Request).String())
 	respondOKWith(c, nil, gin.H{"message": "密码已更新"})
 }
 
@@ -186,13 +220,14 @@ func (s *Server) authorizeRotate(c *gin.Context, username string, password strin
 		return false
 	}
 
-	clientIP := c.ClientIP()
+	clientIP := s.currentAccessPolicy().ClientIP(c.Request).String()
 	if !s.allowLoginAttempt(clientIP, now) {
 		fail(c, http.StatusTooManyRequests, "rate_limited", "请求过于频繁，请稍后再试")
 		return false
 	}
 
-	if username == s.auth.Username && checkPassword(s.auth.Password, password) {
+	credentials := s.authSnapshot()
+	if username == credentials.Username && checkPassword(credentials.Password, password) {
 		return true
 	}
 
@@ -219,7 +254,7 @@ func (s *Server) isSessionTokenValid(token string, now time.Time) bool {
 		return false
 	}
 
-	h := hmac.New(sha256.New, []byte(s.auth.Password))
+	h := hmac.New(sha256.New, []byte(s.authSnapshot().Password))
 	h.Write([]byte(expStr))
 	expectedSig := hex.EncodeToString(h.Sum(nil))
 
@@ -239,21 +274,27 @@ func (s *Server) requestSessionToken(c *gin.Context) string {
 		return strings.TrimSpace(c.Query("token"))
 	}
 
-	// 插件 iframe 和 /plugin-assets 带不了 Authorization，登录时写下的 cookie 补这一段。
-	if ck, err := c.Request.Cookie(sessionCookieName); err == nil {
-		return strings.TrimSpace(ck.Value)
-	}
 	return ""
 }
 
-const sessionCookieName = "vodoge_session"
+var legacySessionCookieNames = []string{"vodoge_session", "vodog_session"}
 
-func (s *Server) attachSessionCookie(c *gin.Context, token string) {
-	if c == nil || strings.TrimSpace(token) == "" {
+func (s *Server) clearLegacySessionCookies(c *gin.Context) {
+	if c == nil || c.Request == nil {
 		return
 	}
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(sessionCookieName, token, int((30 * 24 * time.Hour).Seconds()), "/", "", c.Request.TLS != nil, true)
+	for _, name := range legacySessionCookieNames {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			Expires:  time.Unix(1, 0).UTC(),
+			MaxAge:   -1,
+			Secure:   c.Request.TLS != nil,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 }
 
 // sseTokenPaths 惰性求值一次并缓存：每个请求都要查它，不能每次重建路由表。
@@ -278,7 +319,6 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		}
 
 		if s.isAuthenticatedRequest(c, time.Now()) {
-			s.attachSessionCookie(c, s.requestSessionToken(c))
 			c.Next()
 			return
 		}

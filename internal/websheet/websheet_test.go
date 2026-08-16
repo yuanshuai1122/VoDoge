@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -59,6 +61,17 @@ func TestInfoEmbedURLCarriesSessionAccessToken(t *testing.T) {
 	missingReq := httptest.NewRequest(http.MethodGet, "/api/websheets/"+info.ID, nil)
 	if err := s.Authorize(missingReq); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("Authorize(missing token) error=%v, want ErrUnauthorized", err)
+	}
+
+	token := infoToken(t, info)
+	pathReq := httptest.NewRequest(http.MethodGet, "/api/websheets/"+info.ID+"/session/"+url.PathEscape(token)+"/proxy/https/example.com/app.js", nil)
+	if err := s.Authorize(pathReq); err != nil {
+		t.Fatalf("Authorize(path token) error=%v", err)
+	}
+
+	wrongPathReq := httptest.NewRequest(http.MethodGet, "/api/websheets/"+info.ID+"/session/wrong/proxy/https/example.com/app.js?token="+url.QueryEscape(token), nil)
+	if err := s.Authorize(wrongPathReq); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Authorize(wrong path token with valid query) error=%v, want ErrUnauthorized", err)
 	}
 }
 
@@ -127,12 +140,15 @@ func TestRewriteHTMLKeepsProxyURLsRelativeToBrowserOrigin(t *testing.T) {
 	if strings.Contains(rewritten, "http://127.0.0.1:7575") {
 		t.Fatalf("rewritten html leaked backend origin: %s", rewritten)
 	}
-	if !strings.Contains(rewritten, `/api/websheets/`) || !strings.Contains(rewritten, `/proxy/https/attdashboard.wireless.att.com/softphone/main-es2015.js`) {
+	if !strings.Contains(rewritten, `/api/websheets/`) || !strings.Contains(rewritten, `/session/`+token+`/proxy/https/attdashboard.wireless.att.com/softphone/main-es2015.js`) {
 		t.Fatalf("rewritten html missing relative proxy URL: %s", rewritten)
+	}
+	if strings.Contains(rewritten, "?token=") {
+		t.Fatalf("rewritten html kept capability in a non-inherited query: %s", rewritten)
 	}
 }
 
-func TestBridgePathPrefixKeepsTokenOutOfAppendablePath(t *testing.T) {
+func TestBridgePathPrefixCarriesCapabilityForOpaqueOriginRequests(t *testing.T) {
 	b := New(Config{AllowPrivateHosts: true})
 	s, err := b.Create(context.Background(), Request{URL: "https://attdashboard.wireless.att.com/softphone/primary/reseller/r017"})
 	if err != nil {
@@ -146,11 +162,57 @@ func TestBridgePathPrefixKeepsTokenOutOfAppendablePath(t *testing.T) {
 
 	script := s.bridgeScript(token, base)
 	prefix := extractJSStringConst(t, script, "absolutePathProxyPrefix")
-	if strings.Contains(prefix, "?token=") {
-		t.Fatalf("appendable path prefix includes token query: %s", prefix)
+	if !strings.Contains(prefix, "/session/"+token+"/proxy/") || strings.Contains(prefix, "?token=") {
+		t.Fatalf("appendable path prefix=%q want path capability and no query token", prefix)
 	}
 	if !strings.Contains(script, `const websheetToken = "`) {
 		t.Fatalf("bridge script missing separate websheet token: %s", script)
+	}
+	if !strings.Contains(script, `credentials: "omit"`) || !strings.Contains(script, "this.withCredentials = false") {
+		t.Fatalf("bridge script does not disable browser credentials: %s", script)
+	}
+}
+
+func TestRelativeDynamicAssetInheritsPathCapability(t *testing.T) {
+	b := New(Config{AllowPrivateHosts: true})
+	s, err := b.Create(context.Background(), Request{URL: "https://example.com/app/index.html"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := infoToken(t, s.Info())
+	documentURL, err := url.Parse(s.proxyURL("https://example.com/app/index.html", token))
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunkURL := documentURL.ResolveReference(&url.URL{Path: "chunk.123.js"}).String()
+	want := "/session/" + token + "/proxy/https/example.com/app/chunk.123.js"
+	if !strings.Contains(chunkURL, want) {
+		t.Fatalf("relative chunk URL=%q want inherited capability path %q", chunkURL, want)
+	}
+	if strings.Contains(chunkURL, "token=") {
+		t.Fatalf("relative chunk URL=%q must not rely on a query capability", chunkURL)
+	}
+	if got := s.callbackURL(token); !strings.Contains(got, "/session/"+token+"/callback") || strings.Contains(got, "token=") {
+		t.Fatalf("callback URL=%q want path capability", got)
+	}
+}
+
+func TestProxyHeadersDoNotLeakLocalCredentials(t *testing.T) {
+	source := http.Header{
+		"Authorization":    {"Bearer management"},
+		"Cookie":           {"vodoge_session=secret"},
+		"X-Websheet-Token": {"capability"},
+		"X-Carrier-Header": {"preserved"},
+	}
+	destination := make(http.Header)
+	copyProxyHeaders(destination, source)
+	for _, key := range []string{"Authorization", "Cookie", "X-Websheet-Token"} {
+		if got := destination.Get(key); got != "" {
+			t.Fatalf("%s leaked upstream as %q", key, got)
+		}
+	}
+	if got := destination.Get("X-Carrier-Header"); got != "preserved" {
+		t.Fatalf("ordinary carrier header=%q want preserved", got)
 	}
 }
 
@@ -200,6 +262,19 @@ func extractFormAction(t *testing.T, html string) string {
 		t.Fatalf("bootstrap html missing form action: %s", html)
 	}
 	return match[1]
+}
+
+func infoToken(t *testing.T, info Info) string {
+	t.Helper()
+	parsed, err := url.Parse(info.EmbedURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := parsed.Query().Get("token")
+	if token == "" {
+		t.Fatalf("EmbedURL=%q missing token", info.EmbedURL)
+	}
+	return token
 }
 
 func TestSessionExpires(t *testing.T) {
@@ -285,5 +360,53 @@ func TestBrokerSweepsExpiredSessionsNotJustTheOneBeingFetched(t *testing.T) {
 
 	if present || count != 1 {
 		t.Fatalf("sessions=%d stalePresent=%v want the expired session swept", count, present)
+	}
+}
+
+func TestSendLatestNeverBlocksWhenChannelCannotAccept(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		sendLatest(make(chan int), 1)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sendLatest blocked on its final send")
+	}
+}
+
+func TestSendLatestConcurrentSendersDoNotBlockOnFullQueue(t *testing.T) {
+	previous := runtime.GOMAXPROCS(4)
+	t.Cleanup(func() { runtime.GOMAXPROCS(previous) })
+
+	ch := make(chan int, 1)
+	ch <- -1
+	start := make(chan struct{})
+	const senders = 256
+	var wg sync.WaitGroup
+	wg.Add(senders)
+	for value := range senders {
+		go func() {
+			defer wg.Done()
+			<-start
+			sendLatest(ch, value)
+		}()
+	}
+	close(start)
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("concurrent sendLatest callers blocked after another sender refilled the queue")
+	}
+	select {
+	case <-ch:
+	default:
+		t.Fatal("sendLatest left the latest-value queue empty")
 	}
 }

@@ -2,6 +2,7 @@ package device
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -203,6 +204,14 @@ type apduArbiterAwareTransport interface {
 
 func (p *Pool) AddWorkerFromConfig(devCfg config.DeviceConfig) (*Worker, error) {
 	p.mu.Lock()
+	if p.shuttingDown {
+		p.mu.Unlock()
+		return nil, ErrPoolShuttingDown
+	}
+	p.bootstrapWG.Add(1)
+	defer p.bootstrapWG.Done()
+	bootstrapDone := make(chan struct{})
+	defer close(bootstrapDone)
 	if _, exists := p.workers[devCfg.ID]; exists {
 		p.mu.Unlock()
 		return nil, fmt.Errorf("设备已存在")
@@ -220,7 +229,24 @@ func (p *Pool) AddWorkerFromConfig(devCfg config.DeviceConfig) (*Worker, error) 
 	p.mu.Unlock()
 
 	if config.IsPCSCBackend(devCfg.DeviceBackend) {
-		w, err := p.startPCSCReaderWorker(devCfg)
+		w, err := p.startPCSCReaderWorker(devCfg, bootstrapDone)
+		if err == nil {
+			p.mu.Lock()
+			shuttingDown := p.shuttingDown
+			ownsCleanup := shuttingDown && p.workers[devCfg.ID] == w
+			if ownsCleanup {
+				delete(p.workers, devCfg.ID)
+			}
+			p.mu.Unlock()
+			if shuttingDown {
+				if ownsCleanup {
+					err = errors.Join(ErrPoolShuttingDown, p.stopWorkerResources(w, 2*time.Second))
+				} else {
+					err = ErrPoolShuttingDown
+				}
+				w = nil
+			}
+		}
 		p.endRebuildAttemptIfCurrent(devCfg.ID, attempt)
 		return w, err
 	}
@@ -427,6 +453,7 @@ func (p *Pool) AddWorkerFromConfig(devCfg config.DeviceConfig) (*Worker, error) 
 		APDUArbiter:      apduarbiter.New(devCfg.ID, apduarbiter.Options{MaxLeaseHold: 10 * time.Minute, MaxSessions: 3, MaxQMITransports: 3}),
 		Pool:             p,
 		stop:             make(chan struct{}),
+		bootstrapDone:    bootstrapDone,
 		reassembler:      smscodec.NewReassembler(),
 	}
 	p.assignWorkerGeneration(w)
@@ -629,12 +656,7 @@ func (p *Pool) AddWorkerFromConfig(devCfg config.DeviceConfig) (*Worker, error) 
 	qmiWorkerRegistered := false
 	if qmiCore != nil {
 		if err := p.registerWorkerStarting(w); err != nil {
-			if qmiTransportLifecycle != nil {
-				_ = qmiTransportLifecycle.Stop()
-			}
-			qmiCore.Stop()
-			m.Stop()
-			return nil, err
+			return nil, errors.Join(err, p.stopWorkerResources(w, 2*time.Second))
 		}
 		qmiWorkerRegistered = true
 		if err := p.startQMICoreWithStartupBudget(w, "qmi_start_core"); err != nil {
@@ -655,9 +677,19 @@ func (p *Pool) AddWorkerFromConfig(devCfg config.DeviceConfig) (*Worker, error) 
 	}
 
 	if !qmiWorkerRegistered {
-		p.mu.Lock()
-		p.workers[devCfg.ID] = w
-		p.mu.Unlock()
+		if err := p.registerWorkerStarting(w); err != nil {
+			return nil, errors.Join(err, p.stopWorkerResources(w, 2*time.Second))
+		}
+	}
+	p.mu.RLock()
+	registrationCurrent := !p.shuttingDown && p.workers[devCfg.ID] == w
+	shuttingDown := p.shuttingDown
+	p.mu.RUnlock()
+	if !registrationCurrent {
+		if shuttingDown {
+			return nil, ErrPoolShuttingDown
+		}
+		return nil, fmt.Errorf("设备 %s 已在启动期间被移除", devCfg.ID)
 	}
 	w.uimIndicationsReady.Store(true)
 	p.scheduleATRadioWarmup(w, "startup")

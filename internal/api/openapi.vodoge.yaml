@@ -120,6 +120,22 @@ paths:
         '429':
           $ref: '#/components/responses/ErrorMessage'
 
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: 退出登录并清理遗留管理 Cookie
+      description: |
+        管理会话使用无状态 Bearer token，客户端仍需删除本地 token。本端点幂等地
+        过期当前及历史版本可能签发的管理 Cookie，防止环境认证残留。
+      security: []
+      responses:
+        '200':
+          description: 遗留 Cookie 已清理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+
   /rotateip:
     post:
       tags: [auth]
@@ -962,6 +978,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Envelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /extensions/{id}/session:
+    post:
+      tags: [extensions]
+      summary: 创建隔离的插件运行会话
+      description: |
+        为指定 sidebar contribution 签发与插件 ID 绑定的短期 capability，
+        `launch_url` 位于独立插件端口。浏览器首次打开该 URL 后，服务端会移除
+        query capability，并换成仅覆盖该插件资源与后端路径的 HttpOnly Cookie。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PluginSessionRequest'
+      responses:
+        '200':
+          description: 插件运行会话已创建
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PluginSession'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -2682,7 +2737,7 @@ paths:
       summary: 创建 E911 设置 websheet 会话
       description: |
         返回一个由本服务反向代理运营商页面的会话地址，供浏览器打开完成 E911 地址登记。
-        承载页与代理路径（`/websheets/{id}`、`/websheets/{id}/proxy/...`）属内部通道，
+        承载页与代理路径（`/websheets/{id}`、`/websheets/{id}/session/{token}/proxy/...`）属内部通道，
         请求与响应完全由运营商页面决定，不在本文档描述范围内；
         判断流程是否结束请轮询 `GET /websheets/{id}/status`。
 
@@ -4854,6 +4909,24 @@ components:
           type: string
         entry:
           type: string
+
+    PluginSessionRequest:
+      type: object
+      required: [contribution_id]
+      properties:
+        contribution_id:
+          type: string
+
+    PluginSession:
+      type: object
+      required: [launch_url, expires_at]
+      properties:
+        launch_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
 
     InstalledPlugin:
       type: object

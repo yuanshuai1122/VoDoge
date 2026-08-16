@@ -47,6 +47,7 @@ const (
 	maxReaders      = 16
 	readerStateSize = 184
 	ioPCILength     = 8
+	maxAPDUResponse = 64 << 10
 )
 
 type daemonClient struct {
@@ -114,17 +115,26 @@ func (c *daemonClient) handshake(ctx context.Context) error {
 	return nil
 }
 
-func (c *daemonClient) close(ctx context.Context) {
+func (c *daemonClient) close(ctx context.Context) error {
 	if c == nil || c.conn == nil {
-		return
+		return nil
 	}
+	var errs []error
 	if c.contextID != 0 {
 		body := make([]byte, 8)
 		binary.LittleEndian.PutUint32(body[0:4], c.contextID)
-		_ = c.exchange(ctx, cmdReleaseContext, body)
+		if err := c.exchange(ctx, cmdReleaseContext, body); err != nil {
+			errs = append(errs, fmt.Errorf("SCardReleaseContext: %w", err))
+		} else if rv := binary.LittleEndian.Uint32(body[4:8]); rv != scardSuccess {
+			errs = append(errs, fmt.Errorf("SCardReleaseContext 失败: 0x%x", rv))
+		}
 	}
-	_ = c.conn.Close()
+	if err := c.conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		errs = append(errs, err)
+	}
 	c.conn = nil
+	c.contextID = 0
+	return errors.Join(errs...)
 }
 
 // ListReaders 向本机 pcscd 要当前读卡器名单。套接字不在或握手失败时返回 ErrAPDUUnavailable。
@@ -133,7 +143,7 @@ func ListReaders(ctx context.Context) ([]Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer c.close(ctx)
+	defer func() { _ = c.close(ctx) }()
 	return c.listReaders(ctx)
 }
 
@@ -148,8 +158,11 @@ func (c *daemonClient) listReaders(ctx context.Context) ([]Reader, error) {
 			return nil, err
 		}
 		n := int(int32(binary.LittleEndian.Uint32(nbuf[:])))
-		if n <= 0 || n > 64 {
+		if n < 0 || n > maxReaders {
 			return nil, fmt.Errorf("pcscd 读卡器数量异常: %d", n)
+		}
+		if n == 0 {
+			return []Reader{}, nil
 		}
 		if err := c.send(ctx, cmdGetReadersStateArray, nil); err != nil {
 			return nil, err
@@ -184,6 +197,9 @@ func parseReaderStates(buf []byte) []Reader {
 }
 
 func (c *daemonClient) connect(ctx context.Context, reader string) (int32, uint32, error) {
+	if err := ValidateReaderName(reader); err != nil {
+		return 0, 0, err
+	}
 	body := make([]byte, 4+maxReaderName+4+4+4+4+4)
 	binary.LittleEndian.PutUint32(body[0:4], c.contextID)
 	copy(body[4:4+maxReaderName], reader)
@@ -209,11 +225,17 @@ func (c *daemonClient) connect(ctx context.Context, reader string) (int32, uint3
 	return hCard, proto, nil
 }
 
-func (c *daemonClient) disconnect(ctx context.Context, hCard int32) {
+func (c *daemonClient) disconnect(ctx context.Context, hCard int32) error {
 	body := make([]byte, 12)
 	binary.LittleEndian.PutUint32(body[0:4], uint32(hCard))
 	binary.LittleEndian.PutUint32(body[4:8], leaveCard)
-	_ = c.exchange(ctx, cmdDisconnect, body)
+	if err := c.exchange(ctx, cmdDisconnect, body); err != nil {
+		return err
+	}
+	if rv := binary.LittleEndian.Uint32(body[8:12]); rv != scardSuccess {
+		return fmt.Errorf("SCardDisconnect 失败: 0x%x", rv)
+	}
+	return nil
 }
 
 func (c *daemonClient) beginTransaction(ctx context.Context, hCard int32) error {
@@ -228,11 +250,17 @@ func (c *daemonClient) beginTransaction(ctx context.Context, hCard int32) error 
 	return nil
 }
 
-func (c *daemonClient) endTransaction(ctx context.Context, hCard int32) {
+func (c *daemonClient) endTransaction(ctx context.Context, hCard int32) error {
 	body := make([]byte, 12)
 	binary.LittleEndian.PutUint32(body[0:4], uint32(hCard))
 	binary.LittleEndian.PutUint32(body[4:8], leaveCard)
-	_ = c.exchange(ctx, cmdEndTransaction, body)
+	if err := c.exchange(ctx, cmdEndTransaction, body); err != nil {
+		return err
+	}
+	if rv := binary.LittleEndian.Uint32(body[8:12]); rv != scardSuccess {
+		return fmt.Errorf("SCardEndTransaction 失败: 0x%x", rv)
+	}
+	return nil
 }
 
 func (c *daemonClient) transmit(ctx context.Context, hCard int32, apdu []byte) ([]byte, error) {
@@ -267,6 +295,12 @@ func (c *daemonClient) transmit(ctx context.Context, hCard int32, apdu []byte) (
 	n := binary.LittleEndian.Uint32(hdr[24:28])
 	if n == 0 {
 		return nil, nil
+	}
+	if n > maxAPDUResponse {
+		// The response body is still queued on the socket. Reusing this connection
+		// would parse those bytes as the next command response, so fail it closed.
+		_ = c.conn.Close()
+		return nil, fmt.Errorf("%w: %d bytes (max %d)", ErrResponseTooLarge, n, maxAPDUResponse)
 	}
 	out := make([]byte, n)
 	if err := c.readFull(out); err != nil {

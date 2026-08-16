@@ -69,22 +69,24 @@ func TestRoutesOutsideAuthMiddlewareAreDeliberate(t *testing.T) {
 	}
 
 	want := map[string]authMode{
-		"GET /docs":                    authNone,
-		"GET /docs/assets/*filepath":   authNone,
-		"GET /openapi.yaml":            authNone,
-		"GET /openapi.json":            authNone,
-		"POST /auth/login":             authNone,
-		"OPTIONS /logs/stream":         authNone,
-		"POST /rotateip":               authInHandler,
-		"GET /websheets/:id":           authInHandler,
-		"GET /websheets/:id/status":    authInHandler,
-		"POST /websheets/:id/callback": authInHandler,
-		"POST /websheets/:id/done":     authInHandler,
+		"GET /docs":                                   authNone,
+		"GET /docs/assets/*filepath":                  authNone,
+		"GET /openapi.yaml":                           authNone,
+		"GET /openapi.json":                           authNone,
+		"POST /auth/login":                            authNone,
+		"POST /auth/logout":                           authNone,
+		"OPTIONS /logs/stream":                        authNone,
+		"POST /rotateip":                              authInHandler,
+		"GET /websheets/:id":                          authInHandler,
+		"GET /websheets/:id/status":                   authInHandler,
+		"POST /websheets/:id/session/:token/callback": authInHandler,
+		"POST /websheets/:id/session/:token/done":     authInHandler,
 	}
-	for _, path := range []string{"/websheets/:id/proxy", "/websheets/:id/proxy/*target"} {
-		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+	for _, path := range []string{"/websheets/:id/session/:token/proxy", "/websheets/:id/session/:token/proxy/*target"} {
+		for _, method := range websheetProxyMethods {
 			want[method+" "+path] = authInHandler
 		}
+		want["OPTIONS "+path] = authInHandler
 	}
 
 	for key, mode := range open {

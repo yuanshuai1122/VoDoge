@@ -21,6 +21,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -31,30 +32,6 @@ import (
 	"gorm.io/gorm"
 	_ "modernc.org/sqlite"
 )
-
-// 复制顺序：先被引用的表，后引用它们的表。
-//
-// 目前的模型之间没有数据库层外键（GORM 未声明），所以顺序不影响成败；
-// 但保持这个顺序能让中途失败时留下的状态更好理解——不会出现"有短信没有卡"。
-var tableOrder = []string{
-	"devices",
-	"sim_cards",
-	"sim_subscriptions",
-	"pending_phone_numbers",
-	"card_policies",
-	"proxy_instances",
-	"upstream_proxies",
-	"upstream_proxy_country_rules",
-	"sms",
-	"sms_contacts",
-	"sms_deliveries",
-	"sms_delivery_parts",
-	"traffic_minutes",
-	"traffic_hours",
-	"traffic_days",
-	"traffic_weeks",
-	"traffic_months",
-}
 
 type options struct {
 	sqlitePath    string
@@ -112,37 +89,126 @@ func run(opts options) error {
 		return errors.New("目标 DSN 为空：用 --postgres 指定，或设置 VODOGE_DB_DSN / DATABASE_URL")
 	}
 
-	// AutoMigrate 建表：目标库通常是全新的，schema 以 Go 模型为准。
-	// 演练也要建表——否则无从知道列能不能对上。
-	if err := db.Open(db.Options{DSN: dsn, AutoMigrate: true}); err != nil {
+	// 先只连接。默认模式必须在任何持久化副作用（包括 AutoMigrate）之前
+	// 检查完所有已存在的目标表，确保目标非空时能真正零副作用退出。
+	if err := db.Open(db.Options{DSN: dsn, AutoMigrate: false}); err != nil {
 		return fmt.Errorf("打开 PostgreSQL: %w", err)
 	}
 	dst := db.DB
 
-	tables := tableOrder
+	catalog, err := migrationCatalog(dst)
+	if err != nil {
+		return err
+	}
+	tables := catalog
 	if strings.TrimSpace(opts.only) != "" {
-		tables, err = selectTables(opts.only)
+		tables, err = selectTables(opts.only, catalog)
 		if err != nil {
 			return err
 		}
 	}
+	legacyPhones, err := prepareLegacySIMPhoneMigration(src, tables)
+	if err != nil {
+		return err
+	}
+	if !opts.dryRun && !opts.allowNonEmpty && !opts.truncate {
+		if err := refuseNonEmptyDestination(dst, tables); err != nil {
+			return err
+		}
+	}
 
+	// 目标库通常是全新的。只为本次选中的模型建表，避免 --tables 在
+	// schema 层面触碰未选中的表；表名仍由同一份 AutoMigrate 模型清单派生。
+	models := make([]any, 0, len(tables))
+	for _, table := range tables {
+		models = append(models, table.model)
+	}
 	if opts.dryRun {
 		fmt.Println("== 演练模式：不会写入目标库 ==")
 	}
 	fmt.Printf("源: %s\n目标: %s\n\n", opts.sqlitePath, redactDSN(dsn))
 
+	var plans []tablePlan
+	if opts.dryRun {
+		dryRunComplete := errors.New("dry-run schema inspection complete")
+		err = dst.Transaction(func(tx *gorm.DB) error {
+			// AutoMigrate is needed to derive the exact destination schema, but a
+			// dry run must not leave those DDL changes behind.
+			if err := tx.AutoMigrate(models...); err != nil {
+				return fmt.Errorf("AutoMigrate 目标表: %w", err)
+			}
+			var err error
+			plans, err = prepareTables(src, tx, tables)
+			if err != nil {
+				return err
+			}
+			for i := range plans {
+				if plans[i].report.skippedReason == "" {
+					plans[i].report.destRows = plans[i].report.sourceRows
+				}
+			}
+			return dryRunComplete
+		})
+		if !errors.Is(err, dryRunComplete) {
+			return err
+		}
+		err = nil
+	} else {
+		err = dst.Transaction(func(tx *gorm.DB) error {
+			// PostgreSQL DDL 也参与事务。二次预检或正式迁移失败时，新建/调整的
+			// schema 与数据一起回滚，保持默认拒绝路径真正零副作用。
+			if err := tx.AutoMigrate(models...); err != nil {
+				return fmt.Errorf("AutoMigrate 目标表: %w", err)
+			}
+			if err := lockTables(tx, tables); err != nil {
+				return err
+			}
+
+			// 锁表后重新做完整预检，消除初次检查与正式写入之间的竞争窗口。
+			var err error
+			plans, err = prepareTables(src, tx, tables)
+			if err != nil {
+				return err
+			}
+			if !opts.allowNonEmpty && !opts.truncate {
+				if err := refusePreparedNonEmpty(plans); err != nil {
+					return err
+				}
+			}
+			if opts.truncate {
+				if err := truncateTables(tx, tables); err != nil {
+					return err
+				}
+			}
+			for i := range plans {
+				if err := migratePreparedTable(src, tx, &plans[i], opts); err != nil {
+					return fmt.Errorf("迁移 %s: %w", plans[i].target.name, err)
+				}
+			}
+			// 先复制源中已经符合新模型的 subscription / pending 行，再仅用
+			// sim_cards 的旧号码列回填空字段。新模型数据始终具有更高优先级。
+			if err := migrateLegacySIMPhones(tx, legacyPhones); err != nil {
+				return fmt.Errorf("迁移 sim_cards 旧号码列: %w", err)
+			}
+			// 自增主键是显式带过来的，序列还停在 1；与数据复制放在同一
+			// 事务中，任一序列失败都会回滚全部表。
+			if err := resetSequences(tx, tableNames(tables)); err != nil {
+				return fmt.Errorf("校正自增序列: %w", err)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+
 	var (
 		totalCopied int64
 		skipped     []string
-		problems    []string
 	)
-
-	for _, table := range tables {
-		report, err := migrateTable(src, dst, table, opts)
-		if err != nil {
-			return fmt.Errorf("迁移 %s: %w", table, err)
-		}
+	for _, plan := range plans {
+		table := plan.target.name
+		report := plan.report
 		switch {
 		case report.skippedReason != "":
 			skipped = append(skipped, fmt.Sprintf("%s（%s）", table, report.skippedReason))
@@ -154,15 +220,24 @@ func run(opts options) error {
 		if len(report.droppedColumns) > 0 {
 			fmt.Printf("  [忽略源列: %s]", strings.Join(report.droppedColumns, ","))
 		}
+		if len(report.convertedColumns) > 0 {
+			fmt.Printf("  [转换源列: %s]", strings.Join(report.convertedColumns, ","))
+		}
 		if len(report.missingColumns) > 0 {
 			fmt.Printf("  [目标列无源数据: %s]", strings.Join(report.missingColumns, ","))
 		}
-		fmt.Println()
-
-		if !opts.dryRun && report.destRows < report.sourceRows {
-			problems = append(problems, fmt.Sprintf(
-				"%s: 源 %d 行，目标只有 %d 行", table, report.sourceRows, report.destRows))
+		if opts.allowNonEmpty && !opts.dryRun {
+			fmt.Printf("  [新增: %d, 冲突跳过: %d]", report.copied, report.sourceRows-report.copied)
 		}
+		fmt.Println()
+	}
+	if len(legacyPhones.subscriptions) > 0 || len(legacyPhones.pending) > 0 {
+		verb := "已派生/回填"
+		if opts.dryRun {
+			verb = "将派生/回填"
+		}
+		fmt.Printf("sim_cards 旧号码列       %s sim_subscriptions %d 行，pending_phone_numbers %d 行\n",
+			verb, len(legacyPhones.subscriptions), len(legacyPhones.pending))
 	}
 
 	if len(skipped) > 0 {
@@ -174,151 +249,191 @@ func run(opts options) error {
 		return nil
 	}
 
-	// 自增主键是显式带过来的，序列还停在 1；不校正的话新写入立刻主键冲突。
-	if err := resetSequences(dst, tables); err != nil {
-		return fmt.Errorf("校正自增序列: %w", err)
-	}
-
 	fmt.Printf("\n共导入 %d 行。\n", totalCopied)
-	if len(problems) > 0 {
-		return fmt.Errorf("行数校验未通过:\n  %s", strings.Join(problems, "\n  "))
-	}
-	fmt.Println("行数校验通过。")
+	fmt.Println("源主键落库校验通过。")
 	return nil
 }
 
-func selectTables(list string) ([]string, error) {
-	known := map[string]bool{}
-	for _, t := range tableOrder {
-		known[t] = true
+type migrationTarget struct {
+	name  string
+	model any
+}
+
+func migrationCatalog(dst *gorm.DB) ([]migrationTarget, error) {
+	models := db.AutoMigrateModels()
+	out := make([]migrationTarget, 0, len(models))
+	seen := make(map[string]bool, len(models))
+	for _, model := range models {
+		stmt := &gorm.Statement{DB: dst}
+		if err := stmt.Parse(model); err != nil {
+			return nil, fmt.Errorf("解析 AutoMigrate 模型 %T: %w", model, err)
+		}
+		name := strings.TrimSpace(stmt.Schema.Table)
+		if name == "" {
+			return nil, fmt.Errorf("AutoMigrate 模型 %T 未解析出表名", model)
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("AutoMigrate 模型清单包含重复表 %q", name)
+		}
+		seen[name] = true
+		out = append(out, migrationTarget{name: name, model: model})
 	}
-	var out []string
+	return out, nil
+}
+
+func selectTables(list string, catalog []migrationTarget) ([]migrationTarget, error) {
+	known := make(map[string]bool, len(catalog))
+	allNames := make([]string, 0, len(catalog))
+	for _, table := range catalog {
+		known[table.name] = true
+		allNames = append(allNames, table.name)
+	}
+	selected := map[string]bool{}
 	for _, raw := range strings.Split(list, ",") {
 		t := strings.TrimSpace(raw)
 		if t == "" {
 			continue
 		}
 		if !known[t] {
-			return nil, fmt.Errorf("未知表 %q；可选: %s", t, strings.Join(tableOrder, ", "))
+			return nil, fmt.Errorf("未知表 %q；可选: %s", t, strings.Join(allNames, ", "))
 		}
-		out = append(out, t)
+		selected[t] = true
 	}
-	if len(out) == 0 {
+	if len(selected) == 0 {
 		return nil, errors.New("--tables 未给出任何表名")
 	}
-	// 保持 tableOrder 的相对顺序，而不是命令行给出的顺序
-	sort.SliceStable(out, func(i, j int) bool {
-		return indexOf(tableOrder, out[i]) < indexOf(tableOrder, out[j])
-	})
+	out := make([]migrationTarget, 0, len(selected))
+	for _, table := range catalog {
+		if selected[table.name] {
+			out = append(out, table)
+		}
+	}
 	return out, nil
 }
 
-func indexOf(list []string, v string) int {
-	for i, item := range list {
-		if item == v {
-			return i
-		}
-	}
-	return len(list)
-}
-
 type tableReport struct {
-	sourceRows     int64
-	destRows       int64
-	copied         int64
-	droppedColumns []string
-	missingColumns []string
-	skippedReason  string
+	sourceRows       int64
+	destRows         int64
+	copied           int64
+	droppedColumns   []string
+	convertedColumns []string
+	missingColumns   []string
+	skippedReason    string
 }
 
-func migrateTable(src *sql.DB, dst *gorm.DB, table string, opts options) (tableReport, error) {
-	var report tableReport
+type sqliteTableInfo struct {
+	columns     []string
+	primaryKeys []string
+}
 
-	srcCols, err := sqliteColumns(src, table)
+type tablePlan struct {
+	target      migrationTarget
+	report      tableReport
+	shared      []string
+	dstCols     map[string]string
+	primaryKeys []string
+}
+
+func prepareTables(src *sql.DB, dst *gorm.DB, tables []migrationTarget) ([]tablePlan, error) {
+	plans := make([]tablePlan, 0, len(tables))
+	for _, target := range tables {
+		plan, err := prepareTable(src, dst, target)
+		if err != nil {
+			return nil, fmt.Errorf("预检 %s: %w", target.name, err)
+		}
+		plans = append(plans, plan)
+	}
+	return plans, nil
+}
+
+func prepareTable(src *sql.DB, dst *gorm.DB, target migrationTarget) (tablePlan, error) {
+	plan := tablePlan{target: target}
+	var err error
+	plan.dstCols, err = postgresColumns(dst, target.name)
 	if err != nil {
-		return report, err
+		return plan, err
 	}
-	if len(srcCols) == 0 {
-		report.skippedReason = "源库无此表"
-		return report, nil
+	if len(plan.dstCols) == 0 {
+		return plan, errors.New("目标库无此表（AutoMigrate 应已建好，请检查）")
 	}
-
-	dstCols, err := postgresColumns(dst, table)
+	plan.report.destRows, err = countRows(dst, target.name)
 	if err != nil {
-		return report, err
-	}
-	if len(dstCols) == 0 {
-		return report, fmt.Errorf("目标库无此表（AutoMigrate 应已建好，请检查）")
+		return plan, err
 	}
 
-	var shared []string
-	for _, col := range srcCols {
-		if _, ok := dstCols[col]; ok {
-			shared = append(shared, col)
+	srcInfo, err := sqliteTable(src, target.name)
+	if err != nil {
+		return plan, err
+	}
+	if len(srcInfo.columns) == 0 {
+		plan.report.skippedReason = "源库无此表"
+		return plan, nil
+	}
+
+	srcSet := make(map[string]bool, len(srcInfo.columns))
+	for _, col := range srcInfo.columns {
+		srcSet[col] = true
+		if _, ok := plan.dstCols[col]; ok {
+			plan.shared = append(plan.shared, col)
 		} else {
-			// 例如 sim_cards 上早已删掉的 phone_number 系列列
-			report.droppedColumns = append(report.droppedColumns, col)
-		}
-	}
-	if len(shared) == 0 {
-		return report, errors.New("源表与目标表没有同名列，无法映射")
-	}
-	srcSet := map[string]bool{}
-	for _, c := range srcCols {
-		srcSet[c] = true
-	}
-	for col := range dstCols {
-		if !srcSet[col] {
-			report.missingColumns = append(report.missingColumns, col)
-		}
-	}
-	sort.Strings(report.missingColumns)
-
-	if err := src.QueryRow(`SELECT COUNT(*) FROM "` + table + `"`).Scan(&report.sourceRows); err != nil {
-		return report, fmt.Errorf("统计源行数: %w", err)
-	}
-
-	existing, err := countRows(dst, table)
-	if err != nil {
-		return report, err
-	}
-	if existing > 0 && !opts.dryRun {
-		switch {
-		case opts.truncate:
-			// RESTART IDENTITY 顺带把序列归零，后面 resetSequences 再按实际数据校正
-			if err := dst.Exec(`TRUNCATE TABLE "` + table + `" RESTART IDENTITY CASCADE`).Error; err != nil {
-				return report, fmt.Errorf("清空目标表: %w", err)
+			if target.name == "sim_cards" && isLegacySIMPhoneColumn(col) {
+				plan.report.convertedColumns = append(plan.report.convertedColumns, col)
+			} else {
+				plan.report.droppedColumns = append(plan.report.droppedColumns, col)
 			}
-			existing = 0
-		case opts.allowNonEmpty:
-			// 继续，主键冲突的行会被跳过
-		default:
-			return report, fmt.Errorf(
-				"目标表已有 %d 行。默认拒绝导入以免与现有数据混在一起——"+
-					"确认要追加请加 --allow-nonempty，确认要覆盖请加 --truncate", existing)
 		}
 	}
-
-	if report.sourceRows == 0 {
-		report.destRows = existing
-		return report, nil
+	if len(plan.shared) == 0 {
+		return plan, errors.New("源表与目标表没有同名列，无法映射")
 	}
-	if opts.dryRun {
-		report.destRows = report.sourceRows
-		return report, nil
+	for col := range plan.dstCols {
+		if !srcSet[col] {
+			plan.report.missingColumns = append(plan.report.missingColumns, col)
+		}
+	}
+	sort.Strings(plan.report.missingColumns)
+
+	if err := src.QueryRow(`SELECT COUNT(*) FROM ` + quoteIdentifier(target.name)).Scan(&plan.report.sourceRows); err != nil {
+		return plan, fmt.Errorf("统计源行数: %w", err)
+	}
+	if plan.report.sourceRows > 0 {
+		if len(srcInfo.primaryKeys) == 0 {
+			return plan, errors.New("源表没有主键，无法证明每一行均已落库")
+		}
+		for _, key := range srcInfo.primaryKeys {
+			if _, ok := plan.dstCols[key]; !ok {
+				return plan, fmt.Errorf("源主键列 %q 在目标表中不存在", key)
+			}
+		}
+		plan.primaryKeys = srcInfo.primaryKeys
+	}
+	return plan, nil
+}
+
+func migratePreparedTable(src *sql.DB, dst *gorm.DB, plan *tablePlan, opts options) error {
+	if plan.report.skippedReason != "" {
+		if opts.truncate {
+			plan.report.destRows = 0
+		}
+		return nil
+	}
+	if plan.report.sourceRows == 0 {
+		if opts.truncate {
+			plan.report.destRows = 0
+		}
+		return nil
 	}
 
-	copied, err := copyRows(src, dst, table, shared, dstCols, opts.batchSize)
+	copied, err := copyRows(src, dst, plan.target.name, plan.shared, plan.dstCols, opts.batchSize)
 	if err != nil {
-		return report, err
+		return err
 	}
-	report.copied = copied
-
-	report.destRows, err = countRows(dst, table)
-	if err != nil {
-		return report, err
+	plan.report.copied = copied
+	if err := verifySourcePrimaryKeys(src, dst, plan, opts.batchSize); err != nil {
+		return err
 	}
-	return report, nil
+	plan.report.destRows, err = countRows(dst, plan.target.name)
+	return err
 }
 
 func copyRows(src *sql.DB, dst *gorm.DB, table string, cols []string, dstCols map[string]string, batchSize int) (int64, error) {
@@ -340,10 +455,11 @@ func copyRows(src *sql.DB, dst *gorm.DB, table string, cols []string, dstCols ma
 		if len(batch) == 0 {
 			return nil
 		}
-		if err := insertBatch(dst, table, quoted, batch); err != nil {
+		inserted, err := insertBatch(dst, table, quoted, batch)
+		if err != nil {
 			return err
 		}
-		copied += int64(len(batch))
+		copied += inserted
 		batch = batch[:0]
 		return nil
 	}
@@ -377,7 +493,7 @@ func copyRows(src *sql.DB, dst *gorm.DB, table string, cols []string, dstCols ma
 	return copied, flush()
 }
 
-func insertBatch(dst *gorm.DB, table string, quotedCols []string, batch [][]any) error {
+func insertBatch(dst *gorm.DB, table string, quotedCols []string, batch [][]any) (int64, error) {
 	var (
 		sb   strings.Builder
 		args []any
@@ -408,7 +524,653 @@ func insertBatch(dst *gorm.DB, table string, quotedCols []string, batch [][]any)
 	// 冲突即跳过：重跑迁移应当是安全的，而不是中途炸掉留下半个库
 	sb.WriteString(" ON CONFLICT DO NOTHING")
 
-	return dst.Exec(sb.String(), args...).Error
+	result := dst.Exec(sb.String(), args...)
+	return result.RowsAffected, result.Error
+}
+
+type legacySIMPhoneMigration struct {
+	subscriptions []db.SIMSubscription
+	pending       []db.PendingPhoneNumber
+}
+
+type legacySIMPhoneSourceRow struct {
+	ICCID             string
+	IMSI              string
+	Operator          string
+	PhoneNumber       string
+	ModemPhoneNumber  string
+	VowifiPhoneNumber string
+	LastSeen          time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+func isLegacySIMPhoneColumn(column string) bool {
+	switch column {
+	case "phone_number", "modem_phone_number", "vowifi_phone_number":
+		return true
+	default:
+		return false
+	}
+}
+
+// prepareLegacySIMPhoneMigration reads the three columns that used to live on
+// sim_cards and deterministically maps them to their current owners. A row with
+// an IMSI belongs to sim_subscriptions; without one it is staged by ICCID.
+func prepareLegacySIMPhoneMigration(src *sql.DB, tables []migrationTarget) (legacySIMPhoneMigration, error) {
+	var plan legacySIMPhoneMigration
+	selected := make(map[string]bool, len(tables))
+	for _, table := range tables {
+		selected[table.name] = true
+	}
+	// --tables names source tables. Legacy columns are transformed only when
+	// sim_cards itself was selected; selecting a new-model table alone must not
+	// implicitly read or migrate an otherwise out-of-scope source table.
+	if !selected["sim_cards"] {
+		return plan, nil
+	}
+
+	info, err := sqliteTable(src, "sim_cards")
+	if err != nil {
+		return plan, fmt.Errorf("检查 sim_cards 旧号码列: %w", err)
+	}
+	if len(info.columns) == 0 {
+		return plan, nil
+	}
+	columnSet := make(map[string]bool, len(info.columns))
+	hasPhoneColumn := false
+	for _, column := range info.columns {
+		columnSet[column] = true
+		hasPhoneColumn = hasPhoneColumn || isLegacySIMPhoneColumn(column)
+	}
+	if !hasPhoneColumn {
+		return plan, nil
+	}
+	if !columnSet["iccid"] {
+		return plan, errors.New("sim_cards 有旧号码列但没有 iccid，无法安全迁移")
+	}
+
+	wanted := []string{
+		"iccid", "imsi", "operator",
+		"phone_number", "modem_phone_number", "vowifi_phone_number",
+		"last_seen", "created_at", "updated_at",
+	}
+	columns := make([]string, 0, len(wanted))
+	columnIndex := make(map[string]int, len(wanted))
+	for _, column := range wanted {
+		if columnSet[column] {
+			columnIndex[column] = len(columns)
+			columns = append(columns, column)
+		}
+	}
+	quoted := make([]string, len(columns))
+	for i, column := range columns {
+		quoted[i] = quoteIdentifier(column)
+	}
+	rows, err := src.Query(
+		`SELECT ` + strings.Join(quoted, ",") + ` FROM "sim_cards" ORDER BY "iccid"`)
+	if err != nil {
+		return plan, fmt.Errorf("读取 sim_cards 旧号码: %w", err)
+	}
+	defer rows.Close()
+
+	var sourceRows []legacySIMPhoneSourceRow
+	for rows.Next() {
+		values := make([]any, len(columns))
+		holders := make([]any, len(columns))
+		for i := range values {
+			holders[i] = &values[i]
+		}
+		if err := rows.Scan(holders...); err != nil {
+			return plan, fmt.Errorf("扫描 sim_cards 旧号码: %w", err)
+		}
+		value := func(column string) any {
+			if index, ok := columnIndex[column]; ok {
+				return values[index]
+			}
+			return nil
+		}
+		text := func(column string) (string, error) {
+			converted, err := coerce(value(column), "text")
+			if err != nil || converted == nil {
+				return "", err
+			}
+			s, ok := converted.(string)
+			if !ok {
+				return "", fmt.Errorf("列 %s 的值类型为 %T", column, converted)
+			}
+			return strings.TrimSpace(s), nil
+		}
+
+		var row legacySIMPhoneSourceRow
+		stringFields := []struct {
+			column string
+			target *string
+		}{
+			{"iccid", &row.ICCID},
+			{"imsi", &row.IMSI},
+			{"operator", &row.Operator},
+			{"phone_number", &row.PhoneNumber},
+			{"modem_phone_number", &row.ModemPhoneNumber},
+			{"vowifi_phone_number", &row.VowifiPhoneNumber},
+		}
+		for _, field := range stringFields {
+			*field.target, err = text(field.column)
+			if err != nil {
+				return plan, fmt.Errorf("读取 sim_cards.%s: %w", field.column, err)
+			}
+		}
+		timeFields := []struct {
+			column string
+			target *time.Time
+		}{
+			{"last_seen", &row.LastSeen},
+			{"created_at", &row.CreatedAt},
+			{"updated_at", &row.UpdatedAt},
+		}
+		for _, field := range timeFields {
+			*field.target, err = legacySIMTime(value(field.column))
+			if err != nil {
+				return plan, fmt.Errorf("读取 sim_cards[%s].%s: %w", row.ICCID, field.column, err)
+			}
+		}
+		if row.PhoneNumber == "" && row.ModemPhoneNumber == "" && row.VowifiPhoneNumber == "" {
+			continue
+		}
+
+		targetTable := "sim_subscriptions"
+		if row.IMSI == "" {
+			targetTable = "pending_phone_numbers"
+			if row.ICCID == "" {
+				return plan, errors.New("sim_cards 旧号码行同时缺少 IMSI 和 ICCID，无法安全迁移")
+			}
+		}
+		if !selected[targetTable] {
+			return plan, fmt.Errorf(
+				"sim_cards 旧号码行（iccid=%q imsi=%q）需要派生到 %s；"+
+					"请把该表加入 --tables，迁移不会越过显式选择边界",
+				row.ICCID, row.IMSI, targetTable)
+		}
+		sourceRows = append(sourceRows, row)
+	}
+	if err := rows.Err(); err != nil {
+		return plan, fmt.Errorf("遍历 sim_cards 旧号码: %w", err)
+	}
+
+	// Old databases can contain a synthetic reader row and a real ICCID row for
+	// one IMSI. Oldest-to-newest ordering makes non-empty newer values win; ICCID
+	// provides a stable tie-breaker when timestamps are equal or missing.
+	sort.SliceStable(sourceRows, func(i, j int) bool {
+		left, right := legacySIMRecency(sourceRows[i]), legacySIMRecency(sourceRows[j])
+		if !left.Equal(right) {
+			return left.Before(right)
+		}
+		if sourceRows[i].ICCID != sourceRows[j].ICCID {
+			return sourceRows[i].ICCID < sourceRows[j].ICCID
+		}
+		return sourceRows[i].IMSI < sourceRows[j].IMSI
+	})
+
+	subscriptions := make(map[string]db.SIMSubscription)
+	pending := make(map[string]db.PendingPhoneNumber)
+	for _, row := range sourceRows {
+		resolvedPhone := row.PhoneNumber
+		if resolvedPhone == "" {
+			if row.VowifiPhoneNumber != "" {
+				resolvedPhone = row.VowifiPhoneNumber
+			} else {
+				resolvedPhone = row.ModemPhoneNumber
+			}
+		}
+		if row.IMSI != "" {
+			sub := subscriptions[row.IMSI]
+			sub.IMSI = row.IMSI
+			if row.ICCID != "" && !strings.HasPrefix(row.ICCID, "reader-imsi-") {
+				sub.CurrentICCID = row.ICCID
+			}
+			if resolvedPhone != "" {
+				sub.PhoneNumber = resolvedPhone
+			}
+			if row.ModemPhoneNumber != "" {
+				sub.ModemPhoneNumber = row.ModemPhoneNumber
+			}
+			if row.VowifiPhoneNumber != "" {
+				sub.VowifiPhoneNumber = row.VowifiPhoneNumber
+			}
+			if row.Operator != "" {
+				sub.Operator = row.Operator
+			}
+			sub.LastSeen = laterTime(sub.LastSeen, row.LastSeen)
+			sub.CreatedAt = earlierTime(sub.CreatedAt, row.CreatedAt)
+			sub.UpdatedAt = laterTime(sub.UpdatedAt, row.UpdatedAt)
+			subscriptions[row.IMSI] = sub
+			continue
+		}
+
+		entry := pending[row.ICCID]
+		entry.ICCID = row.ICCID
+		if resolvedPhone != "" {
+			entry.PhoneNumber = resolvedPhone
+		}
+		if row.ModemPhoneNumber != "" {
+			entry.ModemPhoneNumber = row.ModemPhoneNumber
+		}
+		if row.VowifiPhoneNumber != "" {
+			entry.VowifiPhoneNumber = row.VowifiPhoneNumber
+		}
+		entry.CreatedAt = earlierTime(entry.CreatedAt, row.CreatedAt)
+		entry.UpdatedAt = laterTime(entry.UpdatedAt, row.UpdatedAt)
+		pending[row.ICCID] = entry
+	}
+
+	fallbackTime := time.Unix(0, 0).UTC()
+	for _, sub := range subscriptions {
+		if sub.PhoneNumber == "" {
+			if sub.VowifiPhoneNumber != "" {
+				sub.PhoneNumber = sub.VowifiPhoneNumber
+			} else {
+				sub.PhoneNumber = sub.ModemPhoneNumber
+			}
+		}
+		if sub.CreatedAt.IsZero() {
+			sub.CreatedAt = fallbackTime
+		}
+		if sub.LastSeen.IsZero() {
+			sub.LastSeen = laterTime(sub.UpdatedAt, sub.CreatedAt)
+		}
+		if sub.UpdatedAt.IsZero() {
+			sub.UpdatedAt = laterTime(sub.LastSeen, sub.CreatedAt)
+		}
+		plan.subscriptions = append(plan.subscriptions, sub)
+	}
+	for _, entry := range pending {
+		if entry.PhoneNumber == "" {
+			if entry.VowifiPhoneNumber != "" {
+				entry.PhoneNumber = entry.VowifiPhoneNumber
+			} else {
+				entry.PhoneNumber = entry.ModemPhoneNumber
+			}
+		}
+		if entry.CreatedAt.IsZero() {
+			entry.CreatedAt = fallbackTime
+		}
+		if entry.UpdatedAt.IsZero() {
+			entry.UpdatedAt = entry.CreatedAt
+		}
+		plan.pending = append(plan.pending, entry)
+	}
+	sort.Slice(plan.subscriptions, func(i, j int) bool {
+		return plan.subscriptions[i].IMSI < plan.subscriptions[j].IMSI
+	})
+	sort.Slice(plan.pending, func(i, j int) bool {
+		return plan.pending[i].ICCID < plan.pending[j].ICCID
+	})
+	return plan, nil
+}
+
+func legacySIMTime(value any) (time.Time, error) {
+	if value == nil {
+		return time.Time{}, nil
+	}
+	converted, err := coerceTime(value)
+	if err != nil || converted == nil {
+		return time.Time{}, err
+	}
+	timestamp, ok := converted.(time.Time)
+	if !ok {
+		return time.Time{}, fmt.Errorf("无法识别的时间值 %T", converted)
+	}
+	return timestamp, nil
+}
+
+func legacySIMRecency(row legacySIMPhoneSourceRow) time.Time {
+	return laterTime(row.LastSeen, laterTime(row.UpdatedAt, row.CreatedAt))
+}
+
+func laterTime(left, right time.Time) time.Time {
+	if left.IsZero() || right.After(left) {
+		return right
+	}
+	return left
+}
+
+func earlierTime(left, right time.Time) time.Time {
+	if right.IsZero() {
+		return left
+	}
+	if left.IsZero() || right.Before(left) {
+		return right
+	}
+	return left
+}
+
+func migrateLegacySIMPhones(dst *gorm.DB, plan legacySIMPhoneMigration) error {
+	const upsertSubscription = `
+		INSERT INTO sim_subscriptions
+			(imsi, current_iccid, phone_number, modem_phone_number, vowifi_phone_number,
+			 operator, last_seen, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (imsi) DO UPDATE SET
+			current_iccid = CASE WHEN BTRIM(COALESCE(sim_subscriptions.current_iccid, '')) = ''
+				THEN EXCLUDED.current_iccid ELSE sim_subscriptions.current_iccid END,
+			phone_number = CASE WHEN BTRIM(COALESCE(sim_subscriptions.phone_number, '')) = ''
+				THEN EXCLUDED.phone_number ELSE sim_subscriptions.phone_number END,
+			modem_phone_number = CASE WHEN BTRIM(COALESCE(sim_subscriptions.modem_phone_number, '')) = ''
+				THEN EXCLUDED.modem_phone_number ELSE sim_subscriptions.modem_phone_number END,
+			vowifi_phone_number = CASE WHEN BTRIM(COALESCE(sim_subscriptions.vowifi_phone_number, '')) = ''
+				THEN EXCLUDED.vowifi_phone_number ELSE sim_subscriptions.vowifi_phone_number END,
+			operator = CASE WHEN BTRIM(COALESCE(sim_subscriptions.operator, '')) = ''
+				THEN EXCLUDED.operator ELSE sim_subscriptions.operator END`
+	for _, derived := range plan.subscriptions {
+		expected := derived
+		var existing db.SIMSubscription
+		err := dst.Where("imsi = ?", derived.IMSI).Take(&existing).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("读取 sim_subscriptions[%s]: %w", derived.IMSI, err)
+		}
+		if err == nil {
+			mergeAuthoritativeSubscription(&expected, existing)
+		}
+		if err := dst.Exec(upsertSubscription,
+			derived.IMSI, derived.CurrentICCID, derived.PhoneNumber,
+			derived.ModemPhoneNumber, derived.VowifiPhoneNumber, derived.Operator,
+			derived.LastSeen, derived.CreatedAt, derived.UpdatedAt,
+		).Error; err != nil {
+			return fmt.Errorf("写入 sim_subscriptions[%s]: %w", derived.IMSI, err)
+		}
+		var actual db.SIMSubscription
+		if err := dst.Where("imsi = ?", derived.IMSI).Take(&actual).Error; err != nil {
+			return fmt.Errorf("验证 sim_subscriptions[%s]: %w", derived.IMSI, err)
+		}
+		if err := verifySubscriptionStrings(expected, actual); err != nil {
+			return fmt.Errorf("验证 sim_subscriptions[%s]: %w", derived.IMSI, err)
+		}
+	}
+
+	const upsertPending = `
+		INSERT INTO pending_phone_numbers
+			(iccid, phone_number, modem_phone_number, vowifi_phone_number, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (iccid) DO UPDATE SET
+			phone_number = CASE WHEN BTRIM(COALESCE(pending_phone_numbers.phone_number, '')) = ''
+				THEN EXCLUDED.phone_number ELSE pending_phone_numbers.phone_number END,
+			modem_phone_number = CASE WHEN BTRIM(COALESCE(pending_phone_numbers.modem_phone_number, '')) = ''
+				THEN EXCLUDED.modem_phone_number ELSE pending_phone_numbers.modem_phone_number END,
+			vowifi_phone_number = CASE WHEN BTRIM(COALESCE(pending_phone_numbers.vowifi_phone_number, '')) = ''
+				THEN EXCLUDED.vowifi_phone_number ELSE pending_phone_numbers.vowifi_phone_number END`
+	for _, derived := range plan.pending {
+		expected := derived
+		var existing db.PendingPhoneNumber
+		err := dst.Where("iccid = ?", derived.ICCID).Take(&existing).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("读取 pending_phone_numbers[%s]: %w", derived.ICCID, err)
+		}
+		if err == nil {
+			mergeAuthoritativePending(&expected, existing)
+		}
+		if err := dst.Exec(upsertPending,
+			derived.ICCID, derived.PhoneNumber, derived.ModemPhoneNumber,
+			derived.VowifiPhoneNumber, derived.CreatedAt, derived.UpdatedAt,
+		).Error; err != nil {
+			return fmt.Errorf("写入 pending_phone_numbers[%s]: %w", derived.ICCID, err)
+		}
+		var actual db.PendingPhoneNumber
+		if err := dst.Where("iccid = ?", derived.ICCID).Take(&actual).Error; err != nil {
+			return fmt.Errorf("验证 pending_phone_numbers[%s]: %w", derived.ICCID, err)
+		}
+		if err := verifyPendingStrings(expected, actual); err != nil {
+			return fmt.Errorf("验证 pending_phone_numbers[%s]: %w", derived.ICCID, err)
+		}
+	}
+	return nil
+}
+
+func mergeAuthoritativeSubscription(target *db.SIMSubscription, existing db.SIMSubscription) {
+	keepNonEmpty(&target.CurrentICCID, existing.CurrentICCID)
+	keepNonEmpty(&target.PhoneNumber, existing.PhoneNumber)
+	keepNonEmpty(&target.ModemPhoneNumber, existing.ModemPhoneNumber)
+	keepNonEmpty(&target.VowifiPhoneNumber, existing.VowifiPhoneNumber)
+	keepNonEmpty(&target.Operator, existing.Operator)
+}
+
+func mergeAuthoritativePending(target *db.PendingPhoneNumber, existing db.PendingPhoneNumber) {
+	keepNonEmpty(&target.PhoneNumber, existing.PhoneNumber)
+	keepNonEmpty(&target.ModemPhoneNumber, existing.ModemPhoneNumber)
+	keepNonEmpty(&target.VowifiPhoneNumber, existing.VowifiPhoneNumber)
+}
+
+func keepNonEmpty(target *string, existing string) {
+	if strings.TrimSpace(existing) != "" {
+		*target = existing
+	}
+}
+
+func verifySubscriptionStrings(expected, actual db.SIMSubscription) error {
+	return verifyStringFields(
+		stringFieldValue{"current_iccid", expected.CurrentICCID, actual.CurrentICCID},
+		stringFieldValue{"phone_number", expected.PhoneNumber, actual.PhoneNumber},
+		stringFieldValue{"modem_phone_number", expected.ModemPhoneNumber, actual.ModemPhoneNumber},
+		stringFieldValue{"vowifi_phone_number", expected.VowifiPhoneNumber, actual.VowifiPhoneNumber},
+		stringFieldValue{"operator", expected.Operator, actual.Operator},
+	)
+}
+
+func verifyPendingStrings(expected, actual db.PendingPhoneNumber) error {
+	return verifyStringFields(
+		stringFieldValue{"phone_number", expected.PhoneNumber, actual.PhoneNumber},
+		stringFieldValue{"modem_phone_number", expected.ModemPhoneNumber, actual.ModemPhoneNumber},
+		stringFieldValue{"vowifi_phone_number", expected.VowifiPhoneNumber, actual.VowifiPhoneNumber},
+	)
+}
+
+type stringFieldValue struct {
+	column   string
+	expected string
+	actual   string
+}
+
+func verifyStringFields(fields ...stringFieldValue) error {
+	for _, field := range fields {
+		if field.actual != field.expected {
+			return fmt.Errorf("字段 %s=%q，期望 %q", field.column, field.actual, field.expected)
+		}
+	}
+	return nil
+}
+
+func refuseNonEmptyDestination(dst *gorm.DB, tables []migrationTarget) error {
+	nonEmpty := make([]string, 0)
+	for _, table := range tables {
+		exists, err := postgresTableExists(dst, table.name)
+		if err != nil {
+			return fmt.Errorf("预检目标表 %s: %w", table.name, err)
+		}
+		if !exists {
+			continue
+		}
+		rows, err := countRows(dst, table.name)
+		if err != nil {
+			return fmt.Errorf("预检目标表 %s: %w", table.name, err)
+		}
+		if rows > 0 {
+			nonEmpty = append(nonEmpty, fmt.Sprintf("%s=%d", table.name, rows))
+		}
+	}
+	return nonEmptyDestinationError(nonEmpty)
+}
+
+func refusePreparedNonEmpty(plans []tablePlan) error {
+	nonEmpty := make([]string, 0)
+	for _, plan := range plans {
+		if plan.report.destRows > 0 {
+			nonEmpty = append(nonEmpty, fmt.Sprintf("%s=%d", plan.target.name, plan.report.destRows))
+		}
+	}
+	return nonEmptyDestinationError(nonEmpty)
+}
+
+func nonEmptyDestinationError(nonEmpty []string) error {
+	if len(nonEmpty) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"目标表非空（%s）。默认拒绝导入且尚未执行任何变更；"+
+			"确认要追加请加 --allow-nonempty，确认要覆盖请加 --truncate",
+		strings.Join(nonEmpty, ", "))
+}
+
+func postgresTableExists(dst *gorm.DB, table string) (bool, error) {
+	var exists bool
+	err := dst.Raw(`SELECT EXISTS (
+		SELECT 1 FROM information_schema.tables
+		WHERE table_schema = current_schema() AND table_name = ?
+	)`, table).Scan(&exists).Error
+	return exists, err
+}
+
+func lockTables(dst *gorm.DB, tables []migrationTarget) error {
+	quoted := make([]string, 0, len(tables))
+	for _, table := range tables {
+		quoted = append(quoted, quoteIdentifier(table.name))
+	}
+	if err := dst.Exec("LOCK TABLE " + strings.Join(quoted, ", ") + " IN ACCESS EXCLUSIVE MODE").Error; err != nil {
+		return fmt.Errorf("锁定目标表: %w", err)
+	}
+	return nil
+}
+
+func truncateTables(dst *gorm.DB, tables []migrationTarget) error {
+	quoted := make([]string, 0, len(tables))
+	for _, table := range tables {
+		quoted = append(quoted, quoteIdentifier(table.name))
+	}
+	// 一个语句、默认 RESTRICT：任何未选中表的外键引用都会让整个事务失败，
+	// 绝不通过 CASCADE 越过 --tables 的明确边界。
+	if err := dst.Exec("TRUNCATE TABLE " + strings.Join(quoted, ", ") + " RESTART IDENTITY").Error; err != nil {
+		return fmt.Errorf("清空选中目标表: %w", err)
+	}
+	return nil
+}
+
+func tableNames(tables []migrationTarget) []string {
+	out := make([]string, 0, len(tables))
+	for _, table := range tables {
+		out = append(out, table.name)
+	}
+	return out
+}
+
+func quoteIdentifier(identifier string) string {
+	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+}
+
+func verifySourcePrimaryKeys(src *sql.DB, dst *gorm.DB, plan *tablePlan, batchSize int) error {
+	quoted := make([]string, len(plan.primaryKeys))
+	for i, key := range plan.primaryKeys {
+		quoted[i] = quoteIdentifier(key)
+	}
+	rows, err := src.Query(
+		`SELECT ` + strings.Join(quoted, ",") + ` FROM ` + quoteIdentifier(plan.target.name))
+	if err != nil {
+		return fmt.Errorf("读取源主键: %w", err)
+	}
+	defer rows.Close()
+
+	// PostgreSQL 单条语句最多 65535 个参数，给其它表达式留出余量。
+	if maxRows := 60000 / len(plan.primaryKeys); batchSize > maxRows {
+		batchSize = maxRows
+	}
+	var (
+		batch    [][]any
+		verified int64
+	)
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		var (
+			predicate strings.Builder
+			args      []any
+		)
+		if len(plan.primaryKeys) == 1 {
+			predicate.WriteString(quoted[0])
+			predicate.WriteString(" IN (")
+			for i, values := range batch {
+				if i > 0 {
+					predicate.WriteString(",")
+				}
+				predicate.WriteString("?")
+				args = append(args, values[0])
+			}
+			predicate.WriteString(")")
+		} else {
+			predicate.WriteString("(")
+			predicate.WriteString(strings.Join(quoted, ","))
+			predicate.WriteString(") IN (")
+			for i, values := range batch {
+				if i > 0 {
+					predicate.WriteString(",")
+				}
+				predicate.WriteString("(")
+				for j, value := range values {
+					if j > 0 {
+						predicate.WriteString(",")
+					}
+					predicate.WriteString("?")
+					args = append(args, value)
+				}
+				predicate.WriteString(")")
+			}
+			predicate.WriteString(")")
+		}
+
+		var found int64
+		query := `SELECT COUNT(*) FROM ` + quoteIdentifier(plan.target.name) + ` WHERE ` + predicate.String()
+		if err := dst.Raw(query, args...).Scan(&found).Error; err != nil {
+			return fmt.Errorf("查询目标主键: %w", err)
+		}
+		if found != int64(len(batch)) {
+			return fmt.Errorf(
+				"源主键落库校验失败：本批 %d 个主键仅找到 %d 个；"+
+					"可能被目标库其它唯一约束冲突跳过", len(batch), found)
+		}
+		verified += found
+		batch = batch[:0]
+		return nil
+	}
+
+	for rows.Next() {
+		values := make([]any, len(plan.primaryKeys))
+		holders := make([]any, len(values))
+		for i := range values {
+			holders[i] = &values[i]
+		}
+		if err := rows.Scan(holders...); err != nil {
+			return fmt.Errorf("扫描源主键: %w", err)
+		}
+		for i, key := range plan.primaryKeys {
+			values[i], err = coerce(values[i], plan.dstCols[key])
+			if err != nil {
+				return fmt.Errorf("主键列 %s: %w", key, err)
+			}
+		}
+		batch = append(batch, values)
+		if len(batch) >= batchSize {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("遍历源主键: %w", err)
+	}
+	if err := flush(); err != nil {
+		return err
+	}
+	if verified != plan.report.sourceRows {
+		return fmt.Errorf("源主键落库校验失败：源 %d 个，验证 %d 个", plan.report.sourceRows, verified)
+	}
+	return nil
 }
 
 // coerce 把 SQLite 的松散取值对齐到目标列的类型。
@@ -518,22 +1280,42 @@ func parseTimeText(s string) (any, error) {
 	return nil, fmt.Errorf("无法解析时间 %q", s)
 }
 
-func sqliteColumns(src *sql.DB, table string) ([]string, error) {
-	rows, err := src.Query(`SELECT name FROM pragma_table_info(?)`, table)
+func sqliteTable(src *sql.DB, table string) (sqliteTableInfo, error) {
+	rows, err := src.Query(`SELECT name, pk FROM pragma_table_info(?) ORDER BY cid`, table)
 	if err != nil {
-		return nil, fmt.Errorf("读取源表结构: %w", err)
+		return sqliteTableInfo{}, fmt.Errorf("读取源表结构: %w", err)
 	}
 	defer rows.Close()
 
-	var cols []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, err
-		}
-		cols = append(cols, name)
+	type primaryKey struct {
+		name  string
+		order int
 	}
-	return cols, rows.Err()
+	var (
+		out  sqliteTableInfo
+		keys []primaryKey
+	)
+	for rows.Next() {
+		var (
+			name string
+			pk   int
+		)
+		if err := rows.Scan(&name, &pk); err != nil {
+			return sqliteTableInfo{}, err
+		}
+		out.columns = append(out.columns, name)
+		if pk > 0 {
+			keys = append(keys, primaryKey{name: name, order: pk})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return sqliteTableInfo{}, err
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i].order < keys[j].order })
+	for _, key := range keys {
+		out.primaryKeys = append(out.primaryKeys, key.name)
+	}
+	return out, nil
 }
 
 // postgresColumns 返回列名 → 数据类型，coerce 依赖它决定怎么转换。
@@ -599,23 +1381,156 @@ func resetSequences(dst *gorm.DB, tables []string) error {
 
 // redactDSN 去掉 DSN 里的口令后再打印。迁移日志经常被贴进工单。
 func redactDSN(dsn string) string {
-	if u := strings.Index(dsn, "://"); u >= 0 {
-		// URL 形态：postgres://user:pass@host/db
-		rest := dsn[u+3:]
-		if at := strings.Index(rest, "@"); at >= 0 {
-			cred := rest[:at]
-			if colon := strings.Index(cred, ":"); colon >= 0 {
-				return dsn[:u+3] + cred[:colon] + ":***" + rest[at:]
+	trimmed := strings.TrimSpace(dsn)
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "postgres://") || strings.HasPrefix(lower, "postgresql://") {
+		return redactURLDSN(trimmed)
+	}
+	redacted, ok := redactKeywordValueDSN(dsn)
+	if !ok {
+		// Parsing failures must fail closed: returning the input would put the
+		// very credential this helper protects into migration logs.
+		return "<invalid PostgreSQL DSN; redacted>"
+	}
+	return redacted
+}
+
+func redactURLDSN(dsn string) string {
+	parsed, err := url.Parse(dsn)
+	if err != nil ||
+		!strings.EqualFold(parsed.Scheme, "postgres") && !strings.EqualFold(parsed.Scheme, "postgresql") ||
+		parsed.Opaque != "" || parsed.Fragment != "" {
+		return "<invalid PostgreSQL DSN; redacted>"
+	}
+	changed := false
+	if parsed.User != nil {
+		if _, present := parsed.User.Password(); present {
+			parsed.User = url.UserPassword(parsed.User.Username(), "***")
+			changed = true
+		}
+	}
+	if parsed.RawQuery != "" {
+		query, err := url.ParseQuery(parsed.RawQuery)
+		if err != nil {
+			return "<invalid PostgreSQL DSN; redacted>"
+		}
+		for key := range query {
+			if isDSNSecretKey(key) {
+				query[key] = []string{"***"}
+				changed = true
 			}
 		}
-		return dsn
-	}
-	// key=value 形态
-	parts := strings.Fields(dsn)
-	for i, p := range parts {
-		if strings.HasPrefix(strings.ToLower(p), "password=") {
-			parts[i] = "password=***"
+		if changed {
+			parsed.RawQuery = query.Encode()
 		}
 	}
-	return strings.Join(parts, " ")
+	if !changed {
+		return dsn
+	}
+	// net/url correctly percent-escapes userinfo and query values. Keep the
+	// long-standing human-readable marker in logs after serialization.
+	return strings.ReplaceAll(parsed.String(), "%2A%2A%2A", "***")
+}
+
+// redactKeywordValueDSN follows libpq's keyword/value lexer: whitespace ends
+// an unquoted value unless escaped, while quoted values accept escaped quotes
+// and backslashes. It preserves the original non-secret spelling and spacing.
+func redactKeywordValueDSN(dsn string) (string, bool) {
+	var out strings.Builder
+	lastWritten := 0
+	for cursor := 0; cursor < len(dsn); {
+		for cursor < len(dsn) && isLibpqSpace(dsn[cursor]) {
+			cursor++
+		}
+		if cursor == len(dsn) {
+			break
+		}
+
+		relativeEquals := strings.IndexByte(dsn[cursor:], '=')
+		if relativeEquals < 0 {
+			return "", false
+		}
+		equals := cursor + relativeEquals
+		key := strings.TrimSpace(dsn[cursor:equals])
+		if !isLibpqKeyword(key) {
+			return "", false
+		}
+		valueStart := equals + 1
+		for valueStart < len(dsn) && isLibpqSpace(dsn[valueStart]) {
+			valueStart++
+		}
+
+		valueEnd := valueStart
+		if valueStart < len(dsn) && dsn[valueStart] == '\'' {
+			valueEnd++
+			closed := false
+			for valueEnd < len(dsn) {
+				switch dsn[valueEnd] {
+				case '\\':
+					valueEnd += 2
+				case '\'':
+					valueEnd++
+					closed = true
+				default:
+					valueEnd++
+				}
+				if closed {
+					break
+				}
+			}
+			if !closed || valueEnd > len(dsn) {
+				return "", false
+			}
+		} else {
+			for valueEnd < len(dsn) && !isLibpqSpace(dsn[valueEnd]) {
+				if dsn[valueEnd] == '\\' {
+					valueEnd += 2
+					if valueEnd > len(dsn) {
+						return "", false
+					}
+					continue
+				}
+				valueEnd++
+			}
+		}
+
+		if isDSNSecretKey(key) {
+			out.WriteString(dsn[lastWritten:valueStart])
+			out.WriteString("***")
+			lastWritten = valueEnd
+		}
+		cursor = valueEnd
+	}
+	out.WriteString(dsn[lastWritten:])
+	return out.String(), true
+}
+
+func isLibpqSpace(value byte) bool {
+	switch value {
+	case ' ', '\t', '\n', '\r', '\v', '\f':
+		return true
+	default:
+		return false
+	}
+}
+
+func isLibpqKeyword(value string) bool {
+	if value == "" || !isASCIIAlpha(value[0]) && value[0] != '_' {
+		return false
+	}
+	for i := 1; i < len(value); i++ {
+		if !isASCIIAlpha(value[i]) && (value[i] < '0' || value[i] > '9') && value[i] != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func isASCIIAlpha(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z'
+}
+
+func isDSNSecretKey(key string) bool {
+	return strings.EqualFold(strings.TrimSpace(key), "password") ||
+		strings.EqualFold(strings.TrimSpace(key), "sslpassword")
 }

@@ -7,6 +7,23 @@ export async function listPlugins(): Promise<InstalledPlugin[]> {
   return (await api.get<InstalledPlugin[]>("/extensions")).data ?? [];
 }
 
+export interface PluginSession {
+  launch_url: string;
+  expires_at: string;
+}
+
+export async function createPluginSession(
+  pluginId: string,
+  contributionId: string,
+): Promise<PluginSession> {
+  return (
+    await api.post<PluginSession>(
+      `/extensions/${encodeURIComponent(pluginId)}/session`,
+      { contribution_id: contributionId },
+    )
+  ).data;
+}
+
 export async function installPluginURL(input: {
   url: string;
   sha256?: string;
@@ -57,11 +74,6 @@ export async function uploadPlugin(file: File): Promise<InstalledPlugin> {
     throw parseApiError(res.status || 200, payload);
   }
   return (payload as { data: InstalledPlugin }).data;
-}
-
-export function pluginAssetURL(pluginId: string, entry: string): string {
-  const parts = entry.split("/").filter(Boolean).map(encodeURIComponent);
-  return `/plugin-assets/${encodeURIComponent(pluginId)}/${parts.join("/")}`;
 }
 
 export function pluginPageURL(pluginId: string, contributionId: string): string {

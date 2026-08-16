@@ -77,6 +77,7 @@ func (s *Server) metaRoutes() []route {
 		{"GET", "/openapi.yaml", s.handleOpenAPIYAML, authNone, false, "OpenAPI 定义(YAML)"},
 		{"GET", "/openapi.json", s.handleOpenAPIJSON, authNone, false, "OpenAPI 定义(JSON)"},
 		{"POST", "/auth/login", s.handleLogin, authNone, false, "登录"},
+		{"POST", "/auth/logout", s.handleLogout, authNone, false, "退出并清理旧会话 Cookie"},
 		{"OPTIONS", "/logs/stream", s.handleLogStreamOptions, authNone, false, "日志流 CORS 预检"},
 		// handler 内 authorizeRotate 双模式校验（Bearer 或用户名口令），供外部脚本调用
 		{"POST", "/rotateip", s.handleRotate, authInHandler, false, "换 IP"},
@@ -229,9 +230,9 @@ func (s *Server) vowifiRoutes() []route {
 
 // websheetRoutes 是运营商 E911 页面的反向代理通道。
 //
-// 凭证是会话自带的一次性 token（?token= 或 X-Websheet-Token），不是用户令牌——
-// 承载页在浏览器里直接打开，且要接收运营商侧的回调，两者都拿不到用户的
-// Authorization 头。校验在 authorizedWebsheetSession 里做。
+// 初始承载页用会话的一次性 capability 启动，后续代理和回调把 capability 固定在
+// /session/:token 路径中。这样浏览器解析相对模块和动态 chunk 时仍会留在同一会话
+// 能力边界内；只有 /status 额外接受管理 Bearer，供主界面轮询。
 func (s *Server) websheetRoutes() []route {
 	proxy := func(path string) route {
 		return route{"", path, s.handleWebsheetProxy, authInHandler, false, "运营商页面反向代理"}
@@ -240,18 +241,19 @@ func (s *Server) websheetRoutes() []route {
 	for _, r := range []route{
 		{"GET", "/websheets/:id", s.handleWebsheetBootstrap, authInHandler, false, "承载页"},
 		{"GET", "/websheets/:id/status", s.handleWebsheetStatus, authInHandler, false, "会话状态（也接受用户令牌）"},
-		{"POST", "/websheets/:id/callback", s.handleWebsheetCallback, authInHandler, false, "桥接脚本回调"},
-		{"POST", "/websheets/:id/done", s.handleWebsheetDone, authInHandler, false, "流程结束"},
+		{"POST", "/websheets/:id/session/:token/callback", s.handleWebsheetCallback, authInHandler, false, "桥接脚本回调"},
+		{"POST", "/websheets/:id/session/:token/done", s.handleWebsheetDone, authInHandler, false, "流程结束"},
 	} {
 		out = append(out, r)
 	}
 	// 代理要转发运营商页面发起的任意方法与路径
-	for _, path := range []string{"/websheets/:id/proxy", "/websheets/:id/proxy/*target"} {
-		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+	for _, path := range []string{"/websheets/:id/session/:token/proxy", "/websheets/:id/session/:token/proxy/*target"} {
+		for _, method := range websheetProxyMethods {
 			r := proxy(path)
 			r.method = method
 			out = append(out, r)
 		}
+		out = append(out, route{"OPTIONS", path, s.handleWebsheetOptions, authInHandler, false, "WebSheet opaque-origin CORS 预检"})
 	}
 	return out
 }
@@ -266,15 +268,11 @@ func (s *Server) logRoutes() []route {
 func (s *Server) extensionRoutes() []route {
 	out := []route{
 		{"GET", "/extensions", s.handleListExtensions, authRequired, false, "已安装插件"},
+		{"POST", "/extensions/:id/session", s.handleCreatePluginSession, authRequired, false, "创建隔离的插件运行会话"},
 		{"POST", "/extensions/install-url", s.handleInstallExtensionURL, authRequired, false, "从 URL 安装插件"},
 		{"POST", "/extensions/upload", s.handleUploadExtension, authRequired, false, "上传插件包"},
 		{"PUT", "/extensions/:id", s.handleUpdateExtension, authRequired, false, "启用或禁用插件"},
 		{"DELETE", "/extensions/:id", s.handleDeleteExtension, authRequired, false, "卸载插件"},
-	}
-	for _, path := range []string{"/extensions/:id/backend", "/extensions/:id/backend/*filepath"} {
-		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
-			out = append(out, route{method, path, s.handleExtensionBackend, authRequired, false, "插件后端反代"})
-		}
 	}
 	return out
 }
@@ -320,9 +318,6 @@ func (s *Server) newRouter() *gin.Engine {
 	if s.cfg.Debug {
 		r.GET("/debug/embed", s.authMiddleware(), s.handleDebugEmbed)
 	}
-
-	r.GET("/plugin-assets/:id/*filepath", s.authMiddleware(), s.handlePluginAsset)
-	r.HEAD("/plugin-assets/:id/*filepath", s.authMiddleware(), s.handlePluginAsset)
 
 	// 静态文件服务 (SPA)
 	r.NoRoute(s.handleStatic)

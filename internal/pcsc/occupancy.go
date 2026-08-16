@@ -15,11 +15,13 @@ const (
 )
 
 var (
-	ErrNoCard          = errors.New("读卡器上没有卡")
-	ErrInUse           = errors.New("读卡器或这张卡正被另一路占用")
-	ErrAPDUUnavailable = errors.New("读卡器 APDU 连不上 pcscd")
-	ErrReaderNameEmpty = errors.New("reader_name 不能为空")
-	ErrReaderNotFound  = errors.New("读卡器未找到")
+	ErrNoCard            = errors.New("读卡器上没有卡")
+	ErrInUse             = errors.New("读卡器或这张卡正被另一路占用")
+	ErrAPDUUnavailable   = errors.New("读卡器 APDU 连不上 pcscd")
+	ErrReaderNameEmpty   = errors.New("reader_name 不能为空")
+	ErrReaderNameTooLong = errors.New("reader_name 超过 PC/SC 协议上限")
+	ErrReaderNotFound    = errors.New("读卡器未找到")
+	ErrResponseTooLarge  = errors.New("pcscd 响应超过协议上限")
 )
 
 // Holder 是占用方。读卡器按名字互斥；若双方都知道 ICCID，同一张卡也不能同时给模组用。
@@ -71,6 +73,18 @@ func (o *Occupancy) GuardReader(name string) func() {
 
 func NormalizeReaderName(in string) string {
 	return strings.TrimSpace(in)
+}
+
+func ValidateReaderName(in string) error {
+	name := NormalizeReaderName(in)
+	if name == "" {
+		return ErrReaderNameEmpty
+	}
+	// pcsc-lite reserves one byte in the fixed-width field for the NUL terminator.
+	if len(name) >= maxReaderName {
+		return fmt.Errorf("%w: %d bytes (max %d)", ErrReaderNameTooLong, len(name), maxReaderName-1)
+	}
+	return nil
 }
 
 func DeviceIDFromReader(name string) string {

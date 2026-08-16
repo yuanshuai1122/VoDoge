@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SMSRateLimitCard } from "./sms-rate-limit";
@@ -21,11 +21,12 @@ function renderCard() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <SMSRateLimitCard />
     </QueryClientProvider>,
   );
+  return { ...view, client };
 }
 
 describe("SMSRateLimitCard", () => {
@@ -68,5 +69,25 @@ describe("SMSRateLimitCard", () => {
     await userEvent.type(input, "201");
     expect(screen.getByRole("button", { name: "保存限额" })).toBeDisabled();
     expect(updateSMSSettings).not.toHaveBeenCalled();
+  });
+
+  it("查询刷新不会覆盖正在编辑的发送限额", async () => {
+    const { client } = renderCard();
+    const input = await screen.findByLabelText(/每小时上限/);
+    await userEvent.clear(input);
+    await userEvent.type(input, "8");
+
+    act(() => {
+      client.setQueryData(["settings", "sms"], {
+        hourly_limit: 30,
+        used: 4,
+        remaining: 26,
+        window_seconds: 3600,
+        unlimited: false,
+      });
+    });
+
+    expect(await screen.findByText(/已发送 4 \/ 30 条/)).toBeInTheDocument();
+    expect(input).toHaveValue(8);
   });
 });

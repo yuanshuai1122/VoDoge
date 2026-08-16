@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
-	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -62,11 +61,12 @@ type Registrar struct {
 	client *sipgo.Client // SIP Client 用于发送 INVITE
 	server *sipgo.Server
 
-	mu            sync.RWMutex
-	users         map[string]*RegisteredUser // username -> user
-	byDevice      map[string]*RegisteredUser // deviceID -> user
-	nonces        map[string]time.Time       // 认证 nonce -> 过期时间
-	onlineSignals map[string]chan struct{}   // deviceID -> closed when device becomes online, then replaced
+	mu                   sync.RWMutex
+	users                map[string]*RegisteredUser     // username -> user
+	byDevice             map[string]*RegisteredUser     // deviceID -> user
+	nonces               map[string]sipAuthNonce        // SIP Digest nonce -> request binding
+	authenticatedInvites map[string]authenticatedInvite // username + Call-ID -> authenticated INVITE
+	onlineSignals        map[string]chan struct{}       // deviceID -> closed when device becomes online, then replaced
 
 	// 呼出回调：Linphone 发起 INVITE 时调用
 	onInvite func(deviceID string, req *sip.Request, tx sip.ServerTransaction)
@@ -92,6 +92,7 @@ type Registrar struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+	clock  func() time.Time
 }
 
 // NewRegistrar 创建 Linphone 注册服务
@@ -104,14 +105,15 @@ func NewRegistrar(cfg Config) (*Registrar, error) {
 	}
 
 	return &Registrar{
-		cfg:            cfg,
-		ua:             ua,
-		users:          make(map[string]*RegisteredUser),
-		byDevice:       make(map[string]*RegisteredUser),
-		nonces:         make(map[string]time.Time),
-		onlineSignals:  make(map[string]chan struct{}),
-		concurrencySem: make(chan struct{}, 100), // 默认并发限制 100
-		pushAuthCache:  make(map[string]string),
+		cfg:                  cfg,
+		ua:                   ua,
+		users:                make(map[string]*RegisteredUser),
+		byDevice:             make(map[string]*RegisteredUser),
+		nonces:               make(map[string]sipAuthNonce),
+		authenticatedInvites: make(map[string]authenticatedInvite),
+		onlineSignals:        make(map[string]chan struct{}),
+		concurrencySem:       make(chan struct{}, 100), // 默认并发限制 100
+		pushAuthCache:        make(map[string]string),
 	}, nil
 }
 
@@ -164,10 +166,8 @@ func (r *Registrar) Start(ctx context.Context) error {
 	srv.OnRequest("CANCEL", r.handleCancel) // 取消呼叫 (sipgo fix)
 	// srv.OnCancel(r.handleCancel) // OnCancel acts weirdly on some versions, use OnMsg
 
-	// Linphone 注册后会发送 PUBLISH（在线状态），直接回 200 OK 即可
-	srv.OnRequest("PUBLISH", func(req *sip.Request, tx sip.ServerTransaction) {
-		r.respond(tx, req, 200, "OK")
-	})
+	// Linphone 注册后会发送 PUBLISH（在线状态）
+	srv.OnRequest("PUBLISH", r.handlePublish)
 
 	// 处理 PRACK (用于 100rel)
 	srv.OnRequest("PRACK", r.handlePrack)
@@ -262,15 +262,8 @@ func (r *Registrar) Stop() error {
 func (r *Registrar) handleRegister(req *sip.Request, tx sip.ServerTransaction) {
 	logger.RunDebug("handleRegister 被调用", "remote", req.Source())
 
-	// 1. 提取 From 用户名
-	from := req.From()
-	if from == nil {
-		r.respond(tx, req, 400, "Bad Request - Missing From")
-		return
-	}
-	username := from.Address.User
-	if username == "" {
-		r.respond(tx, req, 400, "Bad Request - Missing From User")
+	username, authenticated := r.authenticateInitialRequest(req, tx)
+	if !authenticated {
 		return
 	}
 
@@ -278,28 +271,9 @@ func (r *Registrar) handleRegister(req *sip.Request, tx sip.ServerTransaction) {
 	if cfg := r.findUserConfig(username); cfg != nil {
 		deviceID = cfg.DeviceID
 	}
-	logger.RunDebug("收到 REGISTER 请求", "username", username, "device", deviceID, "from", from.String())
+	logger.RunDebug("收到已认证 REGISTER 请求", "username", username, "device", deviceID, "source", req.Source())
 
-	// 2. 检查 Authorization
-	authHeader := req.GetHeader("Authorization")
-	if authHeader == nil {
-		// 发送 401 挑战
-		r.sendAuthChallenge(tx, req)
-		return
-	}
-
-	// 3. 验证认证
-	if !r.validateAuth(username, authHeader.Value()) {
-		logger.WarnRate("registrar_register_auth_failed:"+username+":"+deviceID, 60*time.Second,
-			"REGISTER 认证失败",
-			"username", username,
-			"device", deviceID,
-		)
-		r.sendAuthChallenge(tx, req)
-		return
-	}
-
-	// 4. 检查用户配置
+	// 检查用户配置。正常情况下 authenticateInitialRequest 已完成该检查。
 	userCfg := r.findUserConfig(username)
 	if userCfg == nil {
 		logger.WarnRate("registrar_register_user_missing:"+username+":"+deviceID, 60*time.Second,
@@ -311,7 +285,7 @@ func (r *Registrar) handleRegister(req *sip.Request, tx sip.ServerTransaction) {
 		return
 	}
 
-	// 5. 提取 Contact 和 Expires
+	// 提取 Contact 和 Expires
 	contact := req.Contact()
 	expires := r.parseExpires(req)
 
@@ -323,7 +297,7 @@ func (r *Registrar) handleRegister(req *sip.Request, tx sip.ServerTransaction) {
 		return
 	}
 
-	// 6. 注册用户
+	// 注册用户
 	contactURI := ""
 	if contact != nil {
 		contactURI = contact.Address.String()
@@ -335,7 +309,7 @@ func (r *Registrar) handleRegister(req *sip.Request, tx sip.ServerTransaction) {
 	}
 
 	var contactAddr *net.UDPAddr
-	if src := fmt.Sprint(req.Source()); src != "" && src != "<nil>" {
+	if src := req.Source(); src != "" {
 		if addr, err := net.ResolveUDPAddr("udp", src); err == nil {
 			contactAddr = addr
 		}
@@ -375,9 +349,9 @@ func (r *Registrar) handleRegister(req *sip.Request, tx sip.ServerTransaction) {
 		pushToken = reSanitizeToken.ReplaceAllString(pushToken, "")
 	}
 
-	r.registerUser(username, userCfg.DeviceID, userCfg.DisplayName, contactURI, contactAddr, req.Transport(), userAgent, expires, pushToken, pushProvider, pushParam, pushCallStr, pushMsgStr)
+	r.registerUser(username, userCfg.DeviceID, userCfg.DisplayName, contactURI, contactAddr, req.Source(), req.Transport(), userAgent, expires, pushToken, pushProvider, pushParam, pushCallStr, pushMsgStr)
 
-	// 7. 发送 200 OK
+	// 发送 200 OK
 	res := sip.NewResponseFromRequest(req, 200, "OK", nil)
 	if contact != nil {
 		res.AppendHeader(contact)
@@ -393,67 +367,17 @@ func (r *Registrar) handleRegister(req *sip.Request, tx sip.ServerTransaction) {
 		"ua", userAgent)
 }
 
-// sendAuthChallenge 发送 401 认证挑战
-func (r *Registrar) sendAuthChallenge(tx sip.ServerTransaction, req *sip.Request) {
-	nonce := r.generateNonce()
-
-	r.mu.Lock()
-	r.nonces[nonce] = time.Now().Add(60 * time.Second)
-	r.mu.Unlock()
-
-	res := sip.NewResponseFromRequest(req, 401, "Unauthorized", nil)
-	authValue := fmt.Sprintf(`Digest realm="%s", nonce="%s", algorithm=MD5`,
-		r.cfg.SIP.Realm, nonce)
-	res.AppendHeader(sip.NewHeader("WWW-Authenticate", authValue))
-	tx.Respond(res)
-}
-
-// validateAuth 验证 Digest 认证
-func (r *Registrar) validateAuth(username, authValue string) bool {
-	// 解析 Authorization header
-	params := r.parseDigestAuth(authValue)
-
-	nonce := params["nonce"]
-	response := params["response"]
-	uri := params["uri"]
-
-	// 检查 nonce 有效性
-	r.mu.Lock()
-	nonceTime, ok := r.nonces[nonce]
-	if ok {
-		delete(r.nonces, nonce)
+// handlePublish 处理 Linphone 在线状态发布。
+func (r *Registrar) handlePublish(req *sip.Request, tx sip.ServerTransaction) {
+	username, authenticated := r.authenticateInitialRequest(req, tx)
+	if !authenticated {
+		return
 	}
-	r.mu.Unlock()
-
-	if !ok || time.Now().After(nonceTime) {
-		logger.RunDebug("Digest 认证: nonce 无效或过期", "username", username, "nonce", nonce)
-		return false
+	if r.registeredUserForRequest(username, req) == nil {
+		r.respond(tx, req, 403, "Forbidden - Not Registered")
+		return
 	}
-
-	// 查找用户密码
-	userCfg := r.findUserConfig(username)
-	if userCfg == nil {
-		return false
-	}
-
-	// 计算预期响应
-	// HA1 = MD5(username:realm:password)
-	// HA2 = MD5(method:uri)
-	// response = MD5(HA1:nonce:HA2)
-	ha1 := r.md5sum(username + ":" + r.cfg.SIP.Realm + ":" + userCfg.Password)
-	ha2 := r.md5sum("REGISTER:" + uri)
-	expected := r.md5sum(ha1 + ":" + nonce + ":" + ha2)
-
-	if response != expected {
-		logger.RunDebug("Digest 认证: 响应不匹配",
-			"username", username,
-			"device", userCfg.DeviceID,
-			"expected", expected,
-			"got", response)
-		return false
-	}
-
-	return true
+	r.respond(tx, req, 200, "OK")
 }
 
 // parseDigestAuth 解析 Digest Authorization header
@@ -508,7 +432,7 @@ func (r *Registrar) parseExpires(req *sip.Request) int {
 }
 
 // registerUser 注册用户
-func (r *Registrar) registerUser(username, deviceID, displayName, contactURI string, contactAddr *net.UDPAddr, transport string, userAgent string, expires int, pushT, pushPv, pushPa, pushCs, pushMs string) {
+func (r *Registrar) registerUser(username, deviceID, displayName, contactURI string, contactAddr *net.UDPAddr, source, transport string, userAgent string, expires int, pushT, pushPv, pushPa, pushCs, pushMs string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -518,22 +442,16 @@ func (r *Registrar) registerUser(username, deviceID, displayName, contactURI str
 		DisplayName:  displayName,
 		ContactURI:   contactURI,
 		ContactAddr:  contactAddr,
-		Source:       fmt.Sprint(contactAddr), // 默认用 ContactAddr，后面会被覆盖
-		Transport:    transport,               // 使用客户端实际的 Transport (UDP/TCP/TLS)
+		Source:       source,
+		Transport:    transport,
 		UserAgent:    userAgent,
-		Expires:      time.Now().Add(time.Duration(expires) * time.Second),
+		Expires:      r.currentTime().Add(time.Duration(expires) * time.Second),
 		PushToken:    pushT,
 		PushProvider: pushPv,
 		PushParam:    pushPa,
 		PushCallStr:  pushCs,
 		PushMsgStr:   pushMs,
 	}
-
-	// 尝试提取更准确的 Source 和 Transport
-	// 注意: 这里的 contactAddr 其实是根据 req.Source() 解析的 UDP 地址，
-	// 如果实际是 TCP，这里的数据可能不准确，应当在调用处传入准确信息。
-	// 但为了兼容现有签名，我们暂时保持这样。
-
 	r.users[username] = user
 	if deviceID != "" {
 		r.byDevice[deviceID] = user
@@ -588,8 +506,8 @@ func (r *Registrar) GetUserByDevice(deviceID string) *RegisteredUser {
 
 	user := r.byDevice[deviceID]
 	if user != nil {
-		if time.Now().Before(user.Expires) {
-			return user
+		if r.currentTime().Before(user.Expires) {
+			return cloneRegisteredUser(user)
 		}
 		// 调试日志：用户已过期
 		logger.RunDebug("GetUserByDevice: 用户已过期", "device", deviceID, "username", user.Username, "expires", user.Expires)
@@ -621,8 +539,8 @@ func (r *Registrar) GetUserByUsername(username string) *RegisteredUser {
 	defer r.mu.RUnlock()
 
 	user := r.users[username]
-	if user != nil && time.Now().Before(user.Expires) {
-		return user
+	if user != nil && r.currentTime().Before(user.Expires) {
+		return cloneRegisteredUser(user)
 	}
 	return nil
 }
@@ -633,13 +551,26 @@ func (r *Registrar) GetAllUsers() []*RegisteredUser {
 	defer r.mu.RUnlock()
 
 	var result []*RegisteredUser
-	now := time.Now()
+	now := r.currentTime()
 	for _, u := range r.users {
 		if now.Before(u.Expires) {
-			result = append(result, u)
+			result = append(result, cloneRegisteredUser(u))
 		}
 	}
 	return result
+}
+
+func cloneRegisteredUser(user *RegisteredUser) *RegisteredUser {
+	if user == nil {
+		return nil
+	}
+	cloned := *user
+	if user.ContactAddr != nil {
+		addr := *user.ContactAddr
+		addr.IP = append(net.IP(nil), user.ContactAddr.IP...)
+		cloned.ContactAddr = &addr
+	}
+	return &cloned
 }
 
 // cleanupLoop 定期清理过期注册
@@ -662,7 +593,7 @@ func (r *Registrar) cleanup() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	now := time.Now()
+	now := r.currentTime()
 
 	// 清理过期用户
 	for username, user := range r.users {
@@ -676,9 +607,15 @@ func (r *Registrar) cleanup() {
 	}
 
 	// 清理过期 nonce
-	for nonce, expTime := range r.nonces {
-		if now.After(expTime) {
+	for nonce, state := range r.nonces {
+		if !now.Before(state.expires) {
 			delete(r.nonces, nonce)
+		}
+	}
+
+	for key, state := range r.authenticatedInvites {
+		if !now.Before(state.expires) {
+			delete(r.authenticatedInvites, key)
 		}
 	}
 }
@@ -689,13 +626,6 @@ func (r *Registrar) respond(tx sip.ServerTransaction, req *sip.Request, code int
 	if err := tx.Respond(res); err != nil {
 		logger.Warn("Registrar 发送 SIP 响应失败", "code", code, "reason", reason, "err", err)
 	}
-}
-
-// generateNonce 生成认证 nonce
-func (r *Registrar) generateNonce() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	return hex.EncodeToString(b)
 }
 
 // sendPushDigestAuth 实现 HTTP DIGEST 摘要防重放双阶鉴权（增加推测鉴权 1-RTT 降迟）
@@ -953,35 +883,55 @@ func (r *Registrar) SetOnBye(f func(deviceID string, req *sip.Request, tx sip.Se
 
 // handleInvite 处理 Linphone 呼出 INVITE
 func (r *Registrar) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
-	logger.Info("Registrar: 收到 INVITE 请求", "source", req.Source(), "to", req.To().Address.String(), "call_id", req.CallID().Value())
-
-	from := req.From()
-	if from == nil {
+	if req.From() == nil {
 		r.respond(tx, req, 400, "Bad Request - Missing From")
 		return
 	}
-	username := from.Address.User
-
-	// 检查是否是已注册用户
-	user := r.GetUserByUsername(username)
-	if user == nil {
-		logger.Warn("呼出 INVITE: 用户未注册", "username", username)
-		r.respond(tx, req, 403, "Forbidden - Not Registered")
-		return
-	}
-
-	// 获取被叫号码
 	to := req.To()
 	if to == nil {
 		r.respond(tx, req, 400, "Bad Request - Missing To")
 		return
 	}
+	if requestCallID(req) == "" || req.CSeq() == nil {
+		r.respond(tx, req, 400, "Bad Request - Missing Dialog Headers")
+		return
+	}
+
+	logger.Info("Registrar: 收到 INVITE 请求", "source", req.Source(), "to", to.Address.String(), "call_id", requestCallID(req))
+
+	var (
+		username string
+		user     *RegisteredUser
+	)
+	if hasToTag(req) {
+		user = r.dialogUser(req)
+		if user == nil {
+			r.respond(tx, req, 481, "Call/Transaction Does Not Exist")
+			return
+		}
+		username = user.Username
+	} else {
+		var authenticated bool
+		username, authenticated = r.authenticateInitialRequest(req, tx)
+		if !authenticated {
+			return
+		}
+		user = r.registeredUserForRequest(username, req)
+		if user == nil {
+			logger.Warn("呼出 INVITE: 用户未从已注册连接发起", "username", username, "source", req.Source())
+			r.respond(tx, req, 403, "Forbidden - Not Registered")
+			return
+		}
+	}
+
 	callee := to.Address.User
 
 	logger.Info("收到 Linphone 呼出 INVITE",
 		"from", username,
 		"to", callee,
 		"device", user.DeviceID)
+
+	r.rememberAuthenticatedInvite(req, username)
 
 	// 先发送 100 Trying
 	r.respond(tx, req, 100, "Trying")
@@ -1002,10 +952,12 @@ func (r *Registrar) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
 			}()
 		default:
 			// 获取失败（过载），返回 503
+			r.forgetAuthenticatedInvite(req)
 			logger.Warn("呼出 INVITE: 服务器繁忙 (并发超限)", "username", username, "device", user.DeviceID)
 			r.respond(tx, req, 503, "Service Unavailable")
 		}
 	} else {
+		r.forgetAuthenticatedInvite(req)
 		logger.Warn("呼出 INVITE: 无回调处理器", "username", username, "device", user.DeviceID)
 		r.respond(tx, req, 503, "Service Unavailable")
 	}
@@ -1013,30 +965,29 @@ func (r *Registrar) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
 
 // handleAck 处理 ACK
 func (r *Registrar) handleAck(req *sip.Request, tx sip.ServerTransaction) {
-	// logger.Debug("收到 ACK", "call_id", req.CallID().Value())
-
-	from := req.From()
-	if from == nil {
-		return
-	}
-	username := from.Address.User
-	user := r.GetUserByUsername(username)
+	user := r.inviteRelatedUser(req)
 	if user == nil {
+		// ACK cannot be challenged or answered; silently discard invalid ACKs.
 		return
 	}
 
-	if r.onAck != nil {
-		go r.onAck(user.DeviceID, req, tx)
+	r.mu.RLock()
+	handler := r.onAck
+	r.mu.RUnlock()
+	if handler != nil {
+		go handler(user.DeviceID, req, tx)
 	}
 }
 
 // handleBye 处理挂断
 func (r *Registrar) handleBye(req *sip.Request, tx sip.ServerTransaction) {
-	from := req.From()
-	username := ""
-	if from != nil {
-		username = from.Address.User
+	user := r.dialogUser(req)
+	if user == nil {
+		r.respond(tx, req, 481, "Call/Transaction Does Not Exist")
+		return
 	}
+	username := user.Username
+	callID := requestCallID(req)
 
 	// 打印完整 BYE 消息用于诊断秒断问题
 	reasonHeader := req.GetHeader("Reason")
@@ -1053,7 +1004,7 @@ func (r *Registrar) handleBye(req *sip.Request, tx sip.ServerTransaction) {
 	if shouldLogSIPRaw() {
 		logger.RunDebug("收到 Linphone BYE",
 			"from", username,
-			"call_id", req.CallID().Value(),
+			"call_id", callID,
 			"reason", reason,
 			"warning", warning,
 			"source", req.Source(),
@@ -1061,7 +1012,7 @@ func (r *Registrar) handleBye(req *sip.Request, tx sip.ServerTransaction) {
 	} else {
 		logger.RunDebug("收到 Linphone BYE",
 			"from", username,
-			"call_id", req.CallID().Value(),
+			"call_id", callID,
 			"reason", reason,
 			"warning", warning,
 			"source", req.Source())
@@ -1069,31 +1020,32 @@ func (r *Registrar) handleBye(req *sip.Request, tx sip.ServerTransaction) {
 
 	// 回复 200 OK 给 Linphone
 	r.respond(tx, req, 200, "OK")
+	r.forgetAuthenticatedInvite(req)
 
 	// 通知 Gateway → Agent → 转发 BYE 到 IMS
-	user := r.GetUserByUsername(username)
-	if r.onBye != nil && user != nil {
-		go r.onBye(user.DeviceID, req, tx)
+	r.mu.RLock()
+	handler := r.onBye
+	r.mu.RUnlock()
+	if handler != nil {
+		go handler(user.DeviceID, req, tx)
 	}
 }
 
 // handleCancel 处理 CANCEL 请求
 func (r *Registrar) handleCancel(req *sip.Request, tx sip.ServerTransaction) {
-	from := req.From()
-	if from == nil {
-		r.respond(tx, req, 400, "Bad Request - Missing From")
+	user := r.inviteRelatedUser(req)
+	if user == nil {
+		r.respond(tx, req, 481, "Call/Transaction Does Not Exist")
 		return
 	}
-	username := from.Address.User
 
-	logger.RunDebug("收到 Linphone CANCEL", "username", username, "call_id", req.CallID().Value())
+	logger.RunDebug("收到 Linphone CANCEL", "username", user.Username, "call_id", requestCallID(req))
 
 	r.mu.RLock()
 	onCancel := r.onCancel
 	r.mu.RUnlock()
 
-	user := r.GetUserByUsername(username)
-	if onCancel != nil && user != nil {
+	if onCancel != nil {
 		go onCancel(user.DeviceID, req, tx)
 	} else {
 		// 如果没有回调，默认发送 200 OK 并尝试终止事务
@@ -1124,55 +1076,43 @@ func (r *Registrar) SetOnInfo(handler func(deviceID string, req *sip.Request, tx
 
 // handlePrack 处理 PRACK 请求
 func (r *Registrar) handlePrack(req *sip.Request, tx sip.ServerTransaction) {
-	username := extractUsername(req.From())
-	// logger.Debug("收到 PRACK 请求", "username", username, "call_id", req.CallID().Value())
-
 	r.mu.RLock()
 	handler := r.onPrack
 	r.mu.RUnlock()
 
-	user := r.GetUserByUsername(username)
+	user := r.dialogUser(req)
 	if handler != nil && user != nil {
 		go handler(user.DeviceID, req, tx)
 	} else {
-		// 默认回复 481 Call/Transaction Does Not Exist
-		if err := tx.Respond(sip.NewResponseFromRequest(req, 481, "Call/Transaction Does Not Exist", nil)); err != nil {
-			logger.Warn("发送 481 失败", "err", err)
-		}
+		r.respond(tx, req, 481, "Call/Transaction Does Not Exist")
 	}
 }
 
 // handleUpdate 处理 UPDATE 请求
 func (r *Registrar) handleUpdate(req *sip.Request, tx sip.ServerTransaction) {
-	username := extractUsername(req.From())
 	r.mu.RLock()
 	handler := r.onUpdate
 	r.mu.RUnlock()
 
-	user := r.GetUserByUsername(username)
+	user := r.dialogUser(req)
 	if handler != nil && user != nil {
 		go handler(user.DeviceID, req, tx)
 	} else {
-		if err := tx.Respond(sip.NewResponseFromRequest(req, 481, "Call/Transaction Does Not Exist", nil)); err != nil {
-			logger.Warn("发送 UPDATE 481 失败", "err", err)
-		}
+		r.respond(tx, req, 481, "Call/Transaction Does Not Exist")
 	}
 }
 
 // handleInfo 处理 INFO 请求
 func (r *Registrar) handleInfo(req *sip.Request, tx sip.ServerTransaction) {
-	username := extractUsername(req.From())
 	r.mu.RLock()
 	handler := r.onInfo
 	r.mu.RUnlock()
 
-	user := r.GetUserByUsername(username)
+	user := r.dialogUser(req)
 	if handler != nil && user != nil {
 		go handler(user.DeviceID, req, tx)
 	} else {
-		if err := tx.Respond(sip.NewResponseFromRequest(req, 481, "Call/Transaction Does Not Exist", nil)); err != nil {
-			logger.Warn("发送 INFO 481 失败", "err", err)
-		}
+		r.respond(tx, req, 481, "Call/Transaction Does Not Exist")
 	}
 }
 

@@ -19,7 +19,27 @@ func runMigrations(tx *gorm.DB) error {
 	if err := migrateProfileBindingICCIDColumn(tx); err != nil {
 		return fmt.Errorf("migrate profile binding iccid: %w", err)
 	}
-	if err := tx.AutoMigrate(
+	if err := tx.AutoMigrate(AutoMigrateModels()...); err != nil {
+		return fmt.Errorf("automigrate: %w", err)
+	}
+	if err := migrateSIMCardsToSubscriptions(tx); err != nil {
+		return fmt.Errorf("migrate sim subscriptions: %w", err)
+	}
+	if err := migrateSIMCardIdentityColumnsOnly(tx); err != nil {
+		return fmt.Errorf("migrate sim identity columns: %w", err)
+	}
+	if err := RunICCIDReKeyMigration(tx); err != nil {
+		return fmt.Errorf("iccid rekey migration: %w", err)
+	}
+	return nil
+}
+
+// AutoMigrateModels is the canonical ordered model list for the PostgreSQL
+// schema. Callers that need to operate on every application table must derive
+// table names from this list instead of maintaining a second string list.
+// A fresh slice is returned so callers cannot mutate the registry.
+func AutoMigrateModels() []any {
+	return []any{
 		&Device{},
 		&CardPolicy{},
 		&SIMCard{},
@@ -39,19 +59,7 @@ func runMigrations(tx *gorm.DB) error {
 		&TrafficDay{},
 		&TrafficWeek{},
 		&TrafficMonth{},
-	); err != nil {
-		return fmt.Errorf("automigrate: %w", err)
 	}
-	if err := migrateSIMCardsToSubscriptions(tx); err != nil {
-		return fmt.Errorf("migrate sim subscriptions: %w", err)
-	}
-	if err := migrateSIMCardIdentityColumnsOnly(tx); err != nil {
-		return fmt.Errorf("migrate sim identity columns: %w", err)
-	}
-	if err := RunICCIDReKeyMigration(tx); err != nil {
-		return fmt.Errorf("iccid rekey migration: %w", err)
-	}
-	return nil
 }
 
 // GORM 默认命名会把 ICCID 拆成 ic_cid；绑定表必须用 iccid。

@@ -2,6 +2,7 @@ package device
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -72,6 +73,11 @@ type liveSIMMetadataReader interface {
 
 const publicIPLookupWait = 6 * time.Second
 
+// ErrPoolShuttingDown reports that the pool no longer accepts startup work.
+var ErrPoolShuttingDown = errors.New("device pool is shutting down")
+
+var poolShutdownTimeout = 5 * time.Second
+
 const (
 	defaultESIMPostSwitchMinDelay = time.Second
 	qmiHealthFailureThreshold     = 3
@@ -114,6 +120,10 @@ type Worker struct {
 	CSCallMgr        *cscall.Manager
 	stop             chan struct{}
 	stopOnce         sync.Once
+	// bootstrapDone is non-nil only while AddWorkerFromConfig still owns this
+	// worker. Shutdown waits per worker so an unrelated stuck bootstrap cannot
+	// delay cleanup of workers that are already fully registered.
+	bootstrapDone <-chan struct{}
 
 	cachedIP            string
 	cachedPublicIPv6    string
@@ -178,6 +188,11 @@ type Pool struct {
 	mu                        sync.RWMutex
 	ctx                       context.Context
 	cancel                    context.CancelFunc
+	shuttingDown              bool
+	shutdownOnce              sync.Once
+	shutdownErr               error
+	bootstrapWG               sync.WaitGroup
+	backgroundWG              sync.WaitGroup
 	dataConnectHandlersMu     sync.RWMutex
 	dataConnectHandlers       []func(deviceID string)
 	rescanAndReconnectForTest func() error
@@ -304,6 +319,9 @@ func (p *Pool) registerWorkerStarting(worker *Worker) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.shuttingDown {
+		return ErrPoolShuttingDown
+	}
 	if current := p.workers[worker.ID]; current != nil && current != worker {
 		return fmt.Errorf("设备已存在")
 	}
@@ -1028,47 +1046,97 @@ func (p *Pool) RemoveWorker(deviceID string) error {
 
 	// 移除 Worker 时，使当前设备的 VoWiFi 运行态失效，防止未完成的旧启动例程回写状态
 	p.voWiFiHost().InvalidateRuntime(deviceID, "remove_worker")
+	p.prepareWorkerStop(worker)
 	if p.stopVoWiFiAppForTeardown(p.ctx, deviceID, "remove") {
 		logger.Info("设备移除时强制关闭并清理残留的 VoWiFi 实例", "device", deviceID)
 	}
 
-	worker.stopOnce.Do(func() {
-		if worker.stop != nil {
-			close(worker.stop)
-		}
-	})
-
-	if worker.publicIPRetryTimer != nil {
-		worker.publicIPRetryTimer.Stop()
-	}
-
-	if worker.Proxy != nil {
-		worker.Proxy.Shutdown()
-	}
-	if worker.ESIMQMITransport != nil {
-		_ = worker.ESIMQMITransport.Stop()
-	}
-	if worker.QMICore != nil {
-		worker.QMICore.Stop()
-	}
-	if worker.MBIMCore != nil {
-		_ = worker.MBIMCore.Close()
-	}
-	if worker.Backend != nil {
-		_ = worker.Backend.Close()
-	}
-	if worker.Modem != nil {
-		if !worker.Modem.StopAndWait(2 * time.Second) {
-			logger.Warn("设备移除时等待 AT 管理器退出超时", "device", deviceID)
-		}
-	}
+	cleanupErr := p.stopWorkerResources(worker, 2*time.Second)
 	if p.lifecycle != nil {
 		snap := p.lifecycle.GetSnapshot(deviceID)
 		if !snap.Recovering && snap.Phase != LifecyclePhaseEvicting {
 			p.lifecycle.MarkOffline(deviceID, "worker_removed")
 		}
 	}
-	return nil
+	return cleanupErr
+}
+
+func (p *Pool) prepareWorkerStop(worker *Worker) {
+	if worker == nil {
+		return
+	}
+	worker.stopOnce.Do(func() {
+		if worker.stop != nil {
+			close(worker.stop)
+		}
+	})
+
+	worker.publicIPRetryMu.Lock()
+	if worker.publicIPRetryTimer != nil {
+		worker.publicIPRetryTimer.Stop()
+		worker.publicIPRetryTimer = nil
+	}
+	worker.publicIPRetryMu.Unlock()
+
+	worker.operatorScanMu.Lock()
+	if worker.operatorScanCancel != nil {
+		worker.operatorScanCancel()
+	}
+	worker.operatorScanCancel = nil
+	if worker.operatorScanActive {
+		result := worker.operatorScanCurrent
+		result.Status = OperatorScanStatusFailed
+		result.UpdatedAt = time.Now()
+		result.Retryable = true
+		result.Message = context.Canceled.Error()
+		result.Err = context.Canceled.Error()
+		worker.operatorScanCurrent = result
+	}
+	worker.operatorScanActive = false
+	worker.operatorScanMu.Unlock()
+}
+
+func (p *Pool) stopWorkerResources(worker *Worker, modemTimeout time.Duration) error {
+	if worker == nil {
+		return nil
+	}
+	p.prepareWorkerStop(worker)
+	p.ReleaseESIMHold(worker.ID)
+
+	var errs []error
+	if worker.CSCallMgr != nil {
+		worker.CSCallMgr.Stop()
+	}
+	if worker.Proxy != nil {
+		logger.Info(fmt.Sprintf("[%s] 正在关闭代理服务器", worker.ID))
+		if err := worker.Proxy.Shutdown(); err != nil {
+			errs = append(errs, fmt.Errorf("关闭代理服务器: %w", err))
+		}
+	}
+	if worker.ESIMQMITransport != nil {
+		if err := worker.ESIMQMITransport.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("关闭 eSIM transport: %w", err))
+		}
+	}
+	if worker.QMICore != nil {
+		if err := worker.QMICore.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("关闭 QMI core: %w", err))
+		}
+	}
+	if worker.MBIMCore != nil {
+		if err := worker.MBIMCore.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("关闭 MBIM core: %w", err))
+		}
+	}
+	if worker.Backend != nil {
+		if err := worker.Backend.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("关闭 backend: %w", err))
+		}
+	}
+	if worker.Modem != nil && !worker.Modem.StopAndWait(modemTimeout) {
+		errs = append(errs, fmt.Errorf("等待 AT 管理器退出超时: %s", modemTimeout))
+	}
+	return errors.Join(errs...)
 }
 
 // qmiWorkerBootstrapDeadline 是 AddWorkerFromConfig 单次执行的硬上限。
@@ -1295,10 +1363,21 @@ func shouldStartConfiguredQMIWithoutIMEIMatch(cfg config.DeviceConfig, staticQMI
 }
 
 func (p *Pool) StartAll() error {
-	if p == nil || p.cfg == nil {
+	if p == nil {
 		return nil
 	}
-	p.startPoolBackgroundServicesOnce()
+	if p.cfg == nil {
+		p.mu.RLock()
+		shuttingDown := p.shuttingDown
+		p.mu.RUnlock()
+		if shuttingDown {
+			return ErrPoolShuttingDown
+		}
+		return nil
+	}
+	if err := p.startPoolBackgroundServicesOnce(); err != nil {
+		return err
+	}
 
 	devices := append([]config.DeviceConfig(nil), p.cfg.Devices...)
 	for i := range devices {
@@ -1314,19 +1393,40 @@ func (p *Pool) StartAll() error {
 	return nil
 }
 
-func (p *Pool) startPoolBackgroundServicesOnce() {
+func (p *Pool) startPoolBackgroundServicesOnce() error {
 	if p == nil {
-		return
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shuttingDown {
+		return ErrPoolShuttingDown
 	}
 	p.startOnce.Do(func() {
-		go p.healthCheckLoop()
-		go p.overviewStreamLoop()
-		go p.startVoWiFiDesiredReconcileLoop()
-		p.startInitialDesiredVoWiFiAutoStart(5 * time.Second)
+		p.startTrackedBackgroundLocked(p.healthCheckLoop)
+		p.startTrackedBackgroundLocked(p.overviewStreamLoop)
+		p.startTrackedBackgroundLocked(p.startVoWiFiDesiredReconcileLoop)
+		p.startTrackedBackgroundLocked(func() {
+			p.runInitialDesiredVoWiFiAutoStart(5 * time.Second)
+		})
 
 		p.udevWatcher = NewUdevWatcher(p)
 		p.udevWatcher.Start()
 	})
+	return nil
+}
+
+// startTrackedBackgroundLocked starts a pool-owned loop. The caller must hold
+// p.mu so Shutdown cannot begin waiting between Add and the goroutine start.
+func (p *Pool) startTrackedBackgroundLocked(run func()) {
+	if run == nil {
+		return
+	}
+	p.backgroundWG.Add(1)
+	go func() {
+		defer p.backgroundWG.Done()
+		run()
+	}()
 }
 
 func (p *Pool) startConfiguredDeviceBootstrap(devCfg config.DeviceConfig, reason string) {
@@ -2689,68 +2789,123 @@ func (p *Pool) NotifyIPChanged(id, oldIP, newIP string, duration time.Duration) 
 }
 
 func (p *Pool) Shutdown() error {
-	// 先关闭所有 VoWiFi 应用实例（确保 XFRMI 接口和 SA/SP 被清理）
-	devIDs := p.voWiFiHost().InstanceIDs()
-	for _, devID := range devIDs {
-		logger.Info("正在关闭 VoWiFi", "device", devID)
-		_ = p.stopVoWiFiAppForTeardown(context.Background(), devID, "shutdown")
-	}
-
-	p.cancel()
-	var wg sync.WaitGroup
-	p.mu.RLock()
-	for _, w := range p.workers {
-		wg.Add(1)
-		go func(worker *Worker) {
-			defer wg.Done()
-			if worker.Proxy != nil {
-				logger.Info(fmt.Sprintf("[%s] 正在关闭代理服务器", worker.ID))
-				worker.Proxy.Shutdown()
-			}
-		}(w)
-
-		// 停止 QMI Core
-		wg.Add(1)
-		go func(worker *Worker) {
-			defer wg.Done()
-			if worker.QMICore != nil {
-				worker.QMICore.Stop()
-			}
-		}(w)
-
-		wg.Add(1)
-		go func(worker *Worker) {
-			defer wg.Done()
-			if worker.MBIMCore != nil {
-				_ = worker.MBIMCore.Close()
-			}
-		}(w)
-
-		// 停止独立 QMI UIM transport（若存在）
-		wg.Add(1)
-		go func(worker *Worker) {
-			defer wg.Done()
-			if worker.ESIMQMITransport != nil {
-				_ = worker.ESIMQMITransport.Stop()
-			}
-		}(w)
-	}
-	p.mu.RUnlock()
-
-	// 等待 5 秒强制退出
-	c := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(c)
-	}()
-
-	select {
-	case <-c:
-		logger.Info("所有工作器已正常关闭")
+	if p == nil {
 		return nil
-	case <-time.After(5 * time.Second):
-		return fmt.Errorf("关闭超时")
 	}
+	p.shutdownOnce.Do(func() {
+		p.shutdownErr = p.shutdown()
+	})
+	return p.shutdownErr
+}
+
+type poolCleanupResult struct {
+	kind string
+	err  error
+}
+
+func (p *Pool) shutdown() error {
+	p.mu.Lock()
+	p.shuttingDown = true
+	workers := make([]*Worker, 0, len(p.workers))
+	for deviceID, worker := range p.workers {
+		workers = append(workers, worker)
+		delete(p.workers, deviceID)
+	}
+	watcher := p.udevWatcher
+	p.udevWatcher = nil
+	cancel := p.cancel
+	p.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	for _, worker := range workers {
+		p.prepareWorkerStop(worker)
+	}
+
+	results := make(chan poolCleanupResult, len(workers)+5)
+	pending := 0
+	launch := func(kind string, cleanup func() error) {
+		pending++
+		go func() {
+			results <- poolCleanupResult{kind: kind, err: cleanup()}
+		}()
+	}
+
+	launch("background loops", func() error {
+		p.backgroundWG.Wait()
+		return nil
+	})
+	if watcher != nil {
+		launch("udev watcher", func() error {
+			watcher.Stop()
+			return nil
+		})
+	}
+	devIDs := p.voWiFiHost().InstanceIDs()
+	if len(devIDs) > 0 {
+		launch("VoWiFi instances", func() error {
+			for _, devID := range devIDs {
+				logger.Info("正在关闭 VoWiFi", "device", devID)
+				_ = p.stopVoWiFiAppForTeardown(context.Background(), devID, "shutdown")
+			}
+			return nil
+		})
+	}
+
+	// Track unfinished bootstraps independently. Waiting on the global group in
+	// front of worker cleanup allowed one unrelated, permanently stuck device
+	// probe to keep every established worker alive after Shutdown returned.
+	launch("worker bootstraps", func() error {
+		p.bootstrapWG.Wait()
+		return nil
+	})
+
+	launch("worker resources", func() error {
+		workerErrs := make(chan error, len(workers))
+		var workerWG sync.WaitGroup
+		for _, worker := range workers {
+			worker := worker
+			workerWG.Add(1)
+			go func() {
+				defer workerWG.Done()
+				if worker.bootstrapDone != nil {
+					<-worker.bootstrapDone
+				}
+				if err := p.stopWorkerResources(worker, 2*time.Second); err != nil {
+					workerErrs <- fmt.Errorf("worker %s: %w", worker.ID, err)
+				}
+			}()
+		}
+		workerWG.Wait()
+		close(workerErrs)
+		var errs []error
+		for err := range workerErrs {
+			errs = append(errs, err)
+		}
+		return errors.Join(errs...)
+	})
+
+	timer := time.NewTimer(poolShutdownTimeout)
+	defer timer.Stop()
+	var errs []error
+	for pending > 0 {
+		select {
+		case result := <-results:
+			pending--
+			if result.err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", result.kind, result.err))
+			}
+		case <-timer.C:
+			errs = append(errs, fmt.Errorf("关闭超时: %s", poolShutdownTimeout))
+			return errors.Join(errs...)
+		}
+	}
+
+	if len(errs) == 0 {
+		logger.Info("所有工作器已正常关闭")
+	}
+	return errors.Join(errs...)
 }
 
 func (p *Pool) PersistRuntimeState(worker *Worker) {

@@ -68,6 +68,8 @@ services:
       - ./logs:/app/logs
       # USB 模组透传
       - /dev:/dev
+      # 可选：CCID/eSIM 使用宿主 pcscd
+      - /run/pcscd:/run/pcscd
     environment:
       - TZ=Asia/Shanghai
       - CONFIG_PATH=/app/config/config.yaml
@@ -91,6 +93,12 @@ docker compose up -d
 > `VODOGE_POSTGRES_PASSWORD`，不要使用默认值。
 > 若改用端口映射（如 Windows/Docker Desktop），请把 host 改为 `postgres`
 > 并为 vodoge 加上 `ports: ["7575:7575"]`。
+
+容器镜像已经包含 CS 语音所需的 `arecord`/`aplay`。宿主机仍需提供 ALSA 声卡设备；
+如需 CCID/eSIM，还需安装并启动 `pcscd`，并把 `/run/pcscd` 挂载到容器（仓库自带的
+`docker-compose.yml` 和一键安装器已包含该挂载）。直接使用发行二进制/systemd 时，宿主机需
+自行安装 `alsa-utils`；安装器会在缺少 `alsa-utils` 或 `pcscd` socket 时给出告警，但不会
+因这些可选硬件能力缺失而阻断 SMS-only 部署。
 
 ### 4. 访问
 
@@ -186,7 +194,8 @@ bash scripts/ci.sh multiarch
 前端与 Go 编译都固定在构建机架构上跑，用 Go 自己的交叉编译产出目标二进制，
 不经 QEMU 模拟——每个架构约 1.5 分钟，模拟的话是十几分钟。
 
-> 只构建、不推送。本项目不发布镜像，这一步回答的是"换个架构还编得过吗"。
+> 本地 `multiarch` 任务只构建、不推送；正式 `v*` Release 会向 GHCR 发布
+> `linux/amd64`、`linux/arm64` 和 `linux/arm/v7` 镜像。
 
 ## ⚠️ 注意事项
 
@@ -194,7 +203,8 @@ bash scripts/ci.sh multiarch
   Windows/macOS 的 Docker Desktop 默认没有 USB 透传。Windows 上可以用 WSL2 + usbipd 补上，
   但**还需要一个带 WWAN 驱动的内核**——微软的默认 WSL2 内核没编进 QMI/MBIM/AT 任何一个，
   设备会扫不到且不报错。做法见 `docs/hardware-bringup-windows.md`。
-- **端口**：`network_mode: host` 时无需映射；否则需自行暴露 7575。
+- **端口**：`network_mode: host` 时无需映射；否则需自行暴露管理 API `7575` 和
+  隔离的插件运行时 `7576`。
   注意 Docker Desktop 的 host 网络是 `docker-desktop` 那个 WSL 发行版的命名空间，**不是** Windows 主机，
   端口从主机访问不到；Windows 上请用仓库里的 `docker-compose.windows.yml`（发布端口 + 服务名连库）。
 

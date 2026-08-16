@@ -384,7 +384,13 @@ func main() {
 			logger.Error("关闭代理实例时出错", "err", err)
 		}
 
-		// 关闭语音网关与软电话 Registrar
+		// Worker 的通话与 VoWiFi 清理仍需要语音网关和 Registrar；先停设备池，
+		// 再拆它依赖的语音基础设施，避免关闭期间丢失 BYE/挂断与媒体清理。
+		if err := pool.Shutdown(); err != nil {
+			logger.Error("关闭工作器池时出错", "err", err)
+		}
+
+		// 设备侧通话和 VoWiFi 已收尾，现在可以关闭语音基础设施。
 		if voiceGW != nil {
 			if err := voiceGW.Stop(); err != nil {
 				logger.Error("关闭语音网关时出错", "err", err)
@@ -394,10 +400,6 @@ func main() {
 			if err := sipRegistrar.Stop(); err != nil {
 				logger.Error("关闭 Registrar 时出错", "err", err)
 			}
-		}
-
-		if err := pool.Shutdown(); err != nil {
-			logger.Error("关闭工作器池时出错", "err", err)
 		}
 		close(done)
 	}()

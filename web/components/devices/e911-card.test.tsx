@@ -38,10 +38,18 @@ function renderCard(available = true) {
 
 describe("E911Card", () => {
   let openSpy: ReturnType<typeof vi.fn>;
-  let fakeWindow: { location: { replace: ReturnType<typeof vi.fn> }; close: ReturnType<typeof vi.fn> };
+  let fakeWindow: {
+    opener: unknown | null;
+    location: { replace: ReturnType<typeof vi.fn> };
+    close: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
-    fakeWindow = { location: { replace: vi.fn() }, close: vi.fn() };
+    fakeWindow = {
+      opener: window,
+      location: { replace: vi.fn() },
+      close: vi.fn(),
+    };
     openSpy = vi.fn(() => fakeWindow);
     vi.stubGlobal("open", openSpy);
     vi.mocked(getWebsheetStatus).mockResolvedValue({
@@ -76,6 +84,7 @@ describe("E911Card", () => {
 
     // POST 还没回来，窗口已经开了
     expect(openSpy).toHaveBeenCalledWith("about:blank", "_blank");
+    expect(fakeWindow.opener).toBeNull();
     expect(fakeWindow.location.replace).not.toHaveBeenCalled();
 
     resolveStart({
@@ -110,6 +119,31 @@ describe("E911Card", () => {
     expect(
       screen.getByRole("button", { name: /重新打开窗口/ }),
     ).toBeInTheDocument();
+  });
+
+  it("二次打开也先断开 opener 再导航", async () => {
+    openSpy.mockReturnValueOnce(null);
+    vi.mocked(startE911Websheet).mockResolvedValue({
+      id: "ws1",
+      embedUrl: "/api/websheets/ws1?token=abc",
+      url: "https://carrier.example.com/",
+      method: "GET",
+    });
+
+    renderCard();
+    await userEvent.click(screen.getByRole("button", { name: /登记紧急地址/ }));
+    const reopen = await screen.findByRole("button", {
+      name: /重新打开窗口/,
+    });
+    fakeWindow.opener = window;
+    openSpy.mockReturnValueOnce(fakeWindow);
+    await userEvent.click(reopen);
+
+    expect(openSpy).toHaveBeenLastCalledWith("about:blank", "_blank");
+    expect(fakeWindow.opener).toBeNull();
+    expect(fakeWindow.location.replace).toHaveBeenCalledWith(
+      "/api/websheets/ws1?token=abc",
+    );
   });
 
   it("轮询到 finished 后展示完成态", async () => {

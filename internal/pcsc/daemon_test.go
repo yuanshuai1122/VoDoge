@@ -2,7 +2,11 @@ package pcsc
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"io"
+	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -26,6 +30,74 @@ func TestListReadersViaFakeDaemon(t *testing.T) {
 	}
 	if readers[1].Name != "Empty Slot" || readers[1].CardPresent {
 		t.Fatalf("second=%+v", readers[1])
+	}
+}
+
+func TestListReadersAllowsEmptyDaemonState(t *testing.T) {
+	d := startFakeDaemon(t, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	readers, err := ListReaders(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readers == nil || len(readers) != 0 {
+		t.Fatalf("readers=%+v, want non-nil empty slice", readers)
+	}
+	if d.saw(cmdGetReadersStateArray) {
+		t.Fatal("zero-reader response must not request a state array")
+	}
+}
+
+func TestTransmitRejectsOversizedDaemonResponse(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		var frame [8]byte
+		if _, err := io.ReadFull(serverConn, frame[:]); err != nil {
+			serverDone <- err
+			return
+		}
+		body := make([]byte, binary.LittleEndian.Uint32(frame[0:4]))
+		if _, err := io.ReadFull(serverConn, body); err != nil {
+			serverDone <- err
+			return
+		}
+		sendLen := binary.LittleEndian.Uint32(body[12:16])
+		if _, err := io.CopyN(io.Discard, serverConn, int64(sendLen)); err != nil {
+			serverDone <- err
+			return
+		}
+		binary.LittleEndian.PutUint32(body[24:28], uint32(maxAPDUResponse+1))
+		binary.LittleEndian.PutUint32(body[28:32], scardSuccess)
+		_, err := serverConn.Write(body)
+		serverDone <- err
+	}()
+
+	c := &daemonClient{conn: clientConn, protocol: protocolT1}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err := c.transmit(ctx, 1, []byte{0x00, 0xA4, 0x00, 0x00})
+	if !errors.Is(err, ErrResponseTooLarge) {
+		t.Fatalf("err=%v, want ErrResponseTooLarge", err)
+	}
+	if _, err := c.transmit(ctx, 1, []byte{0x00, 0xA4, 0x00, 0x00}); err == nil {
+		t.Fatal("connection remained reusable after an oversized response")
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConnectRejectsReaderNameThatWouldBeTruncated(t *testing.T) {
+	c := &daemonClient{}
+	_, _, err := c.connect(context.Background(), strings.Repeat("x", maxReaderName))
+	if !errors.Is(err, ErrReaderNameTooLong) {
+		t.Fatalf("err=%v, want ErrReaderNameTooLong", err)
 	}
 }
 

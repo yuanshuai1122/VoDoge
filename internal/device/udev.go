@@ -13,41 +13,78 @@ import (
 
 // UdevWatcher 监听 USB 设备热插拔事件
 type UdevWatcher struct {
-	pool     *Pool
-	stop     chan struct{}
-	stopOnce sync.Once
+	pool   *Pool
+	stop   chan struct{}
+	rescan func() error
+
+	stateMu sync.Mutex
+	started bool
+	stopped bool
+	wg      sync.WaitGroup
 
 	// 防抖相关
-	debounce  time.Duration
-	pending   bool
-	pendingMu sync.Mutex
-	timer     *time.Timer
+	debounce           time.Duration
+	pending            bool
+	pendingMu          sync.Mutex
+	timer              *time.Timer
+	debounceGeneration uint64
 }
 
 // NewUdevWatcher 创建 udev 监听器
 func NewUdevWatcher(pool *Pool) *UdevWatcher {
-	return &UdevWatcher{
+	w := &UdevWatcher{
 		pool:     pool,
 		stop:     make(chan struct{}),
 		debounce: 3 * time.Second, // 等待设备枚举完成
 	}
+	if pool != nil {
+		w.rescan = pool.RescanAndReconnect
+	}
+	return w
 }
 
 // Start 启动 udev 事件监听
 func (w *UdevWatcher) Start() {
-	go w.loop()
+	if w == nil {
+		return
+	}
+	w.stateMu.Lock()
+	if w.started || w.stopped {
+		w.stateMu.Unlock()
+		return
+	}
+	w.started = true
+	w.wg.Add(1)
+	w.stateMu.Unlock()
+	go func() {
+		defer w.wg.Done()
+		w.loop()
+	}()
 }
 
 // Stop 停止监听
 func (w *UdevWatcher) Stop() {
-	w.stopOnce.Do(func() {
+	if w == nil {
+		return
+	}
+	w.stateMu.Lock()
+	if !w.stopped {
+		w.stopped = true
 		close(w.stop)
-		w.pendingMu.Lock()
-		if w.timer != nil {
-			w.timer.Stop()
+	}
+	w.stateMu.Unlock()
+
+	w.pendingMu.Lock()
+	w.debounceGeneration++
+	if w.timer != nil {
+		if w.timer.Stop() {
+			w.wg.Done()
 		}
-		w.pendingMu.Unlock()
-	})
+		w.timer = nil
+	}
+	w.pending = false
+	w.pendingMu.Unlock()
+	w.wg.Wait()
 }
 
 func (w *UdevWatcher) loop() {
@@ -131,35 +168,67 @@ func (w *UdevWatcher) isModemEvent(data []byte) bool {
 }
 
 // scheduleRescan 防抖：延迟执行扫描
-// 采用"重置计时器"模式：每次事件都重置倒计时，确保最终一次事件（设备完成枚举）生效
+// 每次事件创建一个新 generation。已经触发的旧 callback 可能无法被 Stop，
+// 但它不能再清理新 timer，也不能执行重复扫描。
 func (w *UdevWatcher) scheduleRescan() {
+	if w == nil {
+		return
+	}
 	w.pendingMu.Lock()
 	defer w.pendingMu.Unlock()
 
-	// 如果已有定时器，重置它（确保最后一次事件生效，不丢弃插入事件）
-	if w.timer != nil {
-		w.timer.Reset(w.debounce)
+	w.stateMu.Lock()
+	if w.stopped {
+		w.stateMu.Unlock()
 		return
 	}
 
-	w.pending = true
-	w.timer = time.AfterFunc(w.debounce, func() {
-		w.pendingMu.Lock()
-		w.pending = false
-		w.timer = nil
-		w.pendingMu.Unlock()
+	if w.timer != nil && w.timer.Stop() {
+		// The stopped callback will not run its deferred Done.
+		w.wg.Done()
+	}
 
-		logger.Info("udev 检测到设备变化，执行重新扫描")
-		if w.pool != nil {
-			if woken := w.pool.WakeModemRebootRecoveries("udev_modem_event"); woken > 0 {
-				logger.Debug("udev 事件已唤醒模组重启恢复流程", "recoveries", woken)
-				return
-			}
+	w.debounceGeneration++
+	generation := w.debounceGeneration
+	w.pending = true
+	w.wg.Add(1)
+	w.timer = time.AfterFunc(w.debounce, func() {
+		defer w.wg.Done()
+		w.runScheduledRescan(generation)
+	})
+	w.stateMu.Unlock()
+}
+
+func (w *UdevWatcher) runScheduledRescan(generation uint64) {
+	if w == nil {
+		return
+	}
+	w.pendingMu.Lock()
+	if generation != w.debounceGeneration || w.timer == nil {
+		w.pendingMu.Unlock()
+		return
+	}
+	w.pending = false
+	w.timer = nil
+	w.pendingMu.Unlock()
+
+	select {
+	case <-w.stop:
+		return
+	default:
+	}
+	logger.Info("udev 检测到设备变化，执行重新扫描")
+	if w.pool != nil {
+		if woken := w.pool.WakeModemRebootRecoveries("udev_modem_event"); woken > 0 {
+			logger.Debug("udev 事件已唤醒模组重启恢复流程", "recoveries", woken)
+			return
 		}
-		if err := w.pool.RescanAndReconnect(); err != nil {
+	}
+	if w.rescan != nil {
+		if err := w.rescan(); err != nil {
 			logger.Warn("设备重新扫描失败", "err", err)
 		}
-	})
+	}
 }
 
 // truncateString 截断字符串用于日志

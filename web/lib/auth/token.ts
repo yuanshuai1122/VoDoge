@@ -44,7 +44,7 @@ export function clearToken(): void {
   notify();
 }
 
-/** 清凭证并广播。401 拦截与主动登出共用。服务端没有登出接口。 */
+/** 清凭证并广播。401 拦截与主动登出共用；无状态 bearer 本身不能服务端撤销。 */
 export function triggerLogout(): void {
   clearToken();
 }

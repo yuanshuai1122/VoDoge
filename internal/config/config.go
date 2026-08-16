@@ -375,6 +375,7 @@ type WebConfig struct {
 
 type ServerConfig struct {
 	Port            string       `mapstructure:"port"`
+	PluginPort      string       `mapstructure:"plugin_port"`
 	Debug           bool         `mapstructure:"debug"`
 	MaxDevices      int          `mapstructure:"max_devices"`
 	SelfSignedHTTPS bool         `mapstructure:"self_signed_https"`
@@ -526,6 +527,7 @@ func Load(path string) (*Config, error) {
 
 	// 默认值设置
 	viper.SetDefault("server.port", 7575)
+	viper.SetDefault("server.plugin_port", 7576)
 	viper.SetDefault("webhook.timeout_ms", 5000)
 	viper.SetDefault("webhook.retry_max", 3)
 	viper.SetDefault("webhook.text_template", DefaultWebhookTextTemplate)

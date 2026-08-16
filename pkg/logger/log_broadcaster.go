@@ -47,8 +47,11 @@ func (b *Broadcaster) Subscribe() chan LogEntry {
 // Unsubscribe 取消订阅
 func (b *Broadcaster) Unsubscribe(ch chan LogEntry) {
 	b.mu.Lock()
+	defer b.mu.Unlock()
+	if _, ok := b.clients[ch]; !ok {
+		return
+	}
 	delete(b.clients, ch)
-	b.mu.Unlock()
 	close(ch)
 }
 

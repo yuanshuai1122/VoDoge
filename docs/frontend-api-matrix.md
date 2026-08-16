@@ -29,7 +29,7 @@
 | 有效期 | **30 天**，无 refresh 机制 | `server.go:141` |
 | 传递方式 | **仅** `Authorization: Bearer <token>` | `server.go:2076` |
 | 服务端状态 | **无**（纯无状态校验，不存 session） | `server.go:2050` |
-| 登出接口 | **不存在**（前端本地清 token 即可） | — |
+| 登出接口 | `POST /api/auth/logout`；清理遗留 Cookie，Bearer 仍由前端本地删除 | `auth.go` |
 | 登录限流 | 2 分钟内 10 次/IP，超限 `429` + `code:"rate_limited"` | `server.go:156` |
 
 ### 1.2 两个必须处理的后果
@@ -49,9 +49,10 @@
 | `GET /api/docs`、`/api/docs/assets/*` | Swagger UI 页面 |
 | `GET /api/openapi.yaml`、`/api/openapi.json` | 接口定义。**2026-08-13 起免鉴权**，与承载它的 Swagger UI 同级；此前 spec 需鉴权导致页面永远空白 |
 | `POST /api/auth/login` | 登录 |
+| `POST /api/auth/logout` | 清除当前及历史版本遗留的管理 Cookie；Bearer 仍由前端本地删除 |
 | `POST /api/rotateip` | **并非无鉴权**：handler 内经 `authorizeRotate` 校验，支持 Bearer 或 username/password 双模式（POST-only + 限流），供外部脚本调用 |
 | `OPTIONS /api/logs/stream` | CORS 预检 |
-| `/api/websheets/*`（14 条） | E911 websheet 代理；以会话自带的随机 token 作为能力凭证，且需接收运营商侧回调。`/status` 额外接受用户 Bearer |
+| `/api/websheets/*`（18 条） | E911 websheet 代理；运行时以路径中的随机 capability 鉴权。`/status` 额外接受用户 Bearer，代理 `OPTIONS` 仅服务 sandbox opaque origin |
 
 > `POST /api/system/uninstall` 原本也在此列且**完全无校验**（handler 进来即执行自毁）。
 > 2026-08-12 已移入鉴权组，现需 Bearer token。
@@ -356,11 +357,12 @@
 | `/api/system/update/check`、`/update/apply` | GET / POST | 在线更新 |
 | `/api/system/uninstall` | POST | 卸载/自毁，**破坏性且不可撤销**：删数据目录 + 配置文件 + **程序自身**，随后退出。需鉴权。UI 在设置页危险区，要求逐字输入 `UNINSTALL`。PostgreSQL 数据不在删除范围内 |
 | `/api/extensions` | GET | 已安装插件 |
+| `/api/extensions/:id/session` | POST | `{contribution_id}`；创建插件隔离 origin 的短期 capability，返回 `{launch_url, expires_at}` |
 | `/api/extensions/install-url` | POST | `{url, sha256?}`，仅 HTTPS，拒绝内网 |
 | `/api/extensions/upload` | POST | multipart 字段 `package` |
 | `/api/extensions/:id` | PUT / DELETE | `{enabled}` / 卸载 |
-| `/api/extensions/:id/backend[/*]` | 反代 | 插件本机后端；不入 OpenAPI |
-| `/plugin-assets/:id/*` | GET | 插件静态页（鉴权：Bearer 或登录 cookie） |
+| `/api/extensions/:id/backend[/*]` | 反代 | 只在独立插件端口提供，以插件 ID 绑定的 HttpOnly capability Cookie 鉴权；不入 OpenAPI |
+| `/plugin-assets/:id/*` | GET / HEAD | 只在独立插件端口提供；首次 launch query 换取路径限定的 HttpOnly capability Cookie |
 
 ### 5.9 VoWiFi / E911
 
@@ -370,7 +372,7 @@
 | `/api/devices/:id/vowifi/actions/reconnect` | POST | 重连 |
 | `/api/devices/:id/vowifi/e911/websheet` | POST | 开 E911 websheet 会话，201 + `{id, embedUrl, title?, url, method}` |
 | `/api/websheets/:id/status` | GET | 轮询流程是否结束；接受会话 token 或用户 Bearer |
-| `/api/websheets/:id`、`/:id/proxy[/*target]`、`/:id/callback`、`/:id/done` | 多 | 运营商页面反向代理；凭证是会话自带的一次性 token，不是用户 token |
+| `/api/websheets/:id`、`/:id/session/:token/proxy[/*target]`、`/:id/session/:token/callback`、`/:id/session/:token/done` | 多 | 运营商页面反向代理；初始页使用一次性 query token，随后 capability 固定在路径中，不接受用户 Bearer |
 
 E911 websheet 本质是把运营商网页代理进本服务。前端流程：
 
@@ -390,7 +392,6 @@ E911 websheet 本质是把运营商网页代理进本服务。前端流程：
 
 | 缺口 | 影响 | 前端对策 |
 |------|------|----------|
-| 无登出接口 | — | 本地清 token |
 | 无 token 刷新 | 30 天后强制重登 | 记录 `expires_at`，临期提示 |
 | 无短信 SSE / webhook | 新短信不实时 | 轮询 |
 | 无分页总数 | 无法显示「共 N 条」 | 无限滚动，不做页码 |
@@ -410,8 +411,8 @@ spec 缺少任何一条已注册路由、或声明了未注册的路由，`bash 
 （`/settings/notifications/weixin/qr/{start,status,cancel}`，照着实现只会拿到 404）——
 那 3 条已连同其 schema 一并删除。
 
-> 例外：websheet 的承载页与代理通道（`/websheets/:id`、`/:id/proxy[/*target]`、
-> `/:id/callback`、`/:id/done`）仍不入 spec——路径含通配、请求与响应完全由
+> 例外：websheet 的承载页与代理通道（`/websheets/:id`、`/:id/session/:token/proxy[/*target]`、
+> `/:id/session/:token/callback`、`/:id/session/:token/done`）仍不入 spec——路径含通配、请求与响应完全由
 > 运营商页面决定。校验脚本对这几条显式豁免，其余全部纳管，包括 `/:id/status`。
 
 ---

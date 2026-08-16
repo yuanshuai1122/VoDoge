@@ -1,0 +1,109 @@
+name: Verify
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+  GOWORK: "off"
+  NEXT_TELEMETRY_DISABLED: "1"
+  TEST_DATABASE_URL: "host=127.0.0.1 port=5432 user=vodoge password=vodoge dbname=vodoge_test sslmode=disable TimeZone=UTC"
+
+jobs:
+  verify:
+    name: Full verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vodoge
+          POSTGRES_PASSWORD: vodoge
+          POSTGRES_DB: vodoge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vodoge -d vodoge_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Repository hygiene, encoding, and route checks
+        run: bash scripts/ci.sh hygiene encoding routes
+
+      - name: Validate installer
+        run: |
+          bash -n scripts/install.sh scripts/install_test.sh
+          bash scripts/install_test.sh
+
+      - name: Check Go formatting
+        run: |
+          unformatted="$(gofmt -l internal pkg cmd)"
+          if [ -n "$unformatted" ]; then
+            printf 'The following Go files are not formatted:\n%s\n' "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: Check Go module files
+        run: go mod tidy -diff
+
+      - name: Vet Go packages
+        run: go vet ./internal/... ./pkg/... ./cmd/...
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Type-check frontend
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Lint frontend
+        working-directory: web
+        run: npm run lint
+
+      - name: Test frontend
+        working-directory: web
+        run: npm run test
+
+      - name: Build frontend with webpack
+        working-directory: web
+        run: npm run build -- --webpack
+
+      - name: Stage frontend assets for Go embed
+        run: |
+          mkdir -p internal/web/dist
+          cp -R web/dist/. internal/web/dist/
+          touch internal/web/dist/.gitkeep
+
+      # Database test packages share and truncate one dedicated schema, so package
+      # parallelism must stay disabled. Limit discovery to the three project Go roots
+      # so npm dependencies containing incidental Go sources are not treated as tests.
+      - name: Test Go packages
+        run: go test -p 1 ./internal/... ./pkg/... ./cmd/...
+
+      - name: Build Go server
+        run: go build -trimpath -buildvcs=false -tags "with_utls nomsgpack" -o /tmp/vodoge ./cmd/vodoge

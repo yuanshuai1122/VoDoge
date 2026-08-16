@@ -47,6 +47,8 @@ type Config struct {
 	BasePath          string
 	AllowPrivateHosts bool
 	Now               func() time.Time
+	resolver          hostResolver
+	dialContext       dialContextFunc
 }
 
 type Broker struct {
@@ -56,6 +58,8 @@ type Broker struct {
 	basePath          string
 	allowPrivateHosts bool
 	now               func() time.Time
+	resolver          hostResolver
+	dialContext       dialContextFunc
 }
 
 type Request struct {
@@ -100,6 +104,7 @@ type Session struct {
 	client            *http.Client
 	now               func() time.Time
 	allowPrivateHosts bool
+	resolver          hostResolver
 
 	callbackCh chan Callback
 	doneCh     chan struct{}
@@ -159,12 +164,18 @@ func New(cfg Config) *Broker {
 	if now == nil {
 		now = time.Now
 	}
+	resolver := cfg.resolver
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
 	return &Broker{
 		sessions:          make(map[string]*Session),
 		ttl:               ttl,
 		basePath:          basePath,
 		allowPrivateHosts: cfg.AllowPrivateHosts,
 		now:               now,
+		resolver:          resolver,
+		dialContext:       cfg.dialContext,
 	}
 }
 
@@ -172,7 +183,7 @@ func (b *Broker) Create(ctx context.Context, req Request) (*Session, error) {
 	if b == nil {
 		return nil, errors.New("websheet broker is nil")
 	}
-	target, err := parseAllowedURL(ctx, req.URL, b.allowPrivateHosts)
+	target, err := parseAllowedURLWithResolver(ctx, req.URL, b.allowPrivateHosts, b.resolver)
 	if err != nil {
 		return nil, err
 	}
@@ -199,14 +210,19 @@ func (b *Broker) Create(ctx context.Context, req Request) (*Session, error) {
 		basePath:          b.basePath,
 		now:               b.now,
 		allowPrivateHosts: b.allowPrivateHosts,
+		resolver:          b.resolver,
 		callbackCh:        make(chan Callback, 1),
 		doneCh:            make(chan struct{}),
 	}
 	session.client = &http.Client{
-		Jar:     jar,
-		Timeout: defaultClientTimeout,
+		Jar:       jar,
+		Timeout:   defaultClientTimeout,
+		Transport: newWebsheetTransport(b.resolver, b.dialContext, b.allowPrivateHosts),
 		CheckRedirect: func(r *http.Request, via []*http.Request) error {
-			_, err := parseAllowedURL(r.Context(), r.URL.String(), b.allowPrivateHosts)
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			_, err := parseAllowedURLWithResolver(r.Context(), r.URL.String(), b.allowPrivateHosts, b.resolver)
 			return err
 		},
 	}
@@ -273,15 +289,7 @@ func (s *Session) Authorize(r *http.Request) error {
 	if s.expired() {
 		return ErrExpired
 	}
-	token := ""
-	if r != nil {
-		if r.URL != nil {
-			token = strings.TrimSpace(r.URL.Query().Get("token"))
-		}
-		if token == "" {
-			token = strings.TrimSpace(r.Header.Get("X-Websheet-Token"))
-		}
-	}
+	token := s.accessTokenFromRequest(r)
 	if token == "" || s.accessToken == "" {
 		return ErrUnauthorized
 	}
@@ -289,6 +297,39 @@ func (s *Session) Authorize(r *http.Request) error {
 		return ErrUnauthorized
 	}
 	return nil
+}
+
+func (s *Session) accessTokenFromRequest(r *http.Request) string {
+	if s == nil || r == nil {
+		return ""
+	}
+	if token, present := s.pathAccessToken(r); present {
+		return token
+	}
+	if r.URL != nil {
+		if token := strings.TrimSpace(r.URL.Query().Get("token")); token != "" {
+			return token
+		}
+	}
+	return strings.TrimSpace(r.Header.Get("X-Websheet-Token"))
+}
+
+func (s *Session) pathAccessToken(r *http.Request) (string, bool) {
+	if s == nil || r == nil || r.URL == nil {
+		return "", false
+	}
+	prefix := s.basePath + "/" + url.PathEscape(s.id) + "/session/"
+	escapedPath := r.URL.EscapedPath()
+	if !strings.HasPrefix(escapedPath, prefix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(escapedPath, prefix)
+	escapedToken, _, _ := strings.Cut(rest, "/")
+	token, err := url.PathUnescape(escapedToken)
+	if err != nil {
+		return "", true
+	}
+	return strings.TrimSpace(token), true
 }
 
 func (s *Session) WaitCallback(ctx context.Context) (Callback, error) {
@@ -330,7 +371,7 @@ func (s *Session) ServeBootstrap(w http.ResponseWriter, r *http.Request) error {
 	if s.expired() {
 		return ErrExpired
 	}
-	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	token := s.accessTokenFromRequest(r)
 	target := *s.target
 	if s.method() == http.MethodGet && s.userData != "" {
 		appendRawQuery(&target, s.userData)
@@ -359,7 +400,7 @@ func (s *Session) Proxy(w http.ResponseWriter, r *http.Request) error {
 	if rawTarget == "" {
 		rawTarget = s.target.String()
 	}
-	target, err := parseAllowedURL(r.Context(), rawTarget, s.allowPrivateHosts)
+	target, err := parseAllowedURLWithResolver(r.Context(), rawTarget, s.allowPrivateHosts, s.resolver)
 	if err != nil {
 		return err
 	}
@@ -407,7 +448,7 @@ func (s *Session) Proxy(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return fmt.Errorf("read websheet response: %w", err)
 		}
-		token := strings.TrimSpace(r.URL.Query().Get("token"))
+		token := s.accessTokenFromRequest(r)
 		base := target
 		if resp.Request != nil && resp.Request.URL != nil {
 			base = resp.Request.URL
@@ -432,15 +473,16 @@ func (s *Session) expired() bool {
 }
 
 func (s *Session) proxyURL(rawTarget string, token string) string {
+	base := s.basePath + "/" + url.PathEscape(s.id)
+	if token != "" {
+		base += "/session/" + url.PathEscape(token)
+	}
 	if target, err := url.Parse(rawTarget); err == nil && target.Scheme != "" && target.Host != "" {
 		values := url.Values{}
 		if target.RawQuery != "" {
 			values.Set(targetQueryParam, target.RawQuery)
 		}
-		if token != "" {
-			values.Set("token", token)
-		}
-		proxyPath := s.basePath + "/" + url.PathEscape(s.id) + "/proxy/" + target.Scheme + "/" + target.Host + target.EscapedPath()
+		proxyPath := base + "/proxy/" + target.Scheme + "/" + target.Host + target.EscapedPath()
 		if target.EscapedPath() == "" {
 			proxyPath += "/"
 		}
@@ -451,17 +493,15 @@ func (s *Session) proxyURL(rawTarget string, token string) string {
 	}
 	values := url.Values{}
 	values.Set("target", rawTarget)
-	if token != "" {
-		values.Set("token", token)
-	}
-	return s.basePath + "/" + url.PathEscape(s.id) + "/proxy?" + values.Encode()
+	return base + "/proxy?" + values.Encode()
 }
 
 func (s *Session) proxyPathTarget(r *http.Request) string {
 	if r == nil || r.URL == nil {
 		return ""
 	}
-	prefix := s.basePath + "/" + url.PathEscape(s.id) + "/proxy/"
+	token := s.accessTokenFromRequest(r)
+	prefix := s.basePath + "/" + url.PathEscape(s.id) + "/session/" + url.PathEscape(token) + "/proxy/"
 	escapedPath := r.URL.EscapedPath()
 	if !strings.HasPrefix(escapedPath, prefix) {
 		return ""
@@ -489,15 +529,11 @@ func (s *Session) proxyPathTarget(r *http.Request) string {
 }
 
 func (s *Session) callbackURL(token string) string {
-	values := url.Values{}
+	path := s.basePath + "/" + url.PathEscape(s.id)
 	if token != "" {
-		values.Set("token", token)
+		path += "/session/" + url.PathEscape(token)
 	}
-	path := s.basePath + "/" + url.PathEscape(s.id) + "/callback"
-	if encoded := values.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
-	return path
+	return path + "/callback"
 }
 
 func (s *Session) postBootstrapHTML(action string) string {
@@ -632,7 +668,7 @@ func (s *Session) absolutePathProxyPrefix(carrierBase *url.URL, token string) st
 	if origin == "" {
 		return ""
 	}
-	return strings.TrimRight(s.proxyURL(origin+"/", ""), "/")
+	return strings.TrimRight(s.proxyURL(origin+"/", token), "/")
 }
 
 var (
@@ -654,7 +690,7 @@ func appendLocalQuery(raw string, key string, value string) string {
 func copyProxyHeaders(dst http.Header, src http.Header) {
 	for key, values := range src {
 		switch strings.ToLower(key) {
-		case "authorization", "cookie", "host", "referer", "origin", "content-length", "accept-encoding",
+		case "authorization", "cookie", "host", "referer", "origin", "x-websheet-token", "content-length", "accept-encoding",
 			"connection", "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site", "sec-fetch-user":
 			continue
 		}
@@ -673,8 +709,12 @@ func targetOrigin(target *url.URL) string {
 
 func copyResponseHeaders(dst http.Header, src http.Header) {
 	for key, values := range src {
-		switch strings.ToLower(key) {
-		case "content-security-policy", "content-security-policy-report-only", "x-frame-options", "content-length", "set-cookie":
+		lower := strings.ToLower(key)
+		if strings.HasPrefix(lower, "access-control-") {
+			continue
+		}
+		switch lower {
+		case "content-security-policy", "content-security-policy-report-only", "x-frame-options", "content-length", "set-cookie", "referrer-policy", "cache-control":
 			continue
 		}
 		for _, value := range values {
@@ -692,6 +732,10 @@ func isHTML(contentType string) bool {
 }
 
 func parseAllowedURL(ctx context.Context, raw string, allowPrivate bool) (*url.URL, error) {
+	return parseAllowedURLWithResolver(ctx, raw, allowPrivate, net.DefaultResolver)
+}
+
+func parseAllowedURLWithResolver(ctx context.Context, raw string, allowPrivate bool, resolver hostResolver) (*url.URL, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, fmt.Errorf("%w: URL is required", ErrUnsafeURL)
@@ -722,7 +766,10 @@ func parseAllowedURL(ctx context.Context, raw string, allowPrivate bool) (*url.U
 		}
 		return parsed, nil
 	}
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+	addrs, err := resolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		return nil, fmt.Errorf("resolve websheet host: %w", err)
 	}
@@ -859,6 +906,9 @@ func sendLatest[T any](ch chan T, value T) {
 		case <-ch:
 		default:
 		}
-		ch <- value
+		select {
+		case ch <- value:
+		default:
+		}
 	}
 }

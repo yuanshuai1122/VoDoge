@@ -76,6 +76,7 @@ export function E911Card({
     mutationFn: async () => {
       // 必须在点击的同步阶段先开窗口：等 POST 回来再开会被弹窗拦截器拦下
       const win = window.open("about:blank", "_blank");
+      if (win) win.opener = null;
       try {
         const info = await startE911Websheet(deviceId);
         if (win) {
@@ -104,8 +105,10 @@ export function E911Card({
 
   function openAgain() {
     if (!session) return;
-    const win = window.open(`${API_BASE}${session.embedUrl}`, "_blank");
+    const win = window.open("about:blank", "_blank");
     if (win) {
+      win.opener = null;
+      win.location.replace(`${API_BASE}${session.embedUrl}`);
       windowRef.current = win;
       setBlocked(false);
     }

@@ -115,7 +115,7 @@
 ```
                     ┌─────────────────┐
                     │  config.yaml /  │
-                    │  VOHIVE_DB_DSN  │
+                    │  VODOGE_DB_DSN  │
                     └────────┬────────┘
                              │
 ┌────────────┐      ┌────────▼────────┐      ┌──────────────┐
@@ -150,9 +150,8 @@ database:
 
 | 变量 | 含义 |
 |------|------|
-| `VOHIVE_DB_DSN` | 主 DSN |
-| `DATABASE_URL` | 别名（若设置且 `VOHIVE_DB_DSN` 空则用） |
-| `VOHIVE_DB_AUTO_MIGRATE` | `true`/`false` |
+| `VODOGE_DB_DSN` | 主 DSN |
+| `DATABASE_URL` | 别名（若设置且 `VODOGE_DB_DSN` 空则用） |
 
 **启动失败策略**：DSN 为空或连不上 → **直接 Fatal**，不再回退 `data/vohive.db`。
 
@@ -284,7 +283,7 @@ services:
   vohive:
     # ...
     environment:
-      VOHIVE_DB_DSN: "host=postgres user=vohive password=vohive dbname=vohive port=5432 sslmode=disable TimeZone=UTC"
+      VODOGE_DB_DSN: "host=postgres user=vodoge password=vodoge dbname=vodoge port=5432 sslmode=disable TimeZone=UTC"
     depends_on:
       postgres:
         condition: service_healthy

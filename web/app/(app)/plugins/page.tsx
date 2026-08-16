@@ -7,8 +7,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, ErrorState } from "@/components/common/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  createPluginSession,
   listPlugins,
-  pluginAssetURL,
 } from "@/lib/api/endpoints/extensions";
 import { pluginLabel, useLocale, useT } from "@/lib/i18n";
 
@@ -31,18 +31,23 @@ function PluginFrame() {
     queryKey: ["extensions"],
     queryFn: listPlugins,
   });
-
+  const plugin = query.data?.find((item) => item.id === pluginId && item.enabled);
+  const contribution = plugin?.contributions.find(
+    (item) => item.id === contributionId && item.location === "sidebar",
+  );
+  const runtime = useQuery({
+    queryKey: ["extension-session", pluginId, contributionId],
+    queryFn: () => createPluginSession(pluginId, contributionId),
+    enabled: Boolean(plugin && contribution),
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
   if (query.isError) {
     return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
   }
   if (query.isPending) {
     return <Skeleton className="h-96" />;
   }
-
-  const plugin = query.data?.find((item) => item.id === pluginId && item.enabled);
-  const contribution = plugin?.contributions.find(
-    (item) => item.id === contributionId && item.location === "sidebar",
-  );
   if (!plugin || !contribution) {
     return (
       <EmptyState
@@ -50,6 +55,12 @@ function PluginFrame() {
         description={t("plugin.unavailableHint")}
       />
     );
+  }
+  if (runtime.isError) {
+    return <ErrorState error={runtime.error} onRetry={() => runtime.refetch()} />;
+  }
+  if (runtime.isPending || !runtime.data) {
+    return <Skeleton className="h-96" />;
   }
 
   const title = pluginLabel(locale, contribution);
@@ -61,7 +72,7 @@ function PluginFrame() {
       />
       <iframe
         title={title}
-        src={pluginAssetURL(plugin.id, contribution.entry)}
+        src={runtime.data.launch_url}
         className="h-[calc(100vh-10rem)] min-h-[560px] w-full rounded-xl border bg-background"
         sandbox="allow-scripts allow-forms allow-same-origin"
         allow="microphone; autoplay"

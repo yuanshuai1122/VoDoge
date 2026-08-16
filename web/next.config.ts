@@ -21,10 +21,6 @@ const nextConfig: NextConfig = isProd
             source: "/api/:path*",
             destination: `${apiBase}/api/:path*`,
           },
-          {
-            source: "/plugin-assets/:path*",
-            destination: `${apiBase}/plugin-assets/:path*`,
-          },
         ];
       },
     };

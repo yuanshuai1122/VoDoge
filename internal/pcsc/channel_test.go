@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"net"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -44,6 +47,40 @@ func TestChannelOpenLogicalChannelAndTransmit(t *testing.T) {
 	if !d.saw(cmdBeginTransaction) || !d.saw(cmdEndTransaction) {
 		t.Fatal("session must BeginTransaction after Connect and EndTransaction before Disconnect")
 	}
+}
+
+func TestChannelDisconnectUsesGateAndReportsCleanupErrors(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	serverDone := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		defer serverConn.Close()
+		_, _ = io.CopyN(io.Discard, serverConn, 20) // end-transaction frame
+	}()
+
+	ch := &Channel{
+		client: &daemonClient{conn: clientConn, contextID: 7},
+		hCard:  3,
+		inTxn:  true,
+	}
+	var entered atomic.Int32
+	var exited atomic.Int32
+	ch.SetGate(func() func() {
+		entered.Add(1)
+		return func() { exited.Add(1) }
+	})
+
+	err := ch.Disconnect()
+	if err == nil {
+		t.Fatal("Disconnect() error=nil, want cleanup error")
+	}
+	if entered.Load() != 1 || exited.Load() != 1 {
+		t.Fatalf("gate entered=%d exited=%d, want 1/1", entered.Load(), exited.Load())
+	}
+	if ch.client != nil || ch.hCard != 0 || ch.inTxn {
+		t.Fatalf("channel state not cleared: client=%v hCard=%d inTxn=%v", ch.client, ch.hCard, ch.inTxn)
+	}
+	<-serverDone
 }
 
 func TestChannelConnectNoCard(t *testing.T) {

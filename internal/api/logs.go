@@ -18,12 +18,7 @@ import (
 
 // handleLogStream SSE 实时日志流
 func (s *Server) handleLogStream(c *gin.Context) {
-	// 设置 SSE 响应头
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
-	s.setSSECORSHeaders(c)
+	s.prepareSSE(c)
 
 	// 订阅日志流
 	logChan := logger.GlobalBroadcaster.Subscribe()
@@ -34,6 +29,8 @@ func (s *Server) handleLogStream(c *gin.Context) {
 
 	// 客户端连接上下文
 	clientGone := c.Request.Context().Done()
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
 
 	// 发送初始连接成功事件
 	c.SSEvent("connected", gin.H{"message": "已连接日志流"})
@@ -45,6 +42,9 @@ func (s *Server) handleLogStream(c *gin.Context) {
 			return
 		case <-s.shutdownCh:
 			return
+		case <-heartbeat.C:
+			_, _ = c.Writer.WriteString(": keepalive\n\n")
+			c.Writer.Flush()
 		case entry, ok := <-logChan:
 			if !ok {
 				return
@@ -64,6 +64,18 @@ func (s *Server) handleLogStream(c *gin.Context) {
 			c.Writer.Flush()
 		}
 	}
+}
+
+func (s *Server) prepareSSE(c *gin.Context) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache, no-store")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Header("X-Content-Type-Options", "nosniff")
+	// Server.WriteTimeout is useful for JSON handlers but would terminate every
+	// long-lived stream after 120 seconds. Clear it only for this response.
+	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
+	s.setSSECORSHeaders(c)
 }
 
 func (s *Server) handleLogStreamOptions(c *gin.Context) {

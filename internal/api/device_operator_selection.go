@@ -56,11 +56,8 @@ func (s *Server) handleDeviceMgmtOperatorScan(c *gin.Context) {
 }
 
 func (s *Server) handleDeviceMgmtOperatorScanStream(c *gin.Context) {
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
+	s.prepareSSE(c)
 	// 同 overview 流：开发期需允许前端直连，绕开会缓冲 SSE 的 Next dev 代理
-	s.setSSECORSHeaders(c)
 
 	deviceID := deviceIDParam(c)
 	w := s.pool.GetWorker(deviceID)

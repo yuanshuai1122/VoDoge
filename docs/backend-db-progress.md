@@ -8,16 +8,16 @@
 - [x] `db.Open` / `db.Init` **仅 PostgreSQL**（`gorm.io/driver/postgres`）
 - [x] 删除 `sqlite_dialector.go` 与 PRAGMA
 - [x] 列探测改为 GORM Migrator；`DROP COLUMN IF EXISTS`（PG）
-- [x] `main.go` 通过 `VOHIVE_DB_DSN` / `DATABASE_URL` / `database.dsn` 连接，失败即退出
+- [x] `main.go` 通过 `VODOGE_DB_DSN` / `DATABASE_URL` / `database.dsn` 连接，失败即退出
 - [x] 测试：`db.OpenTestDB` / `ReopenTestDB`，去掉文件型 SQLite Init
 - [x] compose：`docker-compose.yml` / `windows` / `hub` 增加 postgres 服务
 - [x] `config/config.yaml` 增加 database 段
 
-### 待本地验证
+### 本地验证（2026-08-16）
 
-- [ ] `go mod tidy`（依赖已写入 go.mod；需在有 Go/Docker 环境确认 sum 完整）
-- [ ] `docker compose up postgres` + 启动 vohive 冒烟
-- [ ] `TEST_DATABASE_URL=... go test ./internal/db/...`
+- [x] Linux 容器内 `go mod tidy -diff` 无差异
+- [x] PostgreSQL 16 + Linux 发布参数二进制启动冒烟：AutoMigrate、`/ping`、SIGTERM 退出码 0
+- [x] `TEST_DATABASE_URL=... go test -count=1 -p 1 ./internal/db ./cmd/dbmigrate`
 
 ## 2026-08-12 — 阶段 C（CI）补齐
 
@@ -27,7 +27,7 @@
 
 - [x] C3：`ci.yml` 增加 `postgres:16-alpine` service（含 `pg_isready` healthcheck）与 job 级 `TEST_DATABASE_URL`
 - [x] C4：`scripts/ci.sh` 测试包列表补 `./internal/db ./internal/api`
-- [ ] 推送后在 GitHub Actions 上确认实际转绿（本机无 Go 工具链，未能本地预跑）
+- [ ] 推送后在 GitHub Actions 上确认实际转绿；本地等价 Linux/PostgreSQL、前端和安装器门禁已通过
 
 另：`cmd/vohive/main.go` 中 SQLite 遗留函数 `migrateLegacyServerDB`（处理 `-wal` / `-shm` 边车文件）
 已无调用点，本次删除，对应 F2「确认无 sqlite 启动路径残留」。
@@ -51,21 +51,26 @@ host=127.0.0.1 user=vodoge password=vodoge dbname=vodoge port=5432 sslmode=disab
 `cmd/dbmigrate` 已实现，对应计划里的 D1–D4。
 
 - [x] D1：`--sqlite path --postgres dsn`，支持 `--dry-run`
-- [x] D2：按 `tableOrder` 复制 + `--batch` 分批（默认 500）
-- [x] D3：逐表行数校验；任一表少行即以非零码退出
+- [x] D2：按 `internal/db` 的 AutoMigrate 模型清单复制 + `--batch` 分批（默认 500）
+- [x] D3：逐批验证源主键均已落库；任一表漏主键即整体回滚并以非零码退出
 - [x] D4：`docs/db-migrate-runbook.md`
 
 几个实现上值得记下来的点：
 
-- **列按名取交集**，不硬编码。源表多出来的列忽略（如 `sim_cards` 上早已删掉的
-  `phone_number` 系列），目标表新增的列留默认值。这样旧库是哪个版本都能导。
+- **普通列按名取交集**，目标表新增列留默认值；有业务语义的旧列不能直接忽略。
+  例如旧 `sim_cards` 上的 `phone_number` 系列会显式转换为 `sim_subscriptions`，
+  并由迁移测试断言结果，防止手机号在归档旧库后静默丢失。
 - **按目标列类型做值转换**。SQLite 没有真正的类型：布尔存 0/1，时间可能是
   RFC3339 文本、空格分隔文本，也可能是 Unix 秒。直接塞给 PG 会因类型不匹配失败。
 - **必须校正自增序列**。迁移带着原始 id 写入，序列仍从 1 发号，
   不 `setval` 的话迁移后第一条新短信就撞主键——上线当天才会发现的那种问题。
   测试 `TestMigrateAdvancesSequencesPastImportedIDs` 专门盯这一条。
-- **目标库非空时默认拒绝**，要 `--allow-nonempty`（追加）或 `--truncate`（清空）显式表态。
-  插入带 `ON CONFLICT DO NOTHING`，重跑安全。
+- **目标库非空时默认拒绝**，而且在 AutoMigrate 和数据写入前完成全部选中表预检；要
+  `--allow-nonempty`（追加）或 `--truncate`（清空）必须显式表态。
+- **正式模式的 AutoMigrate、复制、源主键校验和序列校正在同一个 PostgreSQL 事务中**。
+  `--truncate` 对所有选中表只发一个不带 `CASCADE` 的语句，失败整体回滚，不会清掉未选表。
+- 插入带 `ON CONFLICT DO NOTHING`，并以 `RowsAffected` 计数；追加模式仍会验证每个源
+  主键确实存在，目标额外行不能掩盖被其它唯一约束跳过的源行。
 - **旧库以 `mode=ro` 打开**，迁移失败时它仍是可回退的那一份。
 
 依赖：`modernc.org/sqlite`（纯 Go，无需 CGO），**只被 `cmd/dbmigrate` 导入**。

@@ -9,14 +9,15 @@
  *
  * 两个坑：
  *  1. EventSource 不会因为 401 停止重连 —— 后端对未授权的 SSE 请求返回 401 后关闭连接，
- *     浏览器会无限重试。这里用连续失败计数兜底，超过阈值即放弃并上报。
+ *     浏览器会无限重试。这里在连续失败后探测状态，只对永久 4xx 停止重连。
  *  2. token 出现在 URL 中。后端访问日志已脱敏，但浏览器历史/Referer 仍会留存，
  *     因此绝不要把这里构造的 URL 渲染成用户可见或可复制的链接。
  */
 
 import { useEffect, useRef, useState } from "react";
 import { API_BASE } from "../api/client";
-import { getToken } from "../auth/token";
+import { triggerLogout } from "../auth/token";
+import { useToken } from "@/hooks/use-token";
 
 /**
  * SSE 专用的 base，与普通请求不同。
@@ -32,8 +33,19 @@ const SSE_BASE =
 
 export type SSEStatus = "connecting" | "open" | "closed" | "error";
 
-/** 连续失败多少次后放弃重连（浏览器默认约 3s 一次）。 */
+/** 连续失败多少次后探测响应状态（浏览器默认约 3s 一次）。 */
 const MAX_CONSECUTIVE_FAILURES = 5;
+const AUTH_PROBE_TIMEOUT_MS = 5_000;
+
+function isPermanentClientError(status: number): boolean {
+  return (
+    status >= 400 &&
+    status < 500 &&
+    status !== 408 &&
+    status !== 425 &&
+    status !== 429
+  );
+}
 
 export interface UseEventSourceOptions {
   /** 事件名 -> 处理函数。eSIM 下载流无 event 行，用 "message"。 */
@@ -51,11 +63,12 @@ export function useEventSource(
   options: UseEventSourceOptions,
 ): SSEStatus {
   const { events, enabled = true, query } = options;
+  const token = useToken();
 
-  // 仅在事件回调中更新，effect 体内不同步 setState
-  const [connState, setConnState] = useState<Exclude<SSEStatus, "closed">>(
-    "connecting",
-  );
+  const [connState, setConnState] = useState<{
+    key: string;
+    status: Exclude<SSEStatus, "closed">;
+  }>({ key: "", status: "connecting" });
 
   // 处理函数存 ref，避免调用方每次渲染新建对象导致反复重连。
   // 更新必须放在 effect 里：render 期间写 ref 会破坏并发渲染的假设。
@@ -66,14 +79,13 @@ export function useEventSource(
 
   const queryKey = JSON.stringify(query ?? {});
   const eventNames = Object.keys(events).sort().join(",");
-  const active = Boolean(path) && enabled;
+  const active = Boolean(path) && enabled && Boolean(token);
+  const connectionKey = active
+    ? `${path}\u0000${queryKey}\u0000${eventNames}\u0000${token}`
+    : "";
 
   useEffect(() => {
-    if (!path || !enabled) return;
-
-    // AuthGuard 保证进入受保护页面时有 token，这里只是防御性分支
-    const token = getToken();
-    if (!token) return;
+    if (!path || !enabled || !token) return;
 
     const sp = new URLSearchParams();
     const parsed = JSON.parse(queryKey) as Record<string, unknown>;
@@ -81,28 +93,68 @@ export function useEventSource(
       if (v === undefined || v === null || v === "") continue;
       sp.append(k, String(v));
     }
-    sp.append("token", token);
+    // 调用方的 query 不能覆盖认证凭证。
+    sp.set("token", token);
 
-    const es = new EventSource(`${SSE_BASE}/api${path}?${sp.toString()}`);
+    const eventURL = `${SSE_BASE}/api${path}?${sp.toString()}`;
+    const es = new EventSource(eventURL);
     let failures = 0;
     let disposed = false;
+    let probing = false;
+    let probeController: AbortController | null = null;
+    let probeTimeout: number | null = null;
 
     es.onopen = () => {
       failures = 0;
-      setConnState("open");
+      setConnState({ key: connectionKey, status: "open" });
     };
 
     es.onerror = () => {
       if (disposed) return;
       failures += 1;
-      // 401 不会让 EventSource 停下来，只能靠失败次数兜底
-      if (failures >= MAX_CONSECUTIVE_FAILURES) {
-        disposed = true;
-        es.close();
-        setConnState("error");
-        return;
-      }
-      setConnState("connecting");
+      setConnState({ key: connectionKey, status: "connecting" });
+      if (failures < MAX_CONSECUTIVE_FAILURES || probing) return;
+
+      // EventSource hides the HTTP status. Probe the same endpoint after repeated
+      // failures: a permanent 4xx should stop, while offline/5xx must keep the
+      // browser's native retry loop alive.
+      probing = true;
+      const controller = new AbortController();
+      probeController = controller;
+      probeTimeout = window.setTimeout(
+        () => controller.abort(),
+        AUTH_PROBE_TIMEOUT_MS,
+      );
+      void fetch(eventURL, {
+        method: "GET",
+        headers: { Accept: "text/event-stream" },
+        cache: "no-store",
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          await response.body?.cancel().catch(() => {});
+          if (disposed) return;
+          if (isPermanentClientError(response.status)) {
+            disposed = true;
+            es.close();
+            setConnState({ key: connectionKey, status: "error" });
+            if (response.status === 401) triggerLogout();
+            return;
+          }
+          if (response.ok) failures = 0;
+        })
+        .catch(() => {
+          // Network failure is transient. EventSource remains responsible for retry.
+        })
+        .finally(() => {
+          if (probeController !== controller) return;
+          if (probeTimeout !== null) window.clearTimeout(probeTimeout);
+          probeController = null;
+          probeTimeout = null;
+          probing = false;
+        });
     };
 
     const listeners: Array<[string, EventListener]> = [];
@@ -123,6 +175,10 @@ export function useEventSource(
 
     return () => {
       disposed = true;
+      probeController?.abort();
+      if (probeTimeout !== null) window.clearTimeout(probeTimeout);
+      probeController = null;
+      probeTimeout = null;
       for (const [name, listener] of listeners) {
         es.removeEventListener(name, listener);
       }
@@ -130,9 +186,10 @@ export function useEventSource(
       // 泄漏连接会让服务端持续推送已卸载的页面
       es.close();
     };
-  }, [path, enabled, queryKey, eventNames]);
+  }, [path, enabled, queryKey, eventNames, token, connectionKey]);
 
   // 未启用时直接推导为 closed，不额外维护一份状态。
-  // 切换 path 的瞬间可能短暂沿用上一条连接的状态，随首个 onopen/onerror 自动纠正。
-  return active ? connState : "closed";
+  // connectionKey 不匹配时立即显示 connecting，不能沿用上一条连接的 open。
+  if (!active) return "closed";
+  return connState.key === connectionKey ? connState.status : "connecting";
 }

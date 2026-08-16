@@ -31,7 +31,7 @@ build-all: build-amd64 build-arm64 build-armv7
 
 frontend-dist:
 	npm ci --prefix web
-	npm run build --prefix web
+	npm run build --prefix web -- --webpack
 	rm -rf internal/web/dist
 	mkdir -p internal/web
 	cp -R web/dist internal/web/dist

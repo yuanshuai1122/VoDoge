@@ -51,7 +51,7 @@ need_docker() {
 }
 
 dependency_hygiene() {
-	local forbidden_refs forbidden_modules paths
+	local forbidden_refs forbidden_modules modules paths
 	paths=(go.mod go.sum Dockerfile Dockerfile.runtime Dockerfile.vet
 		docker-compose.yml docker-compose.windows.yml DEPLOY.md
 		Makefile scripts internal cmd pkg web/app)
@@ -75,7 +75,11 @@ dependency_hygiene() {
 	fi
 
 	if [[ -n "$GO_BIN" ]]; then
-		forbidden_modules="$(env GOWORK=off "$GO_BIN" list -m all | grep -E 'github[.]com/iniwex5|github[.]com/boa-z/qqbot' || true)"
+		if ! modules="$(env GOWORK=off "$GO_BIN" list -m all)"; then
+			printf 'go list -m all failed; dependency hygiene could not be verified\n' >&2
+			return 1
+		fi
+		forbidden_modules="$(printf '%s\n' "$modules" | grep -E 'github[.]com/iniwex5|github[.]com/boa-z/qqbot' || true)"
 		if [[ -n "$forbidden_modules" ]]; then
 			printf 'forbidden modules resolved by go list -m all:\n%s\n' "$forbidden_modules" >&2
 			return 1
@@ -141,7 +145,7 @@ web_build() {
 	# tsc 查不出契约问题：后端响应体在类型系统里是 unknown，
 	# 归一化层（unwrap/errors/client）解析错了只会在运行时才显形。
 	run npm run test --prefix web
-	run npm run build --prefix web
+	run npm run build --prefix web -- --webpack
 	rm -rf internal/web/dist
 	mkdir -p internal/web
 	cp -R web/dist internal/web/dist
