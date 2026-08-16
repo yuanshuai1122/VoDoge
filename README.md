@@ -96,6 +96,7 @@ docker exec vodoge-postgres pg_dump -U vodoge vodoge > vodoge-$(date +%F).sql
 
 | 文档 | 内容 |
 |---|---|
+| [docs/architecture.md](docs/architecture.md) | 架构总览：代码怎么摆、改东西去哪儿 |
 | [docs/hardware-support.md](docs/hardware-support.md) | 模组、短信通道、读卡器、插件 |
 | [docs/frontend-api-matrix.md](docs/frontend-api-matrix.md) | HTTP 契约 |
 | [docs/pve-lab-deploy.md](docs/pve-lab-deploy.md) | PVE 实验室落点 |

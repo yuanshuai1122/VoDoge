@@ -7,6 +7,7 @@
 | 文档 | 说明 |
 |------|------|
 | [NOTICE.md](./NOTICE.md) | 版权声明 |
+| [architecture.md](./architecture.md) | **架构总览**：进程模型、分层、设备路径、代码地图、改动去哪儿、不变量 |
 | [remaining-work.md](./remaining-work.md) | **剩余工作清单（P0–P4）** |
 | [known-issues.md](./known-issues.md) | 已知问题（KI-001：UTF-8 损坏阻塞 CI） |
 | [frontend-api-matrix.md](./frontend-api-matrix.md) | **API 契约矩阵（接口唯一依据）** |
