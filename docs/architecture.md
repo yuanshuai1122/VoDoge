@@ -145,8 +145,9 @@ Worker 上挂着这根棒子的全部状态：`Modem`（AT）、`Backend`、`QMI
 （`at_backend.go` / `qmi_backend.go` / `mbim_backend.go`），共用语义（注册、运营商选择、
 SMSC、USSD、SIM 鉴权）各有一份中立定义。
 
-> `internal/config/config.go` 里 `DeviceBackend` 字段的行内注释还写着 `auto`，那是旧值：
-> `ValidateBackendMode` 只认 at / qmi / mbim，`auto` 会被静默归成 `at`。
+校验与归一化是两件事，别混：`ValidateBackendMode` 在**写入之前**拒绝非法值，判据是原始
+输入；`NormalizeBackendMode` 在**写入之后**兜底，认不出的一律当 AT——配置已经落盘了，
+此时报错没人接，降级跑比起不来强。
 
 ### 短信通路
 

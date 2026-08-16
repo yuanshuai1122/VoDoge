@@ -500,7 +500,7 @@ type DeviceConfig struct {
 	QMIProxyPath       string `mapstructure:"qmi_proxy_path"`
 	QMIProxyExecutable string `mapstructure:"qmi_proxy_executable"`
 	ESIMTransport      string `mapstructure:"esim_transport"` // eSIM 传输通道: at|qmi|mbim，默认 at
-	DeviceBackend      string `mapstructure:"device_backend"` // 设备后端模式: at|qmi|mbim|auto，默认 at
+	DeviceBackend      string `mapstructure:"device_backend"` // 设备后端模式: at|qmi|mbim|pcsc，默认 at（pcsc 走读卡器路径，不经 NewBackend）
 	ModuleVendor       string `mapstructure:"module_vendor"`  // AT 方言: quectel|simcom，默认 quectel 以保持兼容
 	Lane               string `mapstructure:"lane"`           // 线路: cn|intl|空，人工分线，不按 MCC 推断
 	ReaderName         string `mapstructure:"reader_name"`    // PC/SC 读卡器名；device_backend=pcsc 时必填

@@ -15,7 +15,13 @@ const (
 	BackendMBIM = "mbim"
 )
 
-// NormalizeBackendMode 标准化后端模式字符串
+// NormalizeBackendMode 标准化后端模式字符串。
+//
+// 认不出的值一律归成 AT。这是运行期的兜底：配置已经写进来了，此时报错也没人接，
+// 起不来的设备比降级跑的设备更糟。**拒绝非法值是 ValidateBackendMode 的事**，
+// 那一步在写入之前。
+//
+// 注意 pcsc 不在这里：读卡器不经 NewBackend，另有一条路径（pool_pcsc.go）。
 func NormalizeBackendMode(in string) string {
 	switch strings.ToLower(strings.TrimSpace(in)) {
 	case "", BackendAT:
@@ -29,10 +35,16 @@ func NormalizeBackendMode(in string) string {
 	}
 }
 
-// ValidateBackendMode 验证后端模式是否有效
+// ValidateBackendMode 验证后端模式是否有效。
+//
+// 判据是**原始输入**，不是 NormalizeBackendMode 的结果。此前这里问的是归一化之后
+// 的值，而归一化对任何认不出的值都返回 AT——于是这个函数结构上不可能返回非 nil，
+// 校验是假的：`auto`、`qmii`、`Q M I` 全都"通过"，然后静默变成 AT 模式。
+//
+// 空串合法，表示"未指定，用默认"。
 func ValidateBackendMode(in string) error {
-	switch NormalizeBackendMode(in) {
-	case BackendAT, BackendQMI, BackendMBIM:
+	switch strings.ToLower(strings.TrimSpace(in)) {
+	case "", BackendAT, BackendQMI, BackendMBIM:
 		return nil
 	default:
 		return fmt.Errorf("无效的 device_backend 值: %q (可选: at, qmi, mbim)", in)

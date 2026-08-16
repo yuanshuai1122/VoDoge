@@ -105,7 +105,7 @@ type Worker struct {
 	Config      config.DeviceConfig
 	generation  uint64
 	Modem       *modem.Manager
-	Backend     backend.DeviceBackend // 双模后端接口（AT / QMI / Auto）
+	Backend     backend.DeviceBackend // 后端接口（AT / QMI / MBIM）
 	QMICore     *qmicore.Manager
 	MBIMCore    *mbimcore.Manager
 	netOverride NetworkController
