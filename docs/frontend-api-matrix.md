@@ -253,7 +253,7 @@
 | 端点 | 方法 | 用途 |
 |------|------|------|
 | `/api/devices` | GET / POST | 列表（含 `device_limit`、`lane`）/ 添加 |
-| `/api/devices/discovered` | GET | 已发现硬件 |
+| `/api/devices/discovered?with_imei=1` | GET | 已发现硬件。**`with_imei=1` 不是可选的**：整个 IMEI 探测（AT 口 + QMI 兜底）都关在这个开关后面，不带它每台设备的 `imei` 都是空串，前端据此判 `degraded` 并禁用添加——任何模组都加不进来。探测要实打实打串口和 QMI，调用方需放宽超时（前端用 60s） |
 | `/api/devices/actions/rescan` | POST | 重扫描 |
 | `/api/devices/:id` | PUT / DELETE | 更新 / 删除 |
 | `/api/devices/:id/overview` | GET | 详情（**返回 `{devices:[1]}`**） |

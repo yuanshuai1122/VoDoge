@@ -59,9 +59,23 @@ export async function getDeviceOverview(id: string): Promise<DeviceOverview> {
   ).data;
 }
 
-/** GET /api/devices/discovered -> {devices} */
+/**
+ * GET /api/devices/discovered?with_imei=1 -> {devices}
+ *
+ * `with_imei=1` 不能省。后端把**整个** IMEI 探测（AT 口 + QMI 兜底）关在这个
+ * 开关后面，不带它拿回来的每一台设备 IMEI 都是空的，前端据此判定 degraded，
+ * 显示「身份不可确立」并禁用添加按钮——也就是任何模组都加不进来。
+ *
+ * 本函数唯一的调用方是「添加设备」对话框，而它没有 IMEI 就没法工作，
+ * 所以这里固定带上。探测要打串口和 QMI，故有下面这个 60s 超时。
+ */
 export async function listDiscoveredDevices(): Promise<DiscoveredDevice[]> {
-  return (await api.get<DiscoveredDevice[]>("/devices/discovered", { timeoutMs: 60_000 })).data;
+  return (
+    await api.get<DiscoveredDevice[]>("/devices/discovered", {
+      query: { with_imei: "1" },
+      timeoutMs: 60_000,
+    })
+  ).data;
 }
 
 /**
