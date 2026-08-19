@@ -47,6 +47,9 @@
 curl -fsSL https://raw.githubusercontent.com/yuanshuai1122/VoDoge/main/scripts/install.sh | bash
 ```
 
+已有部署、持久 PostgreSQL 卷升级、Windows/Docker Desktop 或位于 NAT 后的生产 VM，请先阅读
+[DEPLOY.md](DEPLOY.md)，再运行安装器。
+
 本机已有仓库时：
 
 ```bash
@@ -101,7 +104,9 @@ docker exec vodoge-postgres pg_dump -U vodoge vodoge > vodoge-$(date +%F).sql
 | [docs/architecture.md](docs/architecture.md) | 架构总览：代码怎么摆、改东西去哪儿 |
 | [docs/hardware-support.md](docs/hardware-support.md) | 模组、短信通道、读卡器、插件 |
 | [docs/frontend-api-matrix.md](docs/frontend-api-matrix.md) | HTTP 契约 |
-| [docs/pve-lab-deploy.md](docs/pve-lab-deploy.md) | PVE 实验室落点 |
+| [DEPLOY.md](DEPLOY.md) | 当前部署与升级指南 |
+| [docs/production-vm-ssh-tunnel.md](docs/production-vm-ssh-tunnel.md) | NAT 后生产 VM 的常驻 SSH 隧道方案 |
+| [docs/pve-lab-deploy.md](docs/pve-lab-deploy.md) | 历史 PVE 实验室快照 |
 | [docs/README.md](docs/README.md) | 其余索引 |
 
 ## 免责声明

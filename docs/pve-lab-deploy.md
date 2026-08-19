@@ -1,9 +1,14 @@
-# PVE 实验室部署记录
+# PVE 实验室部署快照（2026-08-15，非当前手册）
 
 日期：2026-08-15  
 机器：Proxmox VE 宿主机 `pve.lab.lan`（`192.168.2.50`）上的虚拟机 **113 `vohive`**
 
-这不是通用安装说明。通用流程见 [DEPLOY.md](../DEPLOY.md) 和 [ufi103s-qmi-host.md](./ufi103s-qmi-host.md)。本文只记这套 lab 的真实落点和已经验证过的步骤。
+> 这是 2026-08-15 的实验室快照，不是当前生产部署手册。文中的 `vohive`、`/opt/vohive`、
+> IP、镜像标签和棒子台账均为当日事实，不应复制到新部署。当前通用流程见
+> [DEPLOY.md](../DEPLOY.md)；NAT 后生产 VM 的现行方案见
+> [production-vm-ssh-tunnel.md](./production-vm-ssh-tunnel.md)。
+
+本文只记这套 lab 的真实落点和已经验证过的硬件步骤。
 
 ## 拓扑
 
@@ -111,15 +116,20 @@ bash scripts/ufi103s-enable-qmi.sh --serial 34d12d26 --restore-rndis
 
 断电 / 拔插 / 虚拟机重启后 QMI 会不会自己回来，还没测。若启动后又是 RNDIS，再加 oneshot 按序列号跑脚本，不要再写更多 persist。
 
-## 服务
+## 服务（当日历史记录，勿直接复用）
 
 ```bash
 cd /opt/vohive
-# config/config.yaml 与 .env（VODOGE_POSTGRES_PASSWORD）已就位
-sudo docker build --progress=plain -t vohive:latest --build-arg VERSION=lab-$(date +%Y%m%d) .
+# 当前副本的 config/config.yaml 与 .env 已就位
+# .env 至少含：VODOGE_IMAGE=vodoge:lab 和 VODOGE_POSTGRES_PASSWORD=<随机密码>
+sudo docker compose --env-file .env build --build-arg VERSION=lab-$(date +%Y%m%d) vodoge
 sudo docker compose --env-file .env up -d
 curl -sS http://127.0.0.1:7575/ping
 ```
+
+这里的 `pgdata` 是持久业务数据。若沿用当日的旧卷，先备份并核对角色、数据库与
+`VODOGE_DB_DSN`，不能依赖新的 `POSTGRES_*` 变量重置旧实例，更不能用
+`docker compose down -v` 清卷。通用升级步骤见 [DEPLOY.md](../DEPLOY.md)。
 
 访问：`http://vodoge.lab.lan:7575` 或 `http://192.168.2.80:7575`。  
 装 PWA 可在系统设置打开「本机自签 HTTPS」（同一端口，先下载并信任证书）。  
@@ -154,7 +164,7 @@ dig @192.168.2.51 vodoge.lab.lan +short    # 192.168.2.80
 - 用网页 CPE 的「网络共享」代替脚本
 - 让 RNDIS 网卡当默认路由
 
-## 进度
+## 当日状态快照
 
 | 项 | 状态 | 日期 |
 |---|---|---|

@@ -55,6 +55,9 @@ One-line install — prefers Docker Compose and pulls the GHCR image
 curl -fsSL https://raw.githubusercontent.com/yuanshuai1122/VoDoge/main/scripts/install.sh | bash
 ```
 
+For an existing deployment, a persisted PostgreSQL volume, Windows/Docker Desktop, or a
+production VM behind NAT, read [DEPLOY.md](DEPLOY.md) before running an installer.
+
 If you already have the repository checked out:
 
 ```bash
@@ -115,7 +118,9 @@ docker exec vodoge-postgres pg_dump -U vodoge vodoge > vodoge-$(date +%F).sql
 | [docs/architecture.md](docs/architecture.md) | How the code is laid out and where to change things |
 | [docs/hardware-support.md](docs/hardware-support.md) | Modules, SMS paths, card readers, plugins |
 | [docs/frontend-api-matrix.md](docs/frontend-api-matrix.md) | The HTTP contract |
-| [docs/pve-lab-deploy.md](docs/pve-lab-deploy.md) | PVE lab deployment |
+| [DEPLOY.md](DEPLOY.md) | Current deployment and upgrade guide |
+| [docs/production-vm-ssh-tunnel.md](docs/production-vm-ssh-tunnel.md) | Production VM behind NAT with persistent SSH tunnels |
+| [docs/pve-lab-deploy.md](docs/pve-lab-deploy.md) | Historical PVE lab snapshot |
 | [docs/README.md](docs/README.md) | Index of everything else |
 
 > The design documents under `docs/` are written in Chinese. This README and the web UI

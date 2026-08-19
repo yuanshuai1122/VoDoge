@@ -52,9 +52,9 @@ proxy/traffic, notify, qqbot`。过程中修掉的 PG 迁移缺陷：
 
 ## P1 — 需要真实模组才能验证（代码已写，未经现场）
 
-需要一台能真正看到模组的机器。原生 Linux 主机最省事；Windows 也可以，
-但要先满足 [hardware-bringup-windows.md](./hardware-bringup-windows.md) 里的前提
-（自建 WSL2 内核 + usbipd），**默认环境下设备会扫不到且不报错**。
+需要一台能真正看到模组的机器。原生 Linux 主机最省事；Windows 上跑一台 Linux 虚机、
+把 USB 直通进去也可以，见 [hardware-bringup-vmware.md](./hardware-bringup-vmware.md)
+（VMware 默认禁掉全部 USB 直通，**不改 `.vmx` 设备根本进不了虚机**）。
 
 | 项 | 验证什么 |
 |----|----------|

@@ -1,11 +1,33 @@
-# VoDoge 部署
+# VoDoge 部署与升级
 
 面向高通 4G/LTE/5G 模组（Quectel EC20/EC25/EC21/EG25/EM20 等）的综合管理与代理服务平台。
 
 > **本版本需要 PostgreSQL。** 服务不再内置文件数据库；未提供可用的数据库连接串时会直接退出。
 > 从 v0.x 的 SQLite 版本升级时，旧的 `data/vohive.db` **不会自动迁移**。
 
-## 🚀 快速开始
+## 选择部署路径
+
+- **Linux 硬件宿主机，具备 Docker Compose**：使用下文的 Compose 流程。安装器检测到
+  `docker compose` 时也会选择这条路径。
+- **没有 Docker Compose 的 Linux VM，或 PostgreSQL 已由外部服务提供**：使用发行二进制和
+  `systemd`。标准路径为 `/usr/local/bin/vodoge`、`/etc/vodoge/config.yaml`、
+  `/etc/vodoge/vodoge.env` 与 `vodoge.service`；二进制安装需要在执行安装器前提供
+  `VODOGE_DB_DSN`。
+- **位于 NAT 后的生产 VM，云端负责 PostgreSQL 与 HTTPS 入口**：请使用
+  [生产 VM SSH 隧道运行手册](docs/production-vm-ssh-tunnel.md)。它记录了已验证的
+  `systemd`、Caddy 与最小权限 SSH 隧道拓扑。
+
+## 升级已有 PostgreSQL 卷
+
+`POSTGRES_USER`、`POSTGRES_PASSWORD` 和 `POSTGRES_DB` 只在 PostgreSQL 数据目录首次初始化时
+生效。若旧部署的持久卷仍使用 `vohive` 或 `vodog` 的角色/数据库，直接修改 Compose 环境变量
+并启动新版本不会迁移这些对象，应用会因认证或数据库不存在而退出。
+
+升级前先执行 `pg_dump` 并核对现有角色、数据库与连接串；不要用 `docker compose down -v`
+解决启动问题，`-v` 会删除业务数据库卷。旧 SQLite 文件迁入 PostgreSQL 是另一条流程，见
+[db-migrate-runbook.md](docs/db-migrate-runbook.md)。
+
+## 🚀 快速开始（Linux Compose）
 
 ### 1. 准备目录
 
@@ -89,10 +111,12 @@ docker compose up -d
 ```
 
 > `network_mode: host` 下容器与宿主共享网络，因此 DSN 用 `127.0.0.1`。
-> PostgreSQL 只发布到宿主机回环地址；生产部署请在 `.env` 中设置
+> PostgreSQL 只发布到宿主机回环地址；Linux Compose 与一键安装器的生产部署请在 `.env` 中设置
 > `VODOGE_POSTGRES_PASSWORD`，不要使用默认值。
-> 若改用端口映射（如 Windows/Docker Desktop），请把 host 改为 `postgres`
-> 并为 vodoge 加上 `ports: ["7575:7575"]`。
+> Windows/Docker Desktop 不使用本段的 host 网络 Compose。当前仓库的
+> `docker-compose.windows.yml` 仅用于本地管理面验证：它只发布 `7575`，并固定 PostgreSQL
+> 凭据，不能承载插件运行时或生产密码轮换。完整生产部署请使用 Linux host-network Compose，
+> 或先自行完善 Windows Compose。
 
 容器镜像已经包含 CS 语音所需的 `arecord`/`aplay`。宿主机仍需提供 ALSA 声卡设备；
 如需 CCID/eSIM，还需安装并启动 `pcscd`，并把 `/run/pcscd` 挂载到容器（仓库自带的
@@ -162,12 +186,15 @@ bash scripts/ci.sh
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `VODOGE_DB_DSN` | — | **必需**。PostgreSQL 连接串；为空或连不上时进程退出 |
+| `VODOGE_DB_DSN` | — | PostgreSQL 连接串的最高优先级覆盖 |
 | `DATABASE_URL` | — | `VODOGE_DB_DSN` 未设置时的备选 |
 | `VODOGE_POSTGRES_PASSWORD` | `vodoge` | Compose 使用的 PostgreSQL 密码；生产部署必须覆盖 |
 | `CONFIG_PATH` | `/app/config/config.yaml` | 配置文件路径 |
 | `TZ` | `UTC` | 时区 |
 | `HTTPS_PROXY` | — | 外部服务代理（如 Telegram API） |
+
+`VODOGE_DB_DSN`、`DATABASE_URL` 和配置文件中的 `database.dsn` 按以上顺序取第一个非空值；
+三者至少一个必须能连上 PostgreSQL，否则进程会退出。
 
 ## 📁 数据卷
 
@@ -232,13 +259,17 @@ bash scripts/ci.sh multiarch
 ## ⚠️ 注意事项
 
 - **设备透传**：管理模组需要访问 USB 设备，因此需要 `privileged` 与 `/dev` 挂载。
-  Windows/macOS 的 Docker Desktop 默认没有 USB 透传。Windows 上可以用 WSL2 + usbipd 补上，
-  但**还需要一个带 WWAN 驱动的内核**——微软的默认 WSL2 内核没编进 QMI/MBIM/AT 任何一个，
-  设备会扫不到且不报错。做法见 `docs/hardware-bringup-windows.md`。
+  Windows/macOS 的 Docker Desktop 默认没有 USB 透传。
+  **Windows 上的推荐做法是跑一台 Linux 虚机、把 USB 设备直通进去**，
+  见 [docs/hardware-bringup-vmware.md](docs/hardware-bringup-vmware.md)：普通 Ubuntu 内核
+  自带 QMI/MBIM/AT 驱动，随插随载。
+  WSL2 + usbipd 那条路已弃用——微软的默认 WSL2 内核一个 WWAN 驱动都没编进去，
+  设备扫不到且不报错，走通要自建内核。
 - **端口**：`network_mode: host` 时无需映射；否则需自行暴露管理 API `7575` 和
   隔离的插件运行时 `7576`。
   注意 Docker Desktop 的 host 网络是 `docker-desktop` 那个 WSL 发行版的命名空间，**不是** Windows 主机，
-  端口从主机访问不到；Windows 上请用仓库里的 `docker-compose.windows.yml`（发布端口 + 服务名连库）。
+  端口从主机访问不到；Windows 上请用仓库里的 `docker-compose.windows.yml` 做本地管理面验证。
+  它当前只发布 `7575`，不能作为插件或公网生产部署配置。
 
 ## 🔄 升级：API 响应结构变更（2026-08-14，破坏性）
 
