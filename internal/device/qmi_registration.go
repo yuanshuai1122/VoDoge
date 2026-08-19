@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	qmimanager "github.com/boa-z/quectel-qmi-go/pkg/manager"
@@ -59,6 +60,54 @@ type qmiRegistrationController interface {
 	NASAttachDetach(ctx context.Context, attached bool) error
 	GetOperatingMode(ctx context.Context) (backend.OperatingMode, error)
 	SetOperatingMode(ctx context.Context, mode backend.OperatingMode) error
+}
+
+// qmiCellLocationSource 是驻网判定的第二信源。
+//
+// 做成可选接口而不是直接加进 qmiRegistrationController：后者在测试里有多个假
+// 实现，硬加方法会把它们全部打破；而这条路径本身就是 best-effort，拿不到就退回
+// 原行为。
+type qmiCellLocationSource interface {
+	GetCellLocationInfo(ctx context.Context) (*qmi.CellLocationInfo, error)
+}
+
+// 编译期保证 QMI 后端确实满足该可选接口。
+//
+// 这条断言不是形式主义：ctrl 实际是 w.Backend（*backend.QMIBackend），不是
+// qmi.Manager。断言写错对象或签名漂移时，类型断言会安静地失败，lteCampedOnCell
+// 永远返回 false，整个修复变成空操作且没有任何征兆——那正是本 bug 最初的形态。
+var _ qmiCellLocationSource = (*backend.QMIBackend)(nil)
+
+// lteCampedOnCell 在 serving system 报「搜网中」时做二次确认。
+//
+// 起因见 internal/qmi/manager.go 的 GetCellLocationInfo：NAS Get Serving System 是
+// 3GPP2 时代的老接口，EC20/EC25 固件在**只驻 LTE**时会一直在那里报
+// not-registered-searching，MCC/MNC/RadioInterface 全为空。于是本文件的状态机走进
+// case 2，一路升级「NAS 注册唤醒 → force network search → radio cycle」，最后超时，
+// 而模组其实好好驻在网上。radio cycle 更糟——它会把一个正常工作的模组射频重启一遍。
+//
+// 判据是「是不是真的 camp 在某个小区上」：有有效 PLMN 且 Global Cell ID 非零即可。
+// 任何一步不成立（接口不支持、调用出错、没有 LTE 段、字段为空）都返回 false，
+// 退回既有行为——**误判只会退化成现状，绝不会假报已驻网**。
+func lteCampedOnCell(ctx context.Context, deviceID string, ctrl qmiRegistrationController) (camped bool, plmn string, cellID uint32) {
+	src, ok := ctrl.(qmiCellLocationSource)
+	if !ok {
+		return false, "", 0
+	}
+	info, err := src.GetCellLocationInfo(ctx)
+	if err != nil {
+		logger.Debug("QMI 小区信息读取失败，按 serving system 结果继续", "device", deviceID, "err", err)
+		return false, "", 0
+	}
+	if info == nil || info.LTE == nil {
+		return false, "", 0
+	}
+	mcc := strings.TrimSpace(info.LTE.MCC)
+	mnc := strings.TrimSpace(info.LTE.MNC)
+	if mcc == "" || mnc == "" || info.LTE.GlobalCellID == 0 {
+		return false, "", 0
+	}
+	return true, mcc + mnc, info.LTE.GlobalCellID
 }
 
 type qmiRegistrationOptions struct {
@@ -150,6 +199,16 @@ func ensureQMIRegistration(ctx context.Context, deviceID string, cfg config.Devi
 				attachIssued = true
 			}
 		case 2:
+			// serving system 说在搜网，但它对 LTE-only 驻网是瞎的（见 lteCampedOnCell）。
+			// 下面每一级升级动作都有副作用——force network search 会打断当前搜网，
+			// radio cycle 直接重启射频——所以先用小区信息复核：已经 camp 上了就收工，
+			// 不去折腾一个本来就正常的模组。
+			if camped, plmn, cellID := lteCampedOnCell(ctx, deviceID, ctrl); camped {
+				logger.Info("QMI serving system 报搜网，但小区信息显示已驻 LTE，按已驻网处理",
+					"device", deviceID, "attempt", attempt, "plmn", plmn, "cell_id", cellID,
+					"elapsed_ms", time.Since(startedAt).Milliseconds())
+				return nil
+			}
 			if !registerIssued {
 				logger.Info("QMI 正在搜网，发起 NAS 注册唤醒", "device", deviceID, "attempt", attempt)
 				if err := initiateQMIRegistration(ctx, deviceID, cfg, ctrl); err != nil {

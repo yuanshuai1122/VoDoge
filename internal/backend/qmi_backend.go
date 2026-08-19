@@ -355,6 +355,25 @@ func (q *QMIBackend) GetSignalInfo(ctx context.Context) (*SignalInfo, error) {
 	return info, nil
 }
 
+// GetCellLocationInfo 暴露当前服务小区信息，作为驻网判定的第二信源。
+//
+// NAS Get Serving System 是 3GPP2 时代的老接口，EC20/EC25 固件在**只驻 LTE**时
+// 会在那里一直报 not-registered-searching，且 MCC/MNC/RadioInterface 全为空。
+// 同一根棒子、同一时刻实测（电信 46011）：
+//
+//	Get Serving System → 'not-registered-searching'，Radio interfaces [0]:'none'
+//	Get Cell Location  → PLMN '46011'，TAC '6401'，Global Cell ID '4945529'
+//
+// 本方法不带快照缓存，刻意每次直读：调用它的场合正是「缓存/老接口说没驻网」，
+// 再拿一份可能同样陈旧的数据没有意义。用法见 device/qmi_registration.go
+// 的 lteCampedOnCell。
+func (q *QMIBackend) GetCellLocationInfo(ctx context.Context) (*qmi.CellLocationInfo, error) {
+	if q == nil || q.source == nil {
+		return nil, fmt.Errorf("qmi source unavailable")
+	}
+	return q.source.NASGetCellLocationInfo(ctx)
+}
+
 func (q *QMIBackend) GetServingSystem(ctx context.Context) (*ServingSystem, error) {
 	ss := &ServingSystem{}
 
