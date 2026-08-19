@@ -80,6 +80,28 @@ func TestEnsureQMIRegistrationTrustsCellLocationOverServingSystem(t *testing.T) 
 	}
 }
 
+func TestEnsureQMIRegistrationAcceptsBackendCellCampedFlag(t *testing.T) {
+	ctrl := &qmiRegistrationTestController{
+		simStatuses: []qmi.SIMStatus{qmi.SIMReady},
+		servingSeq: []*backend.ServingSystem{{
+			RegStatus:     2,
+			RegStatusText: "已驻 LTE（数据未附着）",
+			CellCamped:    true,
+		}},
+	}
+
+	err := ensureQMIRegistration(context.Background(), "dev-lte", config.DeviceConfig{}, ctrl, ctrl, qmiRegistrationOptions{
+		PollInterval: time.Nanosecond,
+		MaxAttempts:  4,
+	})
+	if err != nil {
+		t.Fatalf("ensureQMIRegistration() error = %v，后端已确认 cell camped 时不该失败", err)
+	}
+	if ctrl.registerCalls != 0 || ctrl.forceNetworkSearchCalls != 0 || len(ctrl.setModeCalls) != 0 {
+		t.Fatalf("cell camped 状态不应触发恢复动作: register=%d force=%d radio=%v", ctrl.registerCalls, ctrl.forceNetworkSearchCalls, ctrl.setModeCalls)
+	}
+}
+
 // 小区信息拿不到时必须退回原行为，而不是把「搜网」误判成「已驻网」。
 func TestEnsureQMIRegistrationFallsBackWhenCellLocationUnusable(t *testing.T) {
 	cases := []struct {

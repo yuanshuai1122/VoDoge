@@ -75,6 +75,18 @@ func registrationStateLabel(regStatus int) string {
 	}
 }
 
+// registrationStateLabelForStatus keeps NAS registration semantics intact while
+// exposing the LTE cell-location second signal used by EC25 devices.
+func registrationStateLabelForStatus(status modem.DeviceStatus) string {
+	if status.RegStatus == 1 || status.RegStatus == 5 {
+		return "registered"
+	}
+	if status.CellCamped {
+		return "camped"
+	}
+	return registrationStateLabel(status.RegStatus)
+}
+
 // overviewDisplayConfig 合并设备的展示配置:身份与用户意图取自持久化 config,
 // 而 interface / control_device / at_port 等运行时路径取自 worker 内存 config。
 // 零路径持久化后持久化侧已不含这些路径,必须用运行时真实值展示,否则在线设备会被
@@ -161,7 +173,7 @@ func (s *Server) handleDeviceMgmtOverview(c *gin.Context) {
 			PublicIPv6:             w.GetCachedIPv6(),
 			Modem:                  modemSummaryStatus(status),
 			NetworkConnected:       w.NetworkConnected(),
-			RegistrationStateLabel: registrationStateLabel(status.RegStatus),
+			RegistrationStateLabel: registrationStateLabelForStatus(status),
 			BackendMode: func() string {
 				if w.Backend != nil {
 					return w.Backend.Mode()
@@ -269,6 +281,7 @@ type deviceMgmtListModem struct {
 	IMEI          string `json:"imei,omitempty"`
 	ICCID         string `json:"iccid,omitempty"`
 	RegStatus     int    `json:"reg_status"`
+	CellCamped    bool   `json:"cell_camped"`
 	PSAttached    bool   `json:"ps_attached"`
 }
 
@@ -476,7 +489,7 @@ func (s *Server) buildOverviewLiteItemFromWorkerWithModem(w *device.Worker, cfg 
 		RadioLiveOK:            radioLiveOK,
 		Modem:                  modemStatus,
 		NetworkConnected:       w.NetworkConnected(),
-		RegistrationStateLabel: registrationStateLabel(status.RegStatus),
+		RegistrationStateLabel: registrationStateLabelForStatus(status),
 		BackendMode: func() string {
 			if config.IsPCSCBackend(cfg.DeviceBackend) {
 				return config.DeviceBackendPCSC

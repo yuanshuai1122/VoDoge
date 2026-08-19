@@ -195,7 +195,7 @@ func (s *Server) handleDeviceMgmtList(c *gin.Context) {
 			VoWiFiEnabled:          s.pool.IsVoWiFiActive(w.ID), // 使用多设备状态查询
 			VoWiFiRuntime:          s.getVoWiFiRuntimeDTO(w.ID),
 			NetworkConnected:       w.NetworkConnected(),
-			RegistrationStateLabel: registrationStateLabel(status.RegStatus),
+			RegistrationStateLabel: registrationStateLabelForStatus(status),
 			Modem: deviceMgmtListModem{
 				Operator:      status.Operator,
 				NativeSPN:     status.NativeSPN,
@@ -210,6 +210,7 @@ func (s *Server) handleDeviceMgmtList(c *gin.Context) {
 				IMEI:          status.IMEI,
 				ICCID:         status.ICCID,
 				RegStatus:     status.RegStatus,
+				CellCamped:    status.CellCamped,
 				PSAttached:    status.PSAttached,
 			},
 		}

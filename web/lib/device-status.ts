@@ -101,6 +101,17 @@ export function summarizeDeviceStatus(d: DeviceOverview): DeviceStatusSummary {
     };
   }
 
+  if (d.modem?.cell_camped) {
+    return {
+      label: t("status.camped"),
+      tone: "warn",
+      detail: d.modem.sim_inserted
+        ? t("status.campedHint")
+        : t("status.campedSimMissing"),
+      transient: false,
+    };
+  }
+
   // online 且健康：进一步区分是否真正可用
   if (!d.radio_registered) {
     return {

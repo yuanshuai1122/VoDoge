@@ -41,6 +41,7 @@ type deviceRuntimeState struct {
 	Operator       string // 当前驻留的基站运营商名称
 	NetworkMode    string // 驻网技术模式 (如 LTE, NR5G 等)
 	NetworkDuplex  string // 网络双工模式 (如 FDD, TDD)
+	CellCamped     bool   // LTE cell location 已确认射频驻留小区（不代表 PS 附着）
 	RadioBand      string // 当前工作的射频频段 (Band)
 	RadioChannel   uint32 // 工作频点 (ARFCN/EARFCN/NR-ARFCN)
 	RegStatus      int    // 网络注册状态码 (0:未注册, 1:已注册归属地网络, 5:漫游等)
@@ -82,6 +83,7 @@ func hasRuntimeSnapshot(status modem.DeviceStatus) bool {
 		strings.TrimSpace(status.Firmware) != "" ||
 		strings.TrimSpace(status.Operator) != "" ||
 		strings.TrimSpace(status.NetworkMode) != "" ||
+		status.CellCamped ||
 		strings.TrimSpace(status.RegStatusText) != "" ||
 		strings.TrimSpace(status.RadioBand) != "" ||
 		strings.TrimSpace(status.LAC) != "" ||
@@ -134,6 +136,7 @@ func (w *Worker) projectDeviceStatusLocked() modem.DeviceStatus {
 		IMSStatus:       w.state.Runtime.IMSStatus,
 		NetworkMode:     w.state.Runtime.NetworkMode,
 		NetworkDuplex:   w.state.Runtime.NetworkDuplex,
+		CellCamped:      w.state.Runtime.CellCamped,
 		USBNetMode:      w.state.Runtime.USBNetMode,
 		OperatingMode:   w.state.Runtime.OperatingMode,
 	}
@@ -383,6 +386,12 @@ func (w *Worker) mergeRuntimeStateLocked(status modem.DeviceStatus, healthy bool
 	}
 	if strings.TrimSpace(status.NetworkDuplex) != "" {
 		w.state.Runtime.NetworkDuplex = status.NetworkDuplex
+	}
+	if status.RegStatus != 0 || strings.TrimSpace(status.RegStatusText) != "" {
+		// RegStatusText is populated for every serving-system response, including
+		// an explicit "not registered" result, so a later refresh can clear a
+		// previously camped LTE flag without letting an IPC error clear it.
+		w.state.Runtime.CellCamped = status.CellCamped
 	}
 	w.state.Runtime.USBNetMode = status.USBNetMode
 	w.state.Runtime.OperatingMode = status.OperatingMode

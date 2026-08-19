@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -466,6 +467,20 @@ func (q *QMIBackend) GetServingSystem(ctx context.Context) (*ServingSystem, erro
 		}
 	}
 
+	// cell location 是 serving system 的补充信源。EC25 固件在 LTE-only
+	// 驻留时可能返回 RadioInterface=none + searching；同一次直读仍能给出
+	// LTE PLMN/TAC/GlobalCellID。缓存本次结果，避免为双工和驻留判定发两次 QMI。
+	var cellInfo *qmi.CellLocationInfo
+	cellInfoLoaded := false
+	loadCellInfo := func() *qmi.CellLocationInfo {
+		if cellInfoLoaded {
+			return cellInfo
+		}
+		cellInfoLoaded = true
+		cellInfo, _ = q.source.NASGetCellLocationInfo(ctx)
+		return cellInfo
+	}
+
 	// 网络模式映射 (基于 QmiNasRadioInterface 标准)
 	switch serving.RadioInterface {
 	case 0x01, 0x02:
@@ -483,9 +498,7 @@ func (q *QMIBackend) GetServingSystem(ctx context.Context) (*ServingSystem, erro
 			ss.RadioBand, ss.RadioChannel = qmiRadioBandAndChannel(bandInfo)
 		}
 		if ss.NetworkDuplex == "" {
-			if cellInfo, cellErr := q.source.NASGetCellLocationInfo(ctx); cellErr == nil {
-				ss.NetworkDuplex = qmi.GetLTEDuplexModeFromCellLocation(cellInfo)
-			}
+			ss.NetworkDuplex = qmi.GetLTEDuplexModeFromCellLocation(loadCellInfo())
 		}
 	case 0x0C:
 		ss.NetworkMode = "NR5G"
@@ -515,7 +528,62 @@ func (q *QMIBackend) GetServingSystem(ctx context.Context) (*ServingSystem, erro
 		}
 	}
 
+	// 不改变 RegStatus 的原始语义：cell camped 只说明射频已驻留，
+	// 仍可能没有 SIM、没有 NAS 注册或没有 PS 数据附着。上层据此分别展示
+	// “已驻 LTE”和“数据未附着”，驻网协调器也会跳过有副作用的搜网动作。
+	if ss.RegStatus == 0 || ss.RegStatus == 2 {
+		applyLTECellCamped(ss, loadCellInfo())
+	}
+
 	return ss, nil
+}
+
+// applyLTECellCamped 将可靠的 LTE cell-location 信息合并到 serving 状态。
+// 只有 PLMN 完整且 GlobalCellID 非零时才判定已驻留，避免把邻区扫描结果
+// 误报成服务小区。返回值表示是否完成了合并。
+func applyLTECellCamped(ss *ServingSystem, info *qmi.CellLocationInfo) bool {
+	if ss == nil || info == nil || info.LTE == nil {
+		return false
+	}
+	lte := info.LTE
+	mcc, ok := parseQMICellPLMNPart(lte.MCC)
+	if !ok || mcc == 0 {
+		return false
+	}
+	mnc, ok := parseQMICellPLMNPart(lte.MNC)
+	if !ok || lte.GlobalCellID == 0 {
+		return false
+	}
+
+	ss.CellCamped = true
+	ss.RegStatusText = "已驻 LTE（数据未附着）"
+	ss.MCC = mcc
+	ss.MNC = mnc
+	ss.Operator = qmiOperatorDisplay(mcc, mnc)
+	ss.NetworkMode = "LTE"
+	if duplex := qmi.GetLTEDuplexModeFromCellLocation(info); duplex != "" {
+		ss.NetworkDuplex = duplex
+	}
+	if lte.TAC > 0 {
+		ss.LAC = fmt.Sprintf("%04X", lte.TAC)
+	}
+	ss.CellID = fmt.Sprintf("%X", lte.GlobalCellID)
+	if lte.EARFCN > 0 {
+		ss.RadioChannel = uint32(lte.EARFCN)
+	}
+	return true
+}
+
+func parseQMICellPLMNPart(value string) (uint16, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(value, 10, 16)
+	if err != nil {
+		return 0, false
+	}
+	return uint16(n), true
 }
 
 func qmiRadioBandAndChannel(info *qmi.RFBandInfo) (string, uint32) {

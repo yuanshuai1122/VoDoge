@@ -38,6 +38,9 @@ type ServingSystem struct {
 	NetworkDuplex string // FDD/TDD
 	RadioBand     string // 当前服务小区/无线接口频段
 	RadioChannel  uint32 // EARFCN/ARFCN/channel
+	// CellCamped 表示第二信源（LTE cell location）确认射频已驻留小区。
+	// 它不等价于 NAS 注册或 PS 附着：数据、短信和 VoWiFi 仍须分别检查。
+	CellCamped bool
 
 	// PS 附着状态
 	PSAttached bool

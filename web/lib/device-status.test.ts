@@ -101,6 +101,31 @@ describe("summarizeDeviceStatus 判定顺序", () => {
     expect(s.tone).toBe("warn");
   });
 
+  it("已驻 LTE 但未完成数据附着时单独提示", () => {
+    const s = summarizeDeviceStatus(
+      overview({
+        radio_registered: false,
+        network_enabled: true,
+        data_connected: false,
+        modem: { cell_camped: true, sim_inserted: true } as DeviceOverview["modem"],
+      }),
+    );
+    expect(s.label).toBe("已驻 LTE");
+    expect(s.tone).toBe("warn");
+    expect(s.detail).toContain("数据业务尚未附着");
+  });
+
+  it("已看到小区但 SIM 未就绪时明确提示卡状态", () => {
+    const s = summarizeDeviceStatus(
+      overview({
+        radio_registered: false,
+        modem: { cell_camped: true, sim_inserted: false } as DeviceOverview["modem"],
+      }),
+    );
+    expect(s.label).toBe("已驻 LTE");
+    expect(s.detail).toContain("SIM 尚未就绪");
+  });
+
   it("已注册但数据未连接", () => {
     const s = summarizeDeviceStatus(
       overview({ network_enabled: true, data_connected: false }),

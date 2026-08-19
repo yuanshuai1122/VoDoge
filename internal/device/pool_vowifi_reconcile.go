@@ -103,10 +103,29 @@ func (p *Pool) shouldReconcileVoWiFiForReason(w *Worker, reason string) bool {
 	mcc, _, _ := vowifiProfileMCCMNC(status)
 	if mcc != "" && carrier.IsVoWiFiBlockedMCC(mcc) {
 		p.clearDesiredVoWiFiRecoverState(deviceID)
-		logger.Warn("VoWiFi 目标态恢复跳过：MCC 策略禁止", "event", "VOWIFI_DESIRED_RECOVER_SKIPPED_POLICY", "device", deviceID, "mcc", formatVoWiFiPLMN3(mcc), "imsi", imsi)
+		// 只提醒一次。这里的 clear 挡不住日志——本函数被 30 秒一次的目标态协调
+		// 无条件调用，WARN 在 clear 之前就已经打出去了，于是一条永远不会改变的
+		// 策略结论每半分钟刷一遍，真问题反而被埋掉。
+		// 禁令由 MCC 决定，换卡才可能变，所以按 device+MCC 去重。
+		if p.shouldWarnVoWiFiPolicyBlocked(deviceID, mcc) {
+			logger.Warn("VoWiFi 目标态恢复跳过：MCC 策略禁止（该 MCC 下不再重复提醒）",
+				"event", "VOWIFI_DESIRED_RECOVER_SKIPPED_POLICY", "device", deviceID,
+				"mcc", formatVoWiFiPLMN3(mcc), "imsi", imsi)
+		}
 		return false
 	}
+	p.vowifiPolicyWarned.Delete(deviceID)
 	return true
+}
+
+// shouldWarnVoWiFiPolicyBlocked 在同一设备 + 同一 MCC 上只放行一次告警。
+// MCC 变化（换卡）时重新放行一次，避免换卡后真的有问题却没有任何提示。
+func (p *Pool) shouldWarnVoWiFiPolicyBlocked(deviceID, mcc string) bool {
+	if p == nil {
+		return true
+	}
+	prev, loaded := p.vowifiPolicyWarned.Swap(deviceID, mcc)
+	return !loaded || prev != mcc
 }
 
 func (p *Pool) isWorkerRebuilding(deviceID string) bool {

@@ -224,6 +224,22 @@ func TestRegistrationStateLabel(t *testing.T) {
 	}
 }
 
+func TestRegistrationStateLabelForCellCampedStatus(t *testing.T) {
+	if got := registrationStateLabelForStatus(modem.DeviceStatus{
+		RegStatus:  2,
+		CellCamped: true,
+	}); got != "camped" {
+		t.Fatalf("registrationStateLabelForStatus()=%q want camped", got)
+	}
+	// A genuine NAS registration remains the stronger signal if both fields are set.
+	if got := registrationStateLabelForStatus(modem.DeviceStatus{
+		RegStatus:  1,
+		CellCamped: true,
+	}); got != "registered" {
+		t.Fatalf("registered status was downgraded to %q", got)
+	}
+}
+
 func TestBuildOverviewLiteItemDoesNotTriggerEsimScanWhenActiveProfileCacheMissing(t *testing.T) {
 	mgr := newTestEsimManager()
 	setNestedPrivateField(t, mgr, []string{"overviewLoader"}, func() (*esim.EsimOverview, error) {

@@ -48,6 +48,8 @@ export interface ModemStatus {
   radio_channel?: number;
   reg_status: number;
   reg_status_text: string;
+  /** LTE cell location confirms radio camped; does not imply PS/data attach. */
+  cell_camped: boolean;
   ps_attached: boolean;
   lac: string;
   cell_id: string;

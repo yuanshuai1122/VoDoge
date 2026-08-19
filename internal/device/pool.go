@@ -209,6 +209,11 @@ type Pool struct {
 	deviceEventWakeMu  sync.Mutex
 	deviceEventWakeups map[string]*deviceEventRecoverWakeup
 
+	// vowifiPolicyWarned 记录已经就“该 MCC 禁止 VoWiFi”提醒过的设备。
+	// 禁令对一张卡是永久不变的条件，而目标态协调每 30 秒扫一遍全部 worker，
+	// 不去重就会一直刷 WARN，把真正的问题埋掉。换卡（MCC 变化）时会重新提醒。
+	vowifiPolicyWarned sync.Map
+
 	switchMu         sync.Mutex
 	switchingDevices map[string]bool
 	switchContexts   map[string]esimSwitchContext
@@ -474,6 +479,7 @@ func (w *Worker) collectRuntimeStatus(ctx context.Context, reason string) modem.
 				status.Operator = ss.Operator
 				status.NetworkMode = ss.NetworkMode
 				status.NetworkDuplex = ss.NetworkDuplex
+				status.CellCamped = ss.CellCamped
 				status.RadioBand = ss.RadioBand
 				status.RadioChannel = ss.RadioChannel
 				status.RegStatus = ss.RegStatus

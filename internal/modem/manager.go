@@ -1151,6 +1151,7 @@ type DeviceStatus struct {
 	IMSStatus       int              `json:"ims_status"`
 	NetworkMode     string           `json:"network_mode"`
 	NetworkDuplex   string           `json:"network_duplex"`
+	CellCamped      bool             `json:"cell_camped"`
 	USBNetMode      int              `json:"usbnet_mode"`
 	OperatingMode   *int             `json:"operating_mode,omitempty"`
 }

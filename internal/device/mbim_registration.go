@@ -177,23 +177,10 @@ func initiateMBIMRegistration(ctx context.Context, deviceID string, cfg config.D
 }
 
 func radioCycleMBIMForRegistration(ctx context.Context, deviceID string, ctrl mbimRegistrationController, wait time.Duration) error {
-	if wait <= 0 {
-		wait = 2 * time.Second
+	if ctrl == nil {
+		return fmt.Errorf("mbim registration controller unavailable")
 	}
-	logger.Info("MBIM 搜网持续未恢复，执行 radio flight-mode cycle 重新触发搜网", "device", deviceID)
-	if err := ctrl.SetOperatingMode(ctx, backend.ModeRFOff); err != nil {
-		return fmt.Errorf("设置 RFOff 失败: %w", err)
-	}
-	if err := sleepQMIRegistrationPoll(ctx, wait); err != nil {
-		return err
-	}
-	if err := ctrl.SetOperatingMode(ctx, backend.ModeOnline); err != nil {
-		return fmt.Errorf("恢复 Online 失败: %w", err)
-	}
-	if err := sleepQMIRegistrationPoll(ctx, wait); err != nil {
-		return err
-	}
-	return nil
+	return radioCycleForRegistration(ctx, deviceID, "MBIM", ctrl, wait)
 }
 
 func (w *Worker) EnsureMBIMRegistration(ctx context.Context, requiredForData bool) error {

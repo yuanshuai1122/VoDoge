@@ -26,6 +26,11 @@ const (
 	qmiRegistrationRadioCycleAfterTries                 = 30
 	qmiRegistrationUnsupportedForceRadioCycleAfterTries = 3
 
+	// qmiRadioRestoreTimeout 是 radio cycle 被打断后强行恢复射频的预算。
+	// 它刻意独立于驻网协调的超时：走到这一步时那个 ctx 已经 Done，
+	// 而「把射频开回来」是必须完成的收尾，不能跟着一起被取消。
+	qmiRadioRestoreTimeout = 5 * time.Second
+
 	// qmiRegistrationTimeoutDataRequired 用于数据网络必须就绪的协调路径（如 StartNetwork），
 	// DMS/NAS 偶发卡顿时仍要尽量等到驻网完成。
 	qmiRegistrationTimeoutDataRequired = 90 * time.Second
@@ -184,6 +189,16 @@ func ensureQMIRegistration(ctx context.Context, deviceID string, cfg config.Devi
 		if ss == nil {
 			return fmt.Errorf("读取 QMI serving system 返回空结果")
 		}
+		if ss.CellCamped {
+			// NAS serving system 在部分 EC25 固件上会把 LTE-only 小区报成
+			// searching。cell location 已经证明射频驻留时，不要再发起搜网、
+			// radio cycle 或 PS attach；数据面由后续网络控制器单独处理。
+			logger.Info("QMI 小区信息显示已驻 LTE，按射频已驻留处理",
+				"device", deviceID, "attempt", attempt, "reg_status", ss.RegStatus,
+				"ps_attached", ss.PSAttached,
+				"elapsed_ms", time.Since(startedAt).Milliseconds())
+			return nil
+		}
 
 		switch ss.RegStatus {
 		case 1, 5:
@@ -340,24 +355,7 @@ func radioCycleQMIForRegistration(ctx context.Context, deviceID string, ctrl qmi
 	if ctrl == nil {
 		return fmt.Errorf("qmi registration controller unavailable")
 	}
-	if wait <= 0 {
-		wait = 2 * time.Second
-	}
-	logger.Info("QMI 搜网持续未恢复，执行 radio flight-mode cycle 重新触发搜网", "device", deviceID)
-
-	if err := ctrl.SetOperatingMode(ctx, backend.ModeRFOff); err != nil {
-		return fmt.Errorf("设置 RFOff 失败: %w", err)
-	}
-	if err := sleepQMIRegistrationPoll(ctx, wait); err != nil {
-		return err
-	}
-	if err := ctrl.SetOperatingMode(ctx, backend.ModeOnline); err != nil {
-		return fmt.Errorf("恢复 Online 失败: %w", err)
-	}
-	if err := sleepQMIRegistrationPoll(ctx, wait); err != nil {
-		return err
-	}
-	return nil
+	return radioCycleForRegistration(ctx, deviceID, "QMI", ctrl, wait)
 }
 
 func shouldFallbackQMIAutomaticRegistration(err error) bool {

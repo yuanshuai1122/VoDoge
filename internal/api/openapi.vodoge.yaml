@@ -3349,6 +3349,9 @@ components:
           type: integer
         reg_status_text:
           type: string
+        cell_camped:
+          type: boolean
+          description: LTE cell location 已确认射频驻留小区；不代表 NAS 注册或 PS 数据附着。
         lac:
           type: string
         cell_id:
@@ -3408,6 +3411,9 @@ components:
           type: string
         iccid:
           type: string
+        cell_camped:
+          type: boolean
+          description: LTE cell location 已确认射频驻留小区；不代表 NAS 注册或 PS 数据附着。
         imsi:
           type: string
         native_spn:
@@ -4017,7 +4023,7 @@ components:
           type: boolean
         registration_state_label:
           type: string
-          enum: [registered, searching, denied, unknown]
+          enum: [registered, camped, searching, denied, unknown]
 
     DeviceMgmtOverviewLiteItem:
       type: object
@@ -4076,7 +4082,7 @@ components:
           type: boolean
         registration_state_label:
           type: string
-          enum: [registered, searching, denied, unknown]
+          enum: [registered, camped, searching, denied, unknown]
 
     DiscoveredDevice:
       type: object

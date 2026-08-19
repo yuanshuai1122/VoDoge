@@ -1261,6 +1261,65 @@ func TestQMIBackendGetServingSystemFallbackFailureKeepsCurrentStatus(t *testing.
 	}
 }
 
+func TestQMIBackendGetServingSystemMarksLTECellCampedWhenServingIsSearching(t *testing.T) {
+	src := &qmiBackendSendSourceStub{
+		servingSeq: []*qmi.ServingSystem{{
+			RegistrationState: qmi.RegStateSearching,
+			RadioInterface:    0,
+		}},
+		cellLocation: &qmi.CellLocationInfo{LTE: &qmi.LTECellLocationInfo{
+			MCC:          "460",
+			MNC:          "11",
+			TAC:          6401,
+			GlobalCellID: 4945521,
+			EARFCN:       1506,
+		}},
+	}
+	be, err := NewQMIBackend("/dev/null", src)
+	if err != nil {
+		t.Fatalf("NewQMIBackend failed: %v", err)
+	}
+
+	ss, err := be.GetServingSystem(context.Background())
+	if err != nil {
+		t.Fatalf("GetServingSystem failed: %v", err)
+	}
+	if !ss.CellCamped {
+		t.Fatalf("CellCamped=false want true: %+v", ss)
+	}
+	if ss.RegStatus != 2 || ss.PSAttached {
+		t.Fatalf("raw registration semantics changed: %+v", ss)
+	}
+	if ss.RegStatusText != "已驻 LTE（数据未附着）" || ss.NetworkMode != "LTE" {
+		t.Fatalf("unexpected LTE camped presentation: %+v", ss)
+	}
+	if ss.MCC != 460 || ss.MNC != 11 || ss.LAC != "1901" || ss.CellID != "4B7671" || ss.RadioChannel != 1506 {
+		t.Fatalf("cell fields not projected from LTE location: %+v", ss)
+	}
+}
+
+func TestQMIBackendGetServingSystemDoesNotMarkLTECellCampedWithoutCompleteCell(t *testing.T) {
+	src := &qmiBackendSendSourceStub{
+		servingSeq: []*qmi.ServingSystem{{RegistrationState: qmi.RegStateSearching}},
+		cellLocation: &qmi.CellLocationInfo{LTE: &qmi.LTECellLocationInfo{
+			MCC: "460",
+			MNC: "11",
+		}},
+	}
+	be, err := NewQMIBackend("/dev/null", src)
+	if err != nil {
+		t.Fatalf("NewQMIBackend failed: %v", err)
+	}
+
+	ss, err := be.GetServingSystem(context.Background())
+	if err != nil {
+		t.Fatalf("GetServingSystem failed: %v", err)
+	}
+	if ss.CellCamped || ss.RegStatusText != "搜索中" || ss.NetworkMode != "Unknown" {
+		t.Fatalf("incomplete cell info should preserve searching state: %+v", ss)
+	}
+}
+
 func TestQMIBackend_SetOperatorSelection_Manual(t *testing.T) {
 	src := &qmiBackendSendSourceStub{}
 	be, _ := NewQMIBackend("/dev/null", src)
