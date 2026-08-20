@@ -81,7 +81,7 @@
 └────────────────────────────────────────┼───────────┘
                                          │
                                   客户浏览器
-                            apple.vodoge.cloud
+                              a.vodoge.com
 ```
 
 ### 连接方向（不可协商的约束）
@@ -549,9 +549,11 @@ Axum + 内嵌 SPA，前端构建产物用 `rust-embed` 打进二进制。
 多租户靠 **Edge Middleware 解析 Host**：
 
 ```
-apple.vodoge.cloud  →  middleware 提取 subdomain "apple"
-                    →  查租户表得 tenant_id
-                    →  注入请求上下文，后续所有查询自动带上
+a.vodoge.com  →  middleware 提取 subdomain "a"
+              →  查租户表得 tenant_id
+              →  注入请求上下文，后续所有查询自动带上
+
+父域 vodoge.com 不是租户；未知子域必须 404，不能回落默认租户。
 ```
 
 **租户解析失败必须 404，不能回落到默认租户**——这是安全边界。
