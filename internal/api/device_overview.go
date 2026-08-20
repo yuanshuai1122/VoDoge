@@ -367,19 +367,6 @@ func (s *Server) getVoWiFiRuntimeDTO(deviceID string) *voWiFiRuntimeDTO {
 	return runtimeStateToDTO(st, status)
 }
 
-func isLifecycleActiveForAPI(phase string) bool {
-	switch phase {
-	case string(device.LifecyclePhaseRebooting),
-		string(device.LifecyclePhaseUSBWait),
-		string(device.LifecyclePhaseWorkerStarting),
-		string(device.LifecyclePhaseQMIStarting),
-		string(device.LifecyclePhaseRecovering):
-		return true
-	default:
-		return false
-	}
-}
-
 func lifecyclePhaseString(snap device.LifecycleSnapshot) string {
 	if snap.Phase == "" {
 		return string(device.LifecyclePhaseOffline)
@@ -420,7 +407,9 @@ func (s *Server) applyLifecycleToOverviewItem(item *deviceMgmtOverviewItem, work
 	item.RadioRegistered = item.Modem.RegStatus == 1 || item.Modem.RegStatus == 5
 	item.LifecyclePhase = phase
 	item.LifecycleReason = snap.Reason
-	item.PhysicalPresent = workerRunning || isLifecycleActiveForAPI(phase)
+	// A lifecycle recovery phase is only an intent to look for hardware. It
+	// must not make a configured-but-missing device appear physically present.
+	item.PhysicalPresent = workerRunning
 }
 
 func (s *Server) applyLifecycleToListItem(item *deviceMgmtListItem, workerRunning bool, cfg config.DeviceConfig) {
@@ -434,7 +423,9 @@ func (s *Server) applyLifecycleToListItem(item *deviceMgmtListItem, workerRunnin
 	item.RadioRegistered = item.Modem.RegStatus == 1 || item.Modem.RegStatus == 5
 	item.LifecyclePhase = phase
 	item.LifecycleReason = snap.Reason
-	item.PhysicalPresent = workerRunning || isLifecycleActiveForAPI(phase)
+	// A lifecycle recovery phase is only an intent to look for hardware. It
+	// must not make a configured-but-missing device appear physically present.
+	item.PhysicalPresent = workerRunning
 }
 
 func (s *Server) applyLifecycleToOverviewLiteItem(item *deviceMgmtOverviewLiteItem, worker *device.Worker, cfg config.DeviceConfig) {
@@ -449,7 +440,9 @@ func (s *Server) applyLifecycleToOverviewLiteItem(item *deviceMgmtOverviewLiteIt
 	item.RadioRegistered = item.Modem.RegStatus == 1 || item.Modem.RegStatus == 5
 	item.LifecyclePhase = phase
 	item.LifecycleReason = snap.Reason
-	item.PhysicalPresent = workerRunning || isLifecycleActiveForAPI(phase)
+	// A lifecycle recovery phase is only an intent to look for hardware. It
+	// must not make a configured-but-missing device appear physically present.
+	item.PhysicalPresent = workerRunning
 }
 
 func (s *Server) buildOverviewLiteItemFromWorker(w *device.Worker, cfg config.DeviceConfig, status modem.DeviceStatus, radioLiveOK *bool) deviceMgmtOverviewLiteItem {

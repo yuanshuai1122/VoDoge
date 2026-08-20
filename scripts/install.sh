@@ -14,6 +14,7 @@ PG_DB="${VODOGE_POSTGRES_DB:-vodoge}"
 WEB_USER="${VODOGE_WEB_USER:-admin}"
 WEB_PASS="${VODOGE_WEB_PASSWORD:-admin123}"
 PORT="${VODOGE_PORT:-7575}"
+QMI_PROXY_EXECUTABLE="/usr/libexec/qmi-proxy"
 
 need_cmd() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -366,12 +367,78 @@ write_systemd_environment() {
 	chmod 0600 "$dest"
 }
 
+write_qmi_proxy_systemd_unit() {
+	local dest="$1" temp
+	temp="$(mktemp "${dest}.tmp.XXXXXX")"
+	cat >"$temp" <<'EOF'
+[Unit]
+Description=VoDoge shared QMI proxy
+Before=vodoge.service
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/qmi-proxy --no-exit
+# Type=simple only confirms exec(), so wait for the abstract socket before
+# allowing vodoge.service to open its QMI clients.
+ExecStartPost=/bin/sh -ec 'for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50; do grep -aq "@qmi-proxy" /proc/net/unix && exit 0; sleep 0.1; done; exit 1'
+Restart=always
+RestartSec=1
+TimeoutStartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+	chmod 0644 "$temp"
+	mv -f "$temp" "$dest"
+	chmod 0644 "$dest"
+}
+
+write_vodoge_systemd_unit() {
+	local dest="$1" bin="$2" qmi_proxy_enabled="$3" temp
+	if [[ "$qmi_proxy_enabled" != "0" && "$qmi_proxy_enabled" != "1" ]]; then
+		printf 'qmi_proxy_enabled 必须是 0 或 1\n' >&2
+		return 1
+	fi
+	temp="$(mktemp "${dest}.tmp.XXXXXX")"
+	{
+		cat <<EOF
+[Unit]
+Description=VoDoge SMS hub
+After=network-online.target postgresql.service
+Wants=network-online.target
+EOF
+		if [[ "$qmi_proxy_enabled" -eq 1 ]]; then
+			printf 'Requires=vodoge-qmi-proxy.service\n'
+			printf 'After=vodoge-qmi-proxy.service\n'
+		fi
+		cat <<EOF
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/vodoge/vodoge.env
+ExecStart=${bin} -c /etc/vodoge/config.yaml
+WorkingDirectory=/var/lib/vodoge
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+	} >"$temp"
+	chmod 0644 "$temp"
+	mv -f "$temp" "$dest"
+	chmod 0644 "$dest"
+}
+
 warn_missing_optional_runtime_dependencies() {
 	if ! command -v arecord >/dev/null 2>&1 || ! command -v aplay >/dev/null 2>&1; then
 		printf '警告：未找到 arecord/aplay；如需 CS 语音，请先安装 alsa-utils。\n' >&2
 	fi
 	if [[ ! -S /run/pcscd/pcscd.comm ]]; then
 		printf '警告：未找到 /run/pcscd/pcscd.comm；如需 CCID/eSIM，请先安装并启动 pcscd。\n' >&2
+	fi
+	if [[ ! -x "$QMI_PROXY_EXECUTABLE" ]]; then
+		printf '警告：未找到 %s；QMI 多客户端共享控制口需要安装提供 qmi-proxy 的 libqmi 软件包。\n' "$QMI_PROXY_EXECUTABLE" >&2
 	fi
 }
 
@@ -405,7 +472,7 @@ install_binary() {
 		return 1
 	fi
 	require_single_line VODOGE_DB_DSN "$VODOGE_DB_DSN"
-	local tag arch asset url checksum_url bin
+	local tag arch asset url checksum_url bin qmi_proxy_enabled
 	tag="${VODOGE_VERSION:-$(latest_tag)}"
 	if [[ -z "$tag" ]]; then
 		printf '读不到 GitHub Release 标签\n' >&2
@@ -439,24 +506,19 @@ install_binary() {
 	warn_missing_optional_runtime_dependencies
 	if command -v systemctl >/dev/null 2>&1; then
 		write_systemd_environment /etc/vodoge/vodoge.env
-		cat >/etc/systemd/system/vodoge.service <<EOF
-[Unit]
-Description=VoDoge SMS hub
-After=network-online.target postgresql.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-EnvironmentFile=/etc/vodoge/vodoge.env
-ExecStart=${bin} -c /etc/vodoge/config.yaml
-WorkingDirectory=/var/lib/vodoge
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
+		qmi_proxy_enabled=0
+		if [[ -x "$QMI_PROXY_EXECUTABLE" ]]; then
+			write_qmi_proxy_systemd_unit /etc/systemd/system/vodoge-qmi-proxy.service
+			qmi_proxy_enabled=1
+		fi
+		write_vodoge_systemd_unit /etc/systemd/system/vodoge.service "$bin" "$qmi_proxy_enabled"
 		systemctl daemon-reload
+		if [[ "$qmi_proxy_enabled" -eq 1 ]]; then
+			# Stop the old app-managed qmi-proxy before claiming its shared socket.
+			systemctl stop vodoge
+			systemctl enable vodoge-qmi-proxy
+			systemctl start vodoge-qmi-proxy
+		fi
 		systemctl enable vodoge
 		systemctl restart vodoge
 		printf '\nVoDoge systemd 单元已启动。管理面: http://127.0.0.1:%s\n' "$PORT"

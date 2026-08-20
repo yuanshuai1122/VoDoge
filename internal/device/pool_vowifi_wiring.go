@@ -48,7 +48,7 @@ func (p *Pool) SetSIPRegistrar(r *sipgw.Registrar) {
 		voiceGW := p.voiceGateway
 		p.mu.RUnlock()
 
-		if voiceGW != nil && voiceGW.GetAgent(deviceID) != nil {
+		if p.hasActiveIMSVoiceRoute(deviceID, voiceGW) {
 			logger.Info(fmt.Sprintf("[%s] 外呼 INVITE: 优先走 VoWiFi IMS VoiceGateway", deviceID))
 			voiceGW.HandleClientInvite(deviceID, req, tx)
 			return
@@ -64,38 +64,18 @@ func (p *Pool) SetSIPRegistrar(r *sipgw.Registrar) {
 	})
 
 	r.SetOnBye(func(deviceID string, req *sip.Request, tx sip.ServerTransaction) {
-		p.mu.RLock()
-		w, ok := p.workers[deviceID]
-		voiceGW := p.voiceGateway
-		p.mu.RUnlock()
-		if ok && w.CSCallMgr != nil {
-			w.CSCallMgr.HandleClientBye(req.CallID().Value())
-			return
-		}
-		if voiceGW != nil && voiceGW.GetAgent(deviceID) != nil {
-			voiceGW.HandleClientBye(deviceID, req, tx)
-		}
+		p.routeClientBye(deviceID, req, tx)
 	})
 
 	r.SetOnCancel(func(deviceID string, req *sip.Request, tx sip.ServerTransaction) {
-		p.mu.RLock()
-		w, ok := p.workers[deviceID]
-		voiceGW := p.voiceGateway
-		p.mu.RUnlock()
-		if ok && w.CSCallMgr != nil {
-			w.CSCallMgr.HandleClientCancel(req.CallID().Value())
-			return
-		}
-		if voiceGW != nil && voiceGW.GetAgent(deviceID) != nil {
-			voiceGW.HandleClientCancel(deviceID, req, tx)
-		}
+		p.routeClientCancel(deviceID, req, tx)
 	})
 
 	r.SetOnInfo(func(deviceID string, req *sip.Request, tx sip.ServerTransaction) {
 		p.mu.RLock()
 		voiceGW := p.voiceGateway
 		p.mu.RUnlock()
-		if voiceGW != nil && voiceGW.GetAgent(deviceID) != nil {
+		if p.hasActiveIMSVoiceRoute(deviceID, voiceGW) {
 			voiceGW.HandleClientInfo(deviceID, req, tx)
 			return
 		}
@@ -106,10 +86,63 @@ func (p *Pool) SetSIPRegistrar(r *sipgw.Registrar) {
 		p.mu.RLock()
 		voiceGW := p.voiceGateway
 		p.mu.RUnlock()
-		if voiceGW != nil && voiceGW.GetAgent(deviceID) != nil {
+		if p.hasActiveIMSVoiceRoute(deviceID, voiceGW) {
 			voiceGW.HandleClientUpdate(deviceID, req, tx)
 			return
 		}
 		tx.Respond(sip.NewResponseFromRequest(req, 481, "Call/Transaction Does Not Exist", nil))
 	})
+}
+
+// routeClientBye chooses the active dialog owner. A registered IMS agent is
+// not sufficient proof: it can remain registered after VoWiFi stops while a
+// CS call is in progress on the same worker.
+func (p *Pool) routeClientBye(deviceID string, req *sip.Request, tx sip.ServerTransaction) {
+	p.mu.RLock()
+	w, ok := p.workers[deviceID]
+	voiceGW := p.voiceGateway
+	p.mu.RUnlock()
+	callID := sipDialogCallID(req)
+	if ok && w.CSCallMgr != nil && callID != "" && w.CSCallMgr.HasCall(callID) {
+		w.CSCallMgr.HandleClientBye(callID)
+		return
+	}
+	if p.hasActiveIMSVoiceRoute(deviceID, voiceGW) {
+		voiceGW.HandleClientBye(deviceID, req, tx)
+		return
+	}
+	if ok && w.CSCallMgr != nil && callID != "" {
+		w.CSCallMgr.HandleClientBye(callID)
+	}
+}
+
+// routeClientCancel mirrors routeClientBye for early-dialog cancellation.
+func (p *Pool) routeClientCancel(deviceID string, req *sip.Request, tx sip.ServerTransaction) {
+	p.mu.RLock()
+	w, ok := p.workers[deviceID]
+	voiceGW := p.voiceGateway
+	p.mu.RUnlock()
+	callID := sipDialogCallID(req)
+	if ok && w.CSCallMgr != nil && callID != "" && w.CSCallMgr.HasCall(callID) {
+		w.CSCallMgr.HandleClientCancel(callID)
+		return
+	}
+	if p.hasActiveIMSVoiceRoute(deviceID, voiceGW) {
+		voiceGW.HandleClientCancel(deviceID, req, tx)
+		return
+	}
+	if ok && w.CSCallMgr != nil && callID != "" {
+		w.CSCallMgr.HandleClientCancel(callID)
+	}
+}
+
+func sipDialogCallID(req *sip.Request) string {
+	if req == nil || req.CallID() == nil {
+		return ""
+	}
+	return req.CallID().Value()
+}
+
+func (p *Pool) hasActiveIMSVoiceRoute(deviceID string, voiceGW *voicehost.Gateway) bool {
+	return p != nil && voiceGW != nil && p.IsVoWiFiActive(deviceID) && voiceGW.GetAgent(deviceID) != nil
 }

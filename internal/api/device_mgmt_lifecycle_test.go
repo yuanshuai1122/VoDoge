@@ -12,7 +12,7 @@ import (
 	"github.com/yuanshuai1122/vodoge/internal/modem"
 )
 
-func TestApplyLifecycleToOfflineOverviewItemKeepsRecoveryVisible(t *testing.T) {
+func TestApplyLifecycleToOfflineOverviewItemDoesNotInferPhysicalPresence(t *testing.T) {
 	pool := device.NewPool(&config.Config{})
 	pool.MarkLifecycleRecovery("dev1", device.LifecyclePhaseUSBWait, "manual_reboot", 3*time.Minute)
 	server := &Server{pool: pool}
@@ -29,11 +29,35 @@ func TestApplyLifecycleToOfflineOverviewItemKeepsRecoveryVisible(t *testing.T) {
 	if item.LifecyclePhase != string(device.LifecyclePhaseUSBWait) {
 		t.Fatalf("LifecyclePhase=%q want %q", item.LifecyclePhase, device.LifecyclePhaseUSBWait)
 	}
-	if !item.PhysicalPresent {
-		t.Fatal("PhysicalPresent=false want true during active recovery")
+	if item.PhysicalPresent {
+		t.Fatal("PhysicalPresent=true for a missing worker in active recovery")
 	}
 	if item.WorkerRunning {
 		t.Fatal("WorkerRunning=true want false")
+	}
+}
+
+func TestApplyLifecycleMarksPhysicalPresenceOnlyForLiveWorkers(t *testing.T) {
+	pool := device.NewPool(&config.Config{})
+	pool.MarkLifecycleRecovery("dev1", device.LifecyclePhaseQMIStarting, "startup", 3*time.Minute)
+	server := &Server{pool: pool}
+
+	overview := deviceMgmtOverviewItem{ID: "dev1", ControlOnline: true}
+	server.applyLifecycleToOverviewItem(&overview, true, config.DeviceConfig{ID: "dev1"})
+	if !overview.PhysicalPresent {
+		t.Fatal("overview PhysicalPresent=false with a live worker")
+	}
+
+	list := deviceMgmtListItem{ID: "dev1", ControlOnline: true}
+	server.applyLifecycleToListItem(&list, true, config.DeviceConfig{ID: "dev1"})
+	if !list.PhysicalPresent {
+		t.Fatal("list PhysicalPresent=false with a live worker")
+	}
+
+	lite := deviceMgmtOverviewLiteItem{ID: "dev1", ControlOnline: true}
+	server.applyLifecycleToOverviewLiteItem(&lite, &device.Worker{}, config.DeviceConfig{ID: "dev1"})
+	if !lite.PhysicalPresent {
+		t.Fatal("lite PhysicalPresent=false with a live worker")
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -726,33 +727,83 @@ func qmiRawEventFields(event qmimanager.Event) []any {
 }
 
 type Manager struct {
-	cfg                 config.DeviceConfig
-	qmiMgr              *qmimanager.Manager // QMI 管理器
-	mu                  sync.Mutex
-	euiccMu             sync.Mutex           // 仅保护 Open/Close 通道操作（低频）
-	chanMuMu            sync.RWMutex         // 保护 chanMu map 并发访问
-	chanMu              map[byte]*sync.Mutex // per-channel 锁，Transmit 热路径使用
-	apduLeaseMu         sync.Mutex
-	apduArbiter         *apduarbiter.Arbiter
-	apduSessions        map[byte]apduSessionInfo
-	onConnect           func()
-	smsHandlersMu       sync.Mutex
-	onNewSMS            []func(index uint32)
-	onNewSMSStored      []func(storage uint8, index uint32)
-	onNewSMSRaw         []func(RawSMSIndication)
-	uimHandlersMu       sync.Mutex
-	onUIMRefresh        []func(info *qmi.UIMRefreshIndication)
-	onUIMSlotStatus     []func(info *qmi.UIMSlotStatus)
-	onModemReset        []func()
-	healthHandlersMu    sync.Mutex
-	onHealthEvent       []func(HealthEvent)
-	recoveryExhaustedMu sync.Mutex
-	onRecoveryExhausted []func(reason string, err error)
-	publicIPLookup      func(ctx context.Context, host string) ([]string, error)
-	hasIPv6Bearer       func() bool // 测试替身：是否存在已建立的 IPv6 数据承载，默认见 ipv6BearerUp
+	cfg                  config.DeviceConfig
+	qmiMgr               atomic.Pointer[qmimanager.Manager] // QMI 管理器（允许在数据策略变化时原子替换）
+	qmiDevice            qmimanager.ModemDevice
+	qmiConfigMu          sync.RWMutex
+	qmiDataConfig        DataConfig
+	qmiAppliedDataConfig DataConfig
+	qmiCoreStarted       atomic.Bool
+	qmiCoreStartPending  atomic.Bool
+	qmiLifecycleMu       sync.Mutex
+	qmiManagerFactory    func(qmimanager.Config, qmimanager.Logger) *qmimanager.Manager
+	qmiStartCoreContext  func(*qmimanager.Manager, context.Context) error
+	mu                   sync.Mutex
+	euiccMu              sync.Mutex           // 仅保护 Open/Close 通道操作（低频）
+	chanMuMu             sync.RWMutex         // 保护 chanMu map 并发访问
+	chanMu               map[byte]*sync.Mutex // per-channel 锁，Transmit 热路径使用
+	apduLeaseMu          sync.Mutex
+	apduArbiter          *apduarbiter.Arbiter
+	apduSessions         map[byte]apduSessionInfo
+	onConnect            func()
+	smsHandlersMu        sync.Mutex
+	onNewSMS             []func(index uint32)
+	onNewSMSStored       []func(storage uint8, index uint32)
+	onNewSMSRaw          []func(RawSMSIndication)
+	uimHandlersMu        sync.Mutex
+	onUIMRefresh         []func(info *qmi.UIMRefreshIndication)
+	onUIMSlotStatus      []func(info *qmi.UIMSlotStatus)
+	onModemReset         []func()
+	healthHandlersMu     sync.Mutex
+	onHealthEvent        []func(HealthEvent)
+	recoveryExhaustedMu  sync.Mutex
+	onRecoveryExhausted  []func(reason string, err error)
+	publicIPLookup       func(ctx context.Context, host string) ([]string, error)
+	hasIPv6Bearer        func() bool // 测试替身：是否存在已建立的 IPv6 数据承载，默认见 ipv6BearerUp
 
 	resetExistingDataConnection            func(context.Context) (bool, error)
 	resetExistingDataConnectionViaCoreHook func(context.Context) (bool, error)
+	onSimStatusChanged                     []func()
+	onVoiceCallStatus                      []func(*qmi.VoiceAllCallInfo)
+	onVoiceUSSD                            []func(*qmi.VoiceUSSDIndication)
+	onVoiceUSSDReleased                    []func()
+	onVoiceUSSDNoWaitResult                []func(*qmi.VoiceUSSDNoWaitIndication)
+}
+
+// DataConfig is the subset of the device network policy consumed by QMI WDS
+// dialing.  The underlying quectel-qmi-go manager keeps these values in an
+// immutable Config, so policy changes are applied by rebuilding that manager.
+type DataConfig struct {
+	APN       string
+	IPVersion string
+}
+
+func normalizeDataConfig(in DataConfig) DataConfig {
+	in.APN = strings.TrimSpace(in.APN)
+	in.IPVersion = strings.ToLower(strings.TrimSpace(in.IPVersion))
+	if in.IPVersion == "" || in.IPVersion == "ipv4" {
+		in.IPVersion = "v4"
+	} else if in.IPVersion == "ipv6" {
+		in.IPVersion = "v6"
+	} else if in.IPVersion == "dual" || in.IPVersion == "v6v4" || in.IPVersion == "ipv4v6" {
+		in.IPVersion = "v4v6"
+	}
+	return in
+}
+
+func dataConfigEqual(a, b DataConfig) bool {
+	return normalizeDataConfig(a) == normalizeDataConfig(b)
+}
+
+// currentQMIManager returns a stable snapshot.  A caller may continue using
+// the returned instance while a later policy update stops it; the external
+// manager is concurrency-safe and the pointer itself is immutable for that
+// caller.
+func (m *Manager) currentQMIManager() *qmimanager.Manager {
+	if m == nil {
+		return nil
+	}
+	return m.qmiMgr.Load()
 }
 
 type apduSessionInfo struct {
@@ -809,30 +860,55 @@ func New(cfg config.DeviceConfig, modemDev *qmimanager.ModemDevice) *Manager {
 			device.ControlPath = cfg.QMIDevice
 		}
 	}
+	m.qmiDevice = device
+	m.qmiDataConfig = normalizeDataConfig(DataConfig{APN: cfg.APN, IPVersion: cfg.IPVersion})
+	m.qmiAppliedDataConfig = m.qmiDataConfig
 
 	// 构建 quectel-qmi-go 配置
-	qmiCfg := buildQMIManagerConfig(cfg, device)
+	m.installQMIManager(m.newQMIManager(m.qmiDataConfig))
 
-	// 创建 QMI 管理器
+	return m
+}
+
+func (m *Manager) newQMIManager(dataCfg DataConfig) *qmimanager.Manager {
+	if m == nil {
+		return nil
+	}
+	dataCfg = normalizeDataConfig(dataCfg)
+	cfg := m.cfg
+	cfg.APN = dataCfg.APN
+	cfg.IPVersion = dataCfg.IPVersion
+	qmiCfg := buildQMIManagerConfig(cfg, m.qmiDevice)
 	openFields := clientOpenModeSummary(cfg)
 	if qmiCfg.ClientOptions.UseProxy {
 		logger.Info("QMI client 将优先通过 qmi-proxy 打开控制口", openFields...)
 	} else {
 		logger.Debug("QMI client 将直接打开控制口", openFields...)
 	}
-	m.qmiMgr = qmimanager.New(qmiCfg, newQMIManagerLoggerAdapter(cfg.ID))
-	m.qmiMgr.OnEvent(func(event qmimanager.Event) {
+	factory := m.qmiManagerFactory
+	if factory == nil {
+		factory = qmimanager.New
+	}
+	return factory(qmiCfg, newQMIManagerLoggerAdapter(cfg.ID))
+}
+
+// installQMIManager attaches all wrapper-owned callbacks to a new underlying
+// manager before publishing it.  This keeps SMS/UIM/health and voice handlers
+// alive across a data-policy rebuild. Callers that publish a replacement must
+// hold qmiLifecycleMu; New invokes it before the manager is shared.
+func (m *Manager) installQMIManager(next *qmimanager.Manager) {
+	if m == nil || next == nil {
+		return
+	}
+	next.OnEvent(func(event qmimanager.Event) {
 		m.handleQMIEvent(event)
 	})
-
-	// 设置连接回调
-	m.qmiMgr.OnConnect(func(s *qmi.RuntimeSettings) {
+	next.OnConnect(func(s *qmi.RuntimeSettings) {
 		if m.onConnect != nil {
 			go m.onConnect()
 		}
 	})
-
-	return m
+	m.qmiMgr.Store(next)
 }
 
 func buildQMIManagerConfig(cfg config.DeviceConfig, device qmimanager.ModemDevice) qmimanager.Config {
@@ -880,6 +956,143 @@ func buildQMIManagerConfig(cfg config.DeviceConfig, device qmimanager.ModemDevic
 		},
 		ClientOptions: ClientOptionsFromDeviceConfig(cfg),
 	}
+}
+
+// DataConfigSnapshot returns the currently requested QMI data policy.
+func (m *Manager) DataConfigSnapshot() DataConfig {
+	if m == nil {
+		return DataConfig{}
+	}
+	m.qmiConfigMu.RLock()
+	defer m.qmiConfigMu.RUnlock()
+	return m.qmiDataConfig
+}
+
+func (m *Manager) effectiveDataConfig() DataConfig {
+	if m == nil {
+		return DataConfig{}
+	}
+	m.qmiConfigMu.RLock()
+	dataCfg := m.qmiDataConfig
+	m.qmiConfigMu.RUnlock()
+	// Some focused diagnostics/tests construct a Manager literal instead of
+	// using New. Keep those instances compatible with the historical cfg-based
+	// behavior; production managers initialize qmiDataConfig in New.
+	if strings.TrimSpace(dataCfg.IPVersion) == "" {
+		dataCfg = DataConfig{APN: m.cfg.APN, IPVersion: m.cfg.IPVersion}
+	}
+	return normalizeDataConfig(dataCfg)
+}
+
+// AppliedDataConfigSnapshot returns the policy used to construct the current
+// underlying QMI manager.  It is intentionally exposed for diagnostics and
+// regression tests; callers should use SetDataConfig to change it.
+func (m *Manager) AppliedDataConfigSnapshot() DataConfig {
+	if m == nil {
+		return DataConfig{}
+	}
+	m.qmiConfigMu.RLock()
+	defer m.qmiConfigMu.RUnlock()
+	return m.qmiAppliedDataConfig
+}
+
+// SetDataConfig applies the APN/IP-family policy to the QMI data plane.  The
+// quectel-qmi-go Config is immutable after construction, therefore a live
+// core is stopped and recreated when the effective policy changes.  A caller
+// can then invoke Connect to establish the new data call.
+func (m *Manager) SetDataConfig(ctx context.Context, cfg DataConfig) error {
+	if m == nil {
+		return fmt.Errorf("qmi_manager_not_available")
+	}
+	cfg = normalizeDataConfig(cfg)
+	m.qmiConfigMu.Lock()
+	m.qmiDataConfig = cfg
+	m.qmiConfigMu.Unlock()
+	return m.reconfigureForDataConfig(ctx)
+}
+
+func (m *Manager) reconfigureForDataConfig(ctx context.Context) error {
+	if m == nil {
+		return fmt.Errorf("qmi_manager_not_available")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	m.qmiLifecycleMu.Lock()
+	defer m.qmiLifecycleMu.Unlock()
+
+	m.qmiConfigMu.RLock()
+	desired := m.qmiDataConfig
+	applied := m.qmiAppliedDataConfig
+	m.qmiConfigMu.RUnlock()
+	if dataConfigEqual(desired, applied) {
+		if !m.qmiCoreStartPending.Load() {
+			return nil
+		}
+		manager := m.currentQMIManager()
+		if manager == nil {
+			return fmt.Errorf("qmi_manager_not_available")
+		}
+		if err := m.startUnderlyingQMICore(ctx, manager); err != nil {
+			return fmt.Errorf("重试启动 QMI Core 失败: %w", err)
+		}
+		m.qmiCoreStarted.Store(true)
+		m.qmiCoreStartPending.Store(false)
+		return nil
+	}
+
+	old := m.currentQMIManager()
+	if old == nil {
+		return fmt.Errorf("qmi_manager_not_available")
+	}
+	// Logical UIM channels belong to the underlying QMI client. They cannot be
+	// carried into the replacement manager, so invalidate them before swapping
+	// the client and make callers reopen their eSIM/AKA channel.
+	m.releaseAllAPDULeases("data_policy_reconfigure")
+	wasStarted := m.qmiCoreStarted.Load()
+	shouldStart := wasStarted || m.qmiCoreStartPending.Load()
+	if wasStarted {
+		// Disconnect first so no old WDS call can survive the manager swap.
+		if err := old.Disconnect(); err != nil {
+			logger.Warn(fmt.Sprintf("[%s] QMI 数据策略变更前断开旧数据连接失败", m.cfg.ID), "err", err)
+		}
+		if err := old.Stop(); err != nil {
+			return fmt.Errorf("停止旧 QMI Core 失败: %w", err)
+		}
+		m.qmiCoreStarted.Store(false)
+	}
+	if shouldStart {
+		m.qmiCoreStartPending.Store(true)
+	}
+
+	next := m.newQMIManager(desired)
+	if next == nil {
+		return fmt.Errorf("qmi_manager_not_available")
+	}
+	// Publish before StartCore so any event emitted during initialization is
+	// attributed to the new manager.  The old manager has already been stopped.
+	m.installQMIManager(next)
+	m.qmiConfigMu.Lock()
+	m.qmiAppliedDataConfig = desired
+	m.qmiConfigMu.Unlock()
+	if shouldStart {
+		if err := m.startUnderlyingQMICore(ctx, next); err != nil {
+			return fmt.Errorf("启动新 QMI Core 失败: %w", err)
+		}
+		m.qmiCoreStarted.Store(true)
+		m.qmiCoreStartPending.Store(false)
+	}
+	return nil
+}
+
+func (m *Manager) startUnderlyingQMICore(ctx context.Context, manager *qmimanager.Manager) error {
+	if manager == nil {
+		return fmt.Errorf("qmi_manager_not_available")
+	}
+	if m != nil && m.qmiStartCoreContext != nil {
+		return m.qmiStartCoreContext(manager, ctx)
+	}
+	return manager.StartCoreContext(ctx)
 }
 
 func (m *Manager) SetOnConnect(handler func()) {
@@ -960,16 +1173,17 @@ func (m *Manager) dispatchHealthEvent(event qmimanager.Event) {
 
 func (m *Manager) handleQMIEvent(event qmimanager.Event) {
 	logQMIEvent(m.cfg.ID, event)
+	m.dispatchPersistentQMICallbacks(event)
 	m.dispatchHealthEvent(event)
 	switch event.Type {
 	case qmimanager.EventConnected,
 		qmimanager.EventDisconnected,
 		qmimanager.EventDialFailed,
 		qmimanager.EventReconnecting:
-		logQMIStatsSnapshot(m.cfg.ID, m.qmiMgr)
+		logQMIStatsSnapshot(m.cfg.ID, m.currentQMIManager())
 	case qmimanager.EventModemReset:
 		m.releaseAllAPDULeases("modem_reset")
-		logQMIStatsSnapshot(m.cfg.ID, m.qmiMgr)
+		logQMIStatsSnapshot(m.cfg.ID, m.currentQMIManager())
 		m.uimHandlersMu.Lock()
 		handlers := append([]func(){}, m.onModemReset...)
 		m.uimHandlersMu.Unlock()
@@ -979,7 +1193,7 @@ func (m *Manager) handleQMIEvent(event qmimanager.Event) {
 			}
 		}
 	case qmimanager.EventRecoveryExhausted:
-		logQMIStatsSnapshot(m.cfg.ID, m.qmiMgr)
+		logQMIStatsSnapshot(m.cfg.ID, m.currentQMIManager())
 		logger.Warn("QMI 核心恢复已彻底失败，转入 worker 重建",
 			"device", m.cfg.ID, "reason", event.Reason, "err", event.Error)
 		m.dispatchRecoveryExhausted(event.Reason, event.Error)
@@ -1036,6 +1250,55 @@ func (m *Manager) handleQMIEvent(event qmimanager.Event) {
 	}
 }
 
+// dispatchPersistentQMICallbacks keeps wrapper-level SIM and VOICE callbacks
+// independent from the lifetime of the underlying QMI manager. Every manager
+// replacement registers handleQMIEvent before it is published.
+func (m *Manager) dispatchPersistentQMICallbacks(event qmimanager.Event) {
+	if m == nil {
+		return
+	}
+	m.uimHandlersMu.Lock()
+	simHandlers := append([]func(){}, m.onSimStatusChanged...)
+	voiceCallHandlers := append([]func(*qmi.VoiceAllCallInfo){}, m.onVoiceCallStatus...)
+	voiceUSSDHandlers := append([]func(*qmi.VoiceUSSDIndication){}, m.onVoiceUSSD...)
+	voiceReleasedHandlers := append([]func(){}, m.onVoiceUSSDReleased...)
+	voiceNoWaitHandlers := append([]func(*qmi.VoiceUSSDNoWaitIndication){}, m.onVoiceUSSDNoWaitResult...)
+	m.uimHandlersMu.Unlock()
+
+	switch event.Type {
+	case qmimanager.EventSimStatusChanged:
+		for _, handler := range simHandlers {
+			if handler != nil {
+				handler()
+			}
+		}
+	case qmimanager.EventVoiceCallStatus:
+		for _, handler := range voiceCallHandlers {
+			if handler != nil {
+				handler(event.VoiceCalls)
+			}
+		}
+	case qmimanager.EventVoiceUSSD:
+		for _, handler := range voiceUSSDHandlers {
+			if handler != nil {
+				handler(event.VoiceUSSD)
+			}
+		}
+	case qmimanager.EventVoiceUSSDReleased:
+		for _, handler := range voiceReleasedHandlers {
+			if handler != nil {
+				handler()
+			}
+		}
+	case qmimanager.EventVoiceUSSDNoWaitResult:
+		for _, handler := range voiceNoWaitHandlers {
+			if handler != nil {
+				handler(event.VoiceUSSDNoWait)
+			}
+		}
+	}
+}
+
 func (m *Manager) lookupPublicIPHost(ctx context.Context, host string) ([]string, error) {
 	if ip := net.ParseIP(strings.TrimSpace(host)); ip != nil {
 		return []string{ip.String()}, nil
@@ -1047,7 +1310,7 @@ func (m *Manager) lookupPublicIPHost(ctx context.Context, host string) ([]string
 	lookupCtx, cancel := context.WithTimeout(ctx, publicIPResolveTimeout)
 	defer cancel()
 
-	enableV4, enableV6, err := config.ResolveIPFamily(m.cfg.IPVersion)
+	enableV4, enableV6, err := config.ResolveIPFamily(m.effectiveDataConfig().IPVersion)
 	if err != nil {
 		enableV4, enableV6 = true, false
 	}
@@ -1082,8 +1345,8 @@ func (m *Manager) lookupPublicIPHost(ctx context.Context, host string) ([]string
 
 func (m *Manager) publicIPDNSServers() []string {
 	servers := make([]string, 0, 5)
-	if m != nil && m.qmiMgr != nil {
-		if settings := m.qmiMgr.Settings(); settings != nil {
+	if m != nil && m.currentQMIManager() != nil {
+		if settings := m.currentQMIManager().Settings(); settings != nil {
 			servers = appendDNSServer(servers, settings.IPv4DNS1)
 			servers = appendDNSServer(servers, settings.IPv4DNS2)
 		}
@@ -1258,10 +1521,10 @@ func (m *Manager) ControlDevice() string {
 }
 
 func (m *Manager) QMIState() qmimanager.State {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return qmimanager.StateDisconnected
 	}
-	return m.qmiMgr.State()
+	return m.currentQMIManager().State()
 }
 
 func (m *Manager) SetAPDUArbiter(arbiter *apduarbiter.Arbiter) {
@@ -1384,6 +1647,11 @@ func (m *Manager) releaseAllAPDULeases(reason string) {
 }
 
 func (m *Manager) ReleaseAPDULeasesForSwitchTeardown() {
+	if m == nil {
+		return
+	}
+	m.qmiLifecycleMu.Lock()
+	defer m.qmiLifecycleMu.Unlock()
 	m.releaseAllAPDULeases("esim_switch_teardown")
 }
 
@@ -1396,7 +1664,13 @@ func (m *Manager) OpenSIMAuthLogicalChannel(ctx context.Context, slot byte, aid 
 }
 
 func (m *Manager) openUIMLogicalChannel(ctx context.Context, slot byte, aid []byte, leaseOwner, sessionOwner string, class apduarbiter.APDUClass) (byte, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil {
+		return 0, fmt.Errorf("qmi_uim_not_available")
+	}
+	m.qmiLifecycleMu.Lock()
+	defer m.qmiLifecycleMu.Unlock()
+	manager := m.currentQMIManager()
+	if manager == nil {
 		return 0, fmt.Errorf("qmi_uim_not_available")
 	}
 	lease, err := m.acquireAPDUTransportLease(ctx, 10*time.Second, leaseOwner, class, 0, apduarbiter.TransportScopeExclusive)
@@ -1412,7 +1686,7 @@ func (m *Manager) openUIMLogicalChannel(ctx context.Context, slot byte, aid []by
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	channel, err := m.qmiMgr.OpenLogicalChannelContext(ctx, slot, aid)
+	channel, err := manager.OpenLogicalChannelContext(ctx, slot, aid)
 	if err != nil {
 		return 0, err
 	}
@@ -1450,10 +1724,19 @@ func (m *Manager) CloseSIMAuthLogicalChannel(ctx context.Context, slot byte, cha
 }
 
 func (m *Manager) closeUIMLogicalChannel(ctx context.Context, slot byte, channel byte, defaultOwner string, defaultClass apduarbiter.APDUClass) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil {
+		return fmt.Errorf("qmi_uim_not_available")
+	}
+	m.qmiLifecycleMu.Lock()
+	defer m.qmiLifecycleMu.Unlock()
+	manager := m.currentQMIManager()
+	if manager == nil {
 		return fmt.Errorf("qmi_uim_not_available")
 	}
 	session, ok := m.takeAPDUSession(channel)
+	if channel != 0 && !ok {
+		return fmt.Errorf("qmi_apdu_session_invalidated")
+	}
 	owner := defaultOwner
 	class := defaultClass
 	if ok {
@@ -1476,7 +1759,7 @@ func (m *Manager) closeUIMLogicalChannel(ctx context.Context, slot byte, channel
 	}
 	m.euiccMu.Lock()
 	defer m.euiccMu.Unlock()
-	err = m.qmiMgr.CloseLogicalChannelContext(ctx, slot, channel)
+	err = manager.CloseLogicalChannelContext(ctx, slot, channel)
 	if lease != nil {
 		lease.Touch()
 	}
@@ -1484,8 +1767,17 @@ func (m *Manager) closeUIMLogicalChannel(ctx context.Context, slot byte, channel
 }
 
 func (m *Manager) TransmitEUICCAPDU(ctx context.Context, slot byte, channel byte, command []byte) ([]byte, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil {
 		return nil, fmt.Errorf("qmi_uim_not_available")
+	}
+	m.qmiLifecycleMu.Lock()
+	defer m.qmiLifecycleMu.Unlock()
+	manager := m.currentQMIManager()
+	if manager == nil {
+		return nil, fmt.Errorf("qmi_uim_not_available")
+	}
+	if channel != 0 && !m.hasAPDUSession(channel) {
+		return nil, fmt.Errorf("qmi_apdu_session_invalidated")
 	}
 	owner, class := m.apduTransportProfile(channel)
 	scope := apduarbiter.TransportScopeExclusive
@@ -1508,7 +1800,7 @@ func (m *Manager) TransmitEUICCAPDU(ctx context.Context, slot byte, channel byte
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resp, err := m.qmiMgr.SendAPDUContext(ctx, slot, channel, command)
+	resp, err := manager.SendAPDUContext(ctx, slot, channel, command)
 	if lease != nil {
 		lease.Touch()
 	}
@@ -1516,92 +1808,92 @@ func (m *Manager) TransmitEUICCAPDU(ctx context.Context, slot byte, channel byte
 }
 
 func (m *Manager) GetNativeMCCMNC(ctx context.Context) (mcc, mnc string, err error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return "", "", fmt.Errorf("qmi_uim_not_available")
 	}
-	return m.qmiMgr.GetNativeMCCMNC(ctx)
+	return m.currentQMIManager().GetNativeMCCMNC(ctx)
 }
 
 func (m *Manager) GetNativeSPN(ctx context.Context) (string, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return "", fmt.Errorf("qmi_uim_not_available")
 	}
-	return m.qmiMgr.GetNativeSPN(ctx)
+	return m.currentQMIManager().GetNativeSPN(ctx)
 }
 
 func (m *Manager) GetSIMMetadata(ctx context.Context) (*qmi.SIMMetadata, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_uim_not_available")
 	}
-	return m.qmiMgr.GetSIMMetadata(ctx)
+	return m.currentQMIManager().GetSIMMetadata(ctx)
 }
 
 func (m *Manager) GetUIMReadiness(ctx context.Context) (qmimanager.UIMReadiness, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return qmimanager.UIMReadiness{
 			TransportReady: false,
 			ControlReady:   false,
 			Reason:         qmimanager.UIMReadinessControlUnavailable,
 		}, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetUIMReadiness(ctx)
+	return m.currentQMIManager().GetUIMReadiness(ctx)
 }
 
 func (m *Manager) RequestCoreRecovery(reason string) bool {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return false
 	}
-	return m.qmiMgr.RequestCoreRecovery(reason)
+	return m.currentQMIManager().RequestCoreRecovery(reason)
 }
 
 func (m *Manager) GetUSIMAID(ctx context.Context) ([]byte, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_uim_not_available")
 	}
-	return m.qmiMgr.GetUSIMAID(ctx)
+	return m.currentQMIManager().GetUSIMAID(ctx)
 }
 
 func (m *Manager) EnsureSIMProvisioned(ctx context.Context, opts qmimanager.EnsureSIMProvisionedOptions) (qmimanager.UIMReadiness, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return qmimanager.UIMReadiness{
 			TransportReady: false,
 			ControlReady:   false,
 			Reason:         qmimanager.UIMReadinessControlUnavailable,
 		}, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.EnsureSIMProvisioned(ctx, opts)
+	return m.currentQMIManager().EnsureSIMProvisioned(ctx, opts)
 }
 
 func (m *Manager) GetISIMAID(ctx context.Context) ([]byte, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_uim_not_available")
 	}
-	return m.qmiMgr.GetISIMAID(ctx)
+	return m.currentQMIManager().GetISIMAID(ctx)
 }
 
 func (m *Manager) UIMGetFileAttributesWithSession(ctx context.Context, sessionType uint8, fileID uint16, path []uint8) (*qmi.UIMFileAttributes, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_uim_not_available")
 	}
-	return m.qmiMgr.UIMGetFileAttributesWithSession(ctx, sessionType, fileID, path)
+	return m.currentQMIManager().UIMGetFileAttributesWithSession(ctx, sessionType, fileID, path)
 }
 
 func (m *Manager) UIMReadTransparentWithSession(ctx context.Context, sessionType uint8, fileID uint16, path []uint8) ([]byte, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_uim_not_available")
 	}
-	return m.qmiMgr.UIMReadTransparentWithSession(ctx, sessionType, fileID, path)
+	return m.currentQMIManager().UIMReadTransparentWithSession(ctx, sessionType, fileID, path)
 }
 
 func (m *Manager) UIMReadRecordWithSession(ctx context.Context, sessionType uint8, fileID uint16, path []uint8, recordNumber uint16, recordLength uint16) (*qmi.UIMRecordData, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_uim_not_available")
 	}
-	return m.qmiMgr.UIMReadRecordWithSession(ctx, sessionType, fileID, path, recordNumber, recordLength)
+	return m.currentQMIManager().UIMReadRecordWithSession(ctx, sessionType, fileID, path, recordNumber, recordLength)
 }
 
 func (m *Manager) GetSMSC(ctx context.Context) (string, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return "", fmt.Errorf("qmi_uim_not_available")
 	}
 	lease, err := m.acquireAPDUTransportLease(ctx, 15*time.Second, "smsc_query", apduarbiter.APDUClassSMSC, 0, apduarbiter.TransportScopeExclusive)
@@ -1612,37 +1904,70 @@ func (m *Manager) GetSMSC(ctx context.Context) (string, error) {
 		defer lease.Release()
 		lease.Touch()
 	}
-	return m.qmiMgr.GetSMSC(ctx)
+	return m.currentQMIManager().GetSMSC(ctx)
 }
 
 // Start 启动 QMI 管理器
 func (m *Manager) Start() error {
 	logger.Info(fmt.Sprintf("[%s] 启动 QMI 管理器", m.cfg.ID))
-	return m.qmiMgr.Start()
+	m.qmiLifecycleMu.Lock()
+	defer m.qmiLifecycleMu.Unlock()
+	manager := m.currentQMIManager()
+	if manager == nil {
+		return fmt.Errorf("qmi_manager_not_available")
+	}
+	err := manager.Start()
+	if err == nil {
+		m.qmiCoreStarted.Store(true)
+		m.qmiCoreStartPending.Store(false)
+	}
+	return err
 }
 
 // StartCore 仅启动 QMI 核心控制面，不建立数据连接。
 func (m *Manager) StartCore() error {
-	logger.Info(fmt.Sprintf("[%s] 启动 QMI Core", m.cfg.ID))
-	return m.qmiMgr.StartCore()
+	return m.StartCoreContext(context.Background())
 }
 
 // StartCoreContext 仅启动 QMI 核心控制面，不建立数据连接，并受调用方 context 约束。
 func (m *Manager) StartCoreContext(ctx context.Context) error {
 	logger.Info(fmt.Sprintf("[%s] 启动 QMI Core", m.cfg.ID))
-	return m.qmiMgr.StartCoreContext(ctx)
+	m.qmiLifecycleMu.Lock()
+	defer m.qmiLifecycleMu.Unlock()
+	manager := m.currentQMIManager()
+	if manager == nil {
+		return fmt.Errorf("qmi_manager_not_available")
+	}
+	err := manager.StartCoreContext(ctx)
+	if err == nil {
+		m.qmiCoreStarted.Store(true)
+		m.qmiCoreStartPending.Store(false)
+	}
+	return err
 }
 
 // Connect 显式建立数据连接。
 func (m *Manager) Connect() error {
 	logger.Info(fmt.Sprintf("[%s] 建立数据连接", m.cfg.ID))
-	return m.qmiMgr.Connect()
+	m.qmiLifecycleMu.Lock()
+	defer m.qmiLifecycleMu.Unlock()
+	manager := m.currentQMIManager()
+	if manager == nil {
+		return fmt.Errorf("qmi_manager_not_available")
+	}
+	return manager.Connect()
 }
 
 // Disconnect 断开数据连接，但保留 QMI Core。
 func (m *Manager) Disconnect() error {
 	logger.Info(fmt.Sprintf("[%s] 断开数据连接", m.cfg.ID))
-	return m.qmiMgr.Disconnect()
+	m.qmiLifecycleMu.Lock()
+	defer m.qmiLifecycleMu.Unlock()
+	manager := m.currentQMIManager()
+	if manager == nil {
+		return fmt.Errorf("qmi_manager_not_available")
+	}
+	return manager.Disconnect()
 }
 
 // ResetExistingDataConnection tears down a data call that may have been left
@@ -1677,10 +2002,10 @@ func (m *Manager) resetExistingDataConnectionViaCore(ctx context.Context) (bool,
 	if m.resetExistingDataConnectionViaCoreHook != nil {
 		return m.resetExistingDataConnectionViaCoreHook(ctx)
 	}
-	if m.qmiMgr == nil {
+	if m.currentQMIManager() == nil {
 		return false, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.ResetExistingDataConnection(ctx)
+	return m.currentQMIManager().ResetExistingDataConnection(ctx)
 }
 
 func (m *Manager) flushQMIInterfaceAfterExistingDataCleanup() {
@@ -1697,8 +2022,17 @@ func (m *Manager) flushQMIInterfaceAfterExistingDataCleanup() {
 // Stop 停止 QMI 管理器
 func (m *Manager) Stop() error {
 	logger.Info(fmt.Sprintf("[%s] 停止 QMI 管理器", m.cfg.ID))
+	m.qmiLifecycleMu.Lock()
+	defer m.qmiLifecycleMu.Unlock()
 	m.releaseAllAPDULeases("stop")
-	return m.qmiMgr.Stop()
+	manager := m.currentQMIManager()
+	if manager == nil {
+		return nil
+	}
+	err := manager.Stop()
+	m.qmiCoreStarted.Store(false)
+	m.qmiCoreStartPending.Store(false)
+	return err
 }
 
 // RotateIP 切换 IP 地址
@@ -1714,7 +2048,7 @@ func (m *Manager) RotateIP() error {
 	logger.Info(fmt.Sprintf("[%s] 开始 IP 切换", m.cfg.ID), "old_ip", oldIP)
 
 	// 调用 quectel-qmi-go 的 RotateIP 方法
-	err := m.qmiMgr.RotateIP()
+	err := m.currentQMIManager().RotateIP()
 	if err != nil {
 		logger.Error(fmt.Sprintf("[%s] IP 切换失败", m.cfg.ID), "err", err)
 		return err
@@ -1732,435 +2066,443 @@ func (m *Manager) RotateIP() error {
 
 // GetDeviceSerialNumbers returns IMEI and other serials
 func (m *Manager) GetDeviceSerialNumbers(ctx context.Context) (*qmi.DeviceInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetDeviceSerialNumbers(ctx)
+	return m.currentQMIManager().GetDeviceSerialNumbers(ctx)
 }
 
 // GetDeviceRevision returns firmware version
 func (m *Manager) GetDeviceRevision(ctx context.Context) (string, string, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return "", "", fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetDeviceRevision(ctx)
+	return m.currentQMIManager().GetDeviceRevision(ctx)
 }
 
 // GetIMSI returns IMSI from SIM
 func (m *Manager) GetIMSI(ctx context.Context) (string, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return "", fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetIMSI(ctx)
+	return m.currentQMIManager().GetIMSI(ctx)
 }
 
 // GetICCID returns ICCID from SIM
 func (m *Manager) GetICCID(ctx context.Context) (string, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return "", fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetICCID(ctx)
+	return m.currentQMIManager().GetICCID(ctx)
 }
 
 // GetMSISDN returns MSISDN when available.
 func (m *Manager) GetMSISDN(ctx context.Context) (string, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return "", fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetMSISDN(ctx)
+	return m.currentQMIManager().GetMSISDN(ctx)
 }
 
 // GetSIMStatus returns current SIM state
 func (m *Manager) GetSIMStatus(ctx context.Context) (qmi.SIMStatus, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return qmi.SIMAbsent, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetSIMStatus(ctx)
+	return m.currentQMIManager().GetSIMStatus(ctx)
 }
 
 // GetServingSystem returns registration info
 func (m *Manager) GetServingSystem(ctx context.Context) (*qmi.ServingSystem, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetServingSystem(ctx)
+	return m.currentQMIManager().GetServingSystem(ctx)
 }
 
 // GetSignalStrength returns RSSI/RSRP
 func (m *Manager) GetSignalStrength(ctx context.Context) (*qmi.SignalStrength, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetSignalStrength(ctx)
+	return m.currentQMIManager().GetSignalStrength(ctx)
 }
 
 // GetSignalInfo returns detailed LTE/5G signal info
 func (m *Manager) GetSignalInfo(ctx context.Context) (*qmi.SignalInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetSignalInfo(ctx)
+	return m.currentQMIManager().GetSignalInfo(ctx)
 }
 
 // GetSysInfo returns LAC/CellID
 func (m *Manager) GetSysInfo(ctx context.Context) (*qmi.SysInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetSysInfo(ctx)
+	return m.currentQMIManager().GetSysInfo(ctx)
 }
 
 // --- NAS Low-level Methods ---
 
 func (m *Manager) NASGetRFBandInfo(ctx context.Context) (*qmi.RFBandInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASGetRFBandInfo(ctx)
+	return m.currentQMIManager().NASGetRFBandInfo(ctx)
 }
 
 func (m *Manager) NASGetTechnologyPreference(ctx context.Context) (*qmi.TechnologyPreference, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASGetTechnologyPreference(ctx)
+	return m.currentQMIManager().NASGetTechnologyPreference(ctx)
 }
 
 func (m *Manager) NASSetTechnologyPreference(ctx context.Context, pref qmi.TechnologyPreference) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASSetTechnologyPreference(ctx, pref)
+	return m.currentQMIManager().NASSetTechnologyPreference(ctx, pref)
 }
 
 func (m *Manager) NASGetSystemSelectionPreference(ctx context.Context) (*qmi.SystemSelectionPreference, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASGetSystemSelectionPreference(ctx)
+	return m.currentQMIManager().NASGetSystemSelectionPreference(ctx)
 }
 
 func (m *Manager) NASSetSystemSelectionPreference(ctx context.Context, pref qmi.SystemSelectionPreference) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASSetSystemSelectionPreference(ctx, pref)
+	return m.currentQMIManager().NASSetSystemSelectionPreference(ctx, pref)
 }
 
 func (m *Manager) NASGetCellLocationInfo(ctx context.Context) (*qmi.CellLocationInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASGetCellLocationInfo(ctx)
+	return m.currentQMIManager().NASGetCellLocationInfo(ctx)
 }
 
 func (m *Manager) NASGetNetworkTime(ctx context.Context) (*qmi.NetworkTimeInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASGetNetworkTime(ctx)
+	return m.currentQMIManager().NASGetNetworkTime(ctx)
 }
 
 func (m *Manager) NASInitiateNetworkRegister(ctx context.Context, req qmi.NASInitiateNetworkRegisterRequest) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASInitiateNetworkRegister(ctx, req)
+	return m.currentQMIManager().NASInitiateNetworkRegister(ctx, req)
 }
 
 func (m *Manager) NASForceNetworkSearch(ctx context.Context) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASForceNetworkSearch(ctx)
+	return m.currentQMIManager().NASForceNetworkSearch(ctx)
 }
 
 func (m *Manager) NASAttachDetach(ctx context.Context, attached bool) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASAttachDetach(ctx, attached)
+	return m.currentQMIManager().NASAttachDetach(ctx, attached)
 }
 
 func (m *Manager) NASGetOperatorName(ctx context.Context) (*qmi.NASOperatorNameInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASGetOperatorName(ctx)
+	return m.currentQMIManager().NASGetOperatorName(ctx)
 }
 
 func (m *Manager) NASGetPLMNName(ctx context.Context, req qmi.NASPLMNNameRequest) (*qmi.NASPLMNNameInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASGetPLMNName(ctx, req)
+	return m.currentQMIManager().NASGetPLMNName(ctx, req)
 }
 
 func (m *Manager) NASConfigSignalInfoV2(ctx context.Context, cfg qmi.NASSignalInfoConfigV2) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASConfigSignalInfoV2(ctx, cfg)
+	return m.currentQMIManager().NASConfigSignalInfoV2(ctx, cfg)
 }
 
 func (m *Manager) NASRegisterIndications(ctx context.Context, cfg qmi.NASIndicationRegistration) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASRegisterIndications(ctx, cfg)
+	return m.currentQMIManager().NASRegisterIndications(ctx, cfg)
 }
 
 // GetOperatingMode returns CFUN status
 func (m *Manager) GetOperatingMode(ctx context.Context) (qmi.OperatingMode, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return 0, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.GetOperatingMode(ctx)
+	return m.currentQMIManager().GetOperatingMode(ctx)
 }
 
 // SetOperatingMode sets CFUN status
 func (m *Manager) SetOperatingMode(ctx context.Context, mode qmi.OperatingMode) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.SetOperatingMode(ctx, mode)
+	return m.currentQMIManager().SetOperatingMode(ctx, mode)
 }
 
 // UIMReset resets the modem UIM service state.
 func (m *Manager) UIMReset(ctx context.Context) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.UIMReset(ctx)
+	return m.currentQMIManager().UIMReset(ctx)
 }
 
 // UIMPowerOffSIM powers off the specified SIM slot.
 func (m *Manager) UIMPowerOffSIM(ctx context.Context, slot uint8) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.UIMPowerOffSIM(ctx, slot)
+	return m.currentQMIManager().UIMPowerOffSIM(ctx, slot)
 }
 
 // UIMPowerOnSIM powers on the specified SIM slot.
 func (m *Manager) UIMPowerOnSIM(ctx context.Context, slot uint8) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.UIMPowerOnSIM(ctx, slot)
+	return m.currentQMIManager().UIMPowerOnSIM(ctx, slot)
 }
 
 func (m *Manager) UIMPostSwitchReload(ctx context.Context, readiness qmimanager.UIMReadiness, opts qmimanager.UIMPostSwitchReloadOptions) (uint8, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return 0, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.UIMPostSwitchReload(ctx, readiness, opts)
+	return m.currentQMIManager().UIMPostSwitchReload(ctx, readiness, opts)
 }
 
 // --- WDS Low-level Methods ---
 
 func (m *Manager) WDSGetChannelRates(ctx context.Context) (*qmi.ChannelRates, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WDSGetChannelRates(ctx)
+	return m.currentQMIManager().WDSGetChannelRates(ctx)
 }
 
 func (m *Manager) WDSGetPacketStatistics(ctx context.Context, mask uint32) (*qmi.PacketStatistics, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WDSGetPacketStatistics(ctx, mask)
+	return m.currentQMIManager().WDSGetPacketStatistics(ctx, mask)
 }
 
 func (m *Manager) WDSCreateProfile(ctx context.Context, profileType uint8, settings qmi.WDSProfileSettings) (*qmi.ProfileInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WDSCreateProfile(ctx, profileType, settings)
+	return m.currentQMIManager().WDSCreateProfile(ctx, profileType, settings)
 }
 
 func (m *Manager) WDSModifyProfileSettings(ctx context.Context, profileType, profileIndex uint8, settings qmi.WDSProfileSettings) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WDSModifyProfileSettings(ctx, profileType, profileIndex, settings)
+	return m.currentQMIManager().WDSModifyProfileSettings(ctx, profileType, profileIndex, settings)
 }
 
 func (m *Manager) WDSDeleteProfile(ctx context.Context, profileType, profileIndex uint8) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WDSDeleteProfile(ctx, profileType, profileIndex)
+	return m.currentQMIManager().WDSDeleteProfile(ctx, profileType, profileIndex)
 }
 
 func (m *Manager) WDSGetAutoconnectSettings(ctx context.Context) (*qmi.AutoconnectSettings, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WDSGetAutoconnectSettings(ctx)
+	return m.currentQMIManager().WDSGetAutoconnectSettings(ctx)
 }
 
 func (m *Manager) WDSSetAutoconnectSettings(ctx context.Context, settings qmi.AutoconnectSettings) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WDSSetAutoconnectSettings(ctx, settings)
+	return m.currentQMIManager().WDSSetAutoconnectSettings(ctx, settings)
 }
 
 func (m *Manager) WDSGetDataBearerTechnology(ctx context.Context) (*qmi.DataBearerTechnologyInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WDSGetDataBearerTechnology(ctx)
+	return m.currentQMIManager().WDSGetDataBearerTechnology(ctx)
 }
 
 func (m *Manager) WDSGetCurrentDataBearerTechnology(ctx context.Context) (*qmi.CurrentBearerTechnologyInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WDSGetCurrentDataBearerTechnology(ctx)
+	return m.currentQMIManager().WDSGetCurrentDataBearerTechnology(ctx)
 }
 
 // --- WMS Low-level Methods ---
 
 func (m *Manager) WMSSendRawMessage(ctx context.Context, format uint8, pdu []byte) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WMSSendRawMessage(ctx, format, pdu)
+	return m.currentQMIManager().WMSSendRawMessage(ctx, format, pdu)
 }
 
 func (m *Manager) WMSRawReadMessage(ctx context.Context, storageType uint8, index uint32) ([]byte, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WMSRawReadMessage(ctx, storageType, index)
+	return m.currentQMIManager().WMSRawReadMessage(ctx, storageType, index)
 }
 
 func (m *Manager) WMSDeleteMessage(ctx context.Context, storageType uint8, index uint32) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WMSDeleteMessage(ctx, storageType, index)
+	return m.currentQMIManager().WMSDeleteMessage(ctx, storageType, index)
 }
 
 func (m *Manager) WMSListMessagesAuto(ctx context.Context, storageType uint8) ([]struct {
 	Index uint32
 	Tag   qmi.MessageTagType
 }, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WMSListMessagesAuto(ctx, storageType)
+	return m.currentQMIManager().WMSListMessagesAuto(ctx, storageType)
 }
 
 func (m *Manager) WMSDeleteMessagesByTag(ctx context.Context, storageType uint8, tag qmi.MessageTagType, mode qmi.MessageMode) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WMSDeleteMessagesByTag(ctx, storageType, tag, mode)
+	return m.currentQMIManager().WMSDeleteMessagesByTag(ctx, storageType, tag, mode)
 }
 
 // --- VOICE Low-level Methods ---
 
 func (m *Manager) VOICEDialCall(ctx context.Context, number string) (uint8, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return 0, qmimanager.ErrServiceNotReady("VOICE")
 	}
-	return m.qmiMgr.VOICEDialCall(ctx, number)
+	return m.currentQMIManager().VOICEDialCall(ctx, number)
 }
 
 func (m *Manager) VOICEAnswerCall(ctx context.Context, callID uint8) (uint8, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return 0, qmimanager.ErrServiceNotReady("VOICE")
 	}
-	return m.qmiMgr.VOICEAnswerCall(ctx, callID)
+	return m.currentQMIManager().VOICEAnswerCall(ctx, callID)
 }
 
 func (m *Manager) VOICEEndCall(ctx context.Context, callID uint8) (uint8, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return 0, qmimanager.ErrServiceNotReady("VOICE")
 	}
-	return m.qmiMgr.VOICEEndCall(ctx, callID)
+	return m.currentQMIManager().VOICEEndCall(ctx, callID)
 }
 
 func (m *Manager) VOICEGetAllCallInfo(ctx context.Context) (*qmi.VoiceAllCallInfo, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, qmimanager.ErrServiceNotReady("VOICE")
 	}
-	return m.qmiMgr.VOICEGetAllCallInfo(ctx)
+	return m.currentQMIManager().VOICEGetAllCallInfo(ctx)
 }
 
 func (m *Manager) OnVoiceCallStatus(handler func(*qmi.VoiceAllCallInfo)) error {
-	if m == nil || m.qmiMgr == nil || handler == nil {
+	if m == nil || handler == nil {
 		return qmimanager.ErrServiceNotReady("VOICE")
 	}
-	m.qmiMgr.OnVoiceCallStatus(handler)
+	m.uimHandlersMu.Lock()
+	m.onVoiceCallStatus = append(m.onVoiceCallStatus, handler)
+	m.uimHandlersMu.Unlock()
 	return nil
 }
 
 func (m *Manager) VOICEOriginateUSSD(ctx context.Context, req qmi.VoiceUSSDRequest) (*qmi.VoiceUSSDResponse, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, qmimanager.ErrServiceNotReady("VOICE")
 	}
-	return m.qmiMgr.VOICEOriginateUSSD(ctx, req)
+	return m.currentQMIManager().VOICEOriginateUSSD(ctx, req)
 }
 
 func (m *Manager) VOICEOriginateUSSDNoWait(ctx context.Context, req qmi.VoiceUSSDRequest) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return qmimanager.ErrServiceNotReady("VOICE")
 	}
-	return m.qmiMgr.VOICEOriginateUSSDNoWait(ctx, req)
+	return m.currentQMIManager().VOICEOriginateUSSDNoWait(ctx, req)
 }
 
 func (m *Manager) VOICECancelUSSD(ctx context.Context) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return qmimanager.ErrServiceNotReady("VOICE")
 	}
-	return m.qmiMgr.VOICECancelUSSD(ctx)
+	return m.currentQMIManager().VOICECancelUSSD(ctx)
 }
 
 func (m *Manager) VOICEGetConfig(ctx context.Context, query qmi.VoiceConfigQuery) (*qmi.VoiceConfig, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, qmimanager.ErrServiceNotReady("VOICE")
 	}
-	return m.qmiMgr.VOICEGetConfig(ctx, query)
+	return m.currentQMIManager().VOICEGetConfig(ctx, query)
 }
 
 func (m *Manager) OnVoiceUSSD(handler func(*qmi.VoiceUSSDIndication)) error {
-	if m == nil || m.qmiMgr == nil || handler == nil {
+	if m == nil || handler == nil {
 		return qmimanager.ErrServiceNotReady("VOICE")
 	}
-	m.qmiMgr.OnVoiceUSSD(handler)
+	m.uimHandlersMu.Lock()
+	m.onVoiceUSSD = append(m.onVoiceUSSD, handler)
+	m.uimHandlersMu.Unlock()
 	return nil
 }
 
 func (m *Manager) OnVoiceUSSDReleased(handler func()) error {
-	if m == nil || m.qmiMgr == nil || handler == nil {
+	if m == nil || handler == nil {
 		return qmimanager.ErrServiceNotReady("VOICE")
 	}
-	m.qmiMgr.OnVoiceUSSDReleased(handler)
+	m.uimHandlersMu.Lock()
+	m.onVoiceUSSDReleased = append(m.onVoiceUSSDReleased, handler)
+	m.uimHandlersMu.Unlock()
 	return nil
 }
 
 func (m *Manager) OnVoiceUSSDNoWaitResult(handler func(*qmi.VoiceUSSDNoWaitIndication)) error {
-	if m == nil || m.qmiMgr == nil || handler == nil {
+	if m == nil || handler == nil {
 		return qmimanager.ErrServiceNotReady("VOICE")
 	}
-	m.qmiMgr.OnVoiceUSSDNoWaitResult(handler)
+	m.uimHandlersMu.Lock()
+	m.onVoiceUSSDNoWaitResult = append(m.onVoiceUSSDNoWaitResult, handler)
+	m.uimHandlersMu.Unlock()
 	return nil
 }
 
 func (m *Manager) AckRawSMS(ctx context.Context, info RawSMSIndication, success bool) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
 	protocol := qmi.WMSMessageProtocolWCDMA
 	if info.Format == 0x00 {
 		protocol = qmi.WMSMessageProtocolCDMA
 	}
-	_, err := m.qmiMgr.WMSSendAck(ctx, qmi.WMSAckRequest{
+	_, err := m.currentQMIManager().WMSSendAck(ctx, qmi.WMSAckRequest{
 		TransactionID: info.TransactionID,
 		Protocol:      protocol,
 		Success:       success,
@@ -2177,34 +2519,34 @@ func (m *Manager) ListSMS(storageType uint8, tag qmi.MessageTagType) ([]struct {
 	Index uint32
 	Tag   qmi.MessageTagType
 }, error) {
-	return m.qmiMgr.ListSMS(storageType, tag)
+	return m.currentQMIManager().ListSMS(storageType, tag)
 }
 
 // ReadSMS reads and decodes an SMS message
 func (m *Manager) ReadSMS(preferredStorage uint8, index uint32) (*qmimanager.DecodedSMS, error) {
 	if preferredStorage == 0 || preferredStorage == 1 {
-		return m.qmiMgr.ReadSMS(preferredStorage, index)
+		return m.currentQMIManager().ReadSMS(preferredStorage, index)
 	}
 
-	sms, err := m.qmiMgr.ReadSMS(1, index)
+	sms, err := m.currentQMIManager().ReadSMS(1, index)
 	if err == nil {
 		return sms, nil
 	}
 
 	logger.Warn(fmt.Sprintf("[%s] Storage 1 读取失败，尝试 Storage 0", m.cfg.ID), "err", err)
-	return m.qmiMgr.ReadSMS(0, index)
+	return m.currentQMIManager().ReadSMS(0, index)
 }
 
 // SendSMS sends a text message
 func (m *Manager) SendSMS(number, text string) error {
-	return m.qmiMgr.SendSMS(number, text)
+	return m.currentQMIManager().SendSMS(number, text)
 }
 
 func (m *Manager) EnsureSMSReady(ctx context.Context) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.EnsureSMSReady(ctx)
+	return m.currentQMIManager().EnsureSMSReady(ctx)
 }
 
 // OnNewSMS registers a callback for new SMS events
@@ -2268,28 +2610,26 @@ func (m *Manager) OnModemReset(handler func()) {
 // GetDeviceSnapshot 返回底层 QMI 库的设备状态快照（由 NAS Indication 事件驱动更新）。
 // 实现 backend.QMISource 接口，供 QMIBackend 零 IPC 读取运营商/信号数据。
 func (m *Manager) GetDeviceSnapshot() *qmimanager.DeviceSnapshot {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil
 	}
-	return m.qmiMgr.GetDeviceSnapshot()
+	return m.currentQMIManager().GetDeviceSnapshot()
 }
 
 // OnSimStatusChanged 注册 SIM 卡状态变化回调（插拔/状态切换时触发）。
 // 供 Pool 层订阅，当 SIM 卡变化时触发 ICCID/IMSI 缓存刷新。
 func (m *Manager) OnSimStatusChanged(handler func()) {
-	if handler == nil {
+	if m == nil || handler == nil {
 		return
 	}
-	m.qmiMgr.OnEvent(func(e qmimanager.Event) {
-		if e.Type == qmimanager.EventSimStatusChanged {
-			handler()
-		}
-	})
+	m.uimHandlersMu.Lock()
+	m.onSimStatusChanged = append(m.onSimStatusChanged, handler)
+	m.uimHandlersMu.Unlock()
 }
 
 // GetPrivateIP 获取私有 IP (内网 IP)
 func (m *Manager) GetPrivateIP() string {
-	settings := m.qmiMgr.Settings()
+	settings := m.currentQMIManager().Settings()
 	if settings != nil && settings.IPv4Address != nil {
 		return settings.IPv4Address.String()
 	}
@@ -2303,36 +2643,36 @@ func (m *Manager) IsInterfaceUp() bool {
 
 // IsConnected 检查数据面是否已建立。
 func (m *Manager) IsConnected() bool {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return false
 	}
-	return m.qmiMgr.IsConnected()
+	return m.currentQMIManager().IsConnected()
 }
 
 // WaitCoreReady 等待底层 QMI core 服务完全就绪。
 // 典型场景：切卡后 modem reset 恢复完成后再发起 UIM/APDU 操作。
 func (m *Manager) WaitCoreReady(ctx context.Context) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WaitCoreReady(ctx)
+	return m.currentQMIManager().WaitCoreReady(ctx)
 }
 
 // WaitControlReady waits until QMI control services are available.
 // It does not require SIM identity convergence.
 func (m *Manager) WaitControlReady(ctx context.Context) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WaitControlReady(ctx)
+	return m.currentQMIManager().WaitControlReady(ctx)
 }
 
 // WaitIdentityReady waits until QMI identity convergence is complete.
 func (m *Manager) WaitIdentityReady(ctx context.Context) error {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.WaitIdentityReady(ctx)
+	return m.currentQMIManager().WaitIdentityReady(ctx)
 }
 
 // GetPublicIPNoCache 并发极速探测公网 IP (外网 IP)，不区分地址族，谁先连上用谁。
@@ -2345,7 +2685,7 @@ func (m *Manager) GetPublicIPNoCache() string {
 // 避免双栈模式下两个族共用一次探测时被其中一族（通常是更快建联的 v6）持续抢跑，
 // 导致另一族的公网地址永远拿不到、缓存与数据库字段无法刷新。
 func (m *Manager) GetPublicIPv4AndV6NoCache() (publicV4 string, publicV6 string) {
-	enableV4, enableV6, err := config.ResolveIPFamily(m.cfg.IPVersion)
+	enableV4, enableV6, err := config.ResolveIPFamily(m.effectiveDataConfig().IPVersion)
 	if err != nil {
 		enableV4, enableV6 = true, false
 	}
@@ -2398,31 +2738,31 @@ func (m *Manager) publicIPProber() *netprobe.Prober {
 
 // GetPrivateIPv6 获取私有 IPv6 地址（v6/双栈模式下非空）
 func (m *Manager) GetPrivateIPv6() string {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return ""
 	}
-	return qmiSettingsIPv6(m.qmiMgr.Settings())
+	return qmiSettingsIPv6(m.currentQMIManager().Settings())
 }
 
 func (m *Manager) CachedSMSC() string {
-	if m.qmiMgr == nil {
+	if m.currentQMIManager() == nil {
 		return ""
 	}
-	return m.qmiMgr.CachedSMSC()
+	return m.currentQMIManager().CachedSMSC()
 }
 
 func (m *Manager) NASPerformNetworkScan(ctx context.Context) ([]qmi.NetworkScanResult, error) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, fmt.Errorf("qmi_manager_not_available")
 	}
-	return m.qmiMgr.NASPerformNetworkScan(ctx)
+	return m.currentQMIManager().NASPerformNetworkScan(ctx)
 }
 
 func (m *Manager) NASIncrementalNetworkScanSnapshot() (*qmi.NASIncrementalNetworkScanInfo, time.Time, bool) {
-	if m == nil || m.qmiMgr == nil {
+	if m == nil || m.currentQMIManager() == nil {
 		return nil, time.Time{}, false
 	}
-	snapshot := m.qmiMgr.GetDeviceSnapshot()
+	snapshot := m.currentQMIManager().GetDeviceSnapshot()
 	if snapshot == nil {
 		return nil, time.Time{}, false
 	}

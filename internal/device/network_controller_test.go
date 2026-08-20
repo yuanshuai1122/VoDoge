@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/boa-z/vowifi-go/runtimehost"
 	"github.com/yuanshuai1122/vodoge/internal/backend"
 	"github.com/yuanshuai1122/vodoge/internal/config"
 	mbimcore "github.com/yuanshuai1122/vodoge/internal/mbim"
@@ -59,6 +60,46 @@ func TestWorkerStartNetworkUsesController(t *testing.T) {
 	}
 	if fc.connected {
 		t.Fatal("controller.Disconnect was not called")
+	}
+}
+
+func TestWorkerStartNetworkSkipsDataPlaneWhileVoWiFiActive(t *testing.T) {
+	p := NewPool(&config.Config{})
+	t.Cleanup(p.cancel)
+	p.voWiFiHost().RuntimeStore().SetInstance("dev-ims", &runtimehost.Instance{})
+	controller := &fakeController{}
+	w := &Worker{
+		ID:          "dev-ims",
+		Pool:        p,
+		Config:      config.DeviceConfig{ID: "dev-ims", NetworkEnabled: true},
+		netOverride: controller,
+	}
+
+	if err := w.StartNetwork(); err != nil {
+		t.Fatalf("StartNetwork: %v", err)
+	}
+	if controller.connected {
+		t.Fatal("StartNetwork dialed while VoWiFi was active")
+	}
+}
+
+func TestApplyNetworkPreferenceSkipsPolicyWhileVoWiFiActive(t *testing.T) {
+	p := NewPool(&config.Config{})
+	t.Cleanup(p.cancel)
+	p.voWiFiHost().RuntimeStore().SetInstance("dev-ims", &runtimehost.Instance{})
+	controller := &fakeController{}
+	w := &Worker{
+		ID:          "dev-ims",
+		Pool:        p,
+		Config:      config.DeviceConfig{ID: "dev-ims", NetworkEnabled: true},
+		netOverride: controller,
+	}
+
+	if err := p.applyNetworkPreference(w); err != nil {
+		t.Fatalf("applyNetworkPreference: %v", err)
+	}
+	if controller.connected {
+		t.Fatal("network preference dialed while VoWiFi was active")
 	}
 }
 

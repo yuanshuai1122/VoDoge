@@ -1271,6 +1271,15 @@ func (p *Pool) applyNetworkPreference(worker *Worker) error {
 	}
 
 	if worker.Config.NetworkEnabled {
+		// NetworkEnabled is retained as the desired post-VoWiFi state. Do not
+		// rebuild QMI's data manager while an IMS/AKA runtime is using it.
+		if p.IsVoWiFiActive(worker.ID) {
+			logger.Info("设备当前处于 VoWiFi 模式，跳过自动连接数据网络", "device", worker.ID)
+			return nil
+		}
+		if err := worker.applyNetworkDataConfig(); err != nil {
+			return err
+		}
 		if worker.MBIMCore != nil {
 			if err := worker.EnsureMBIMRegistration(p.ctx, true); err != nil {
 				return err
@@ -1279,10 +1288,6 @@ func (p *Pool) applyNetworkPreference(worker *Worker) error {
 			if err := worker.EnsureQMIRegistration(p.ctx, true); err != nil {
 				return err
 			}
-		}
-		if p.IsVoWiFiActive(worker.ID) {
-			logger.Info("设备当前处于 VoWiFi 模式，跳过自动连接数据网络", "device", worker.ID)
-			return nil
 		}
 		if nc.IsConnected() {
 			p.refreshIPs(worker, true)
@@ -2624,6 +2629,12 @@ func (w *Worker) StartNetwork() error {
 	if w == nil || nc == nil {
 		return fmt.Errorf("network_not_available")
 	}
+	if w.Pool != nil && w.Pool.IsVoWiFiActive(w.ID) {
+		return nil
+	}
+	if err := w.applyNetworkDataConfig(); err != nil {
+		return err
+	}
 	if w.QMICore != nil {
 		if err := w.EnsureQMIRegistration(context.Background(), true); err != nil {
 			return err
@@ -2634,6 +2645,30 @@ func (w *Worker) StartNetwork() error {
 		}
 	}
 	return nc.Connect()
+}
+
+// applyNetworkDataConfig propagates the runtime card policy to the selected
+// data-plane implementation immediately before dialing.  QMI needs a
+// context-aware rebuild because its third-party manager captures APN/IP family
+// at construction; MBIM can update its in-memory session config directly.
+func (w *Worker) applyNetworkDataConfig() error {
+	if w == nil {
+		return fmt.Errorf("worker_nil")
+	}
+	if w.QMICore != nil {
+		return w.QMICore.SetDataConfig(context.Background(), qmicore.DataConfig{
+			APN:       w.Config.APN,
+			IPVersion: w.Config.IPVersion,
+		})
+	}
+	if w.MBIMCore != nil {
+		w.MBIMCore.SetDataConfig(mbimcore.DataConfig{
+			APN:       w.Config.APN,
+			Interface: w.Config.Interface,
+			IPVersion: w.Config.IPVersion,
+		})
+	}
+	return nil
 }
 
 func (w *Worker) StopNetwork() error {
