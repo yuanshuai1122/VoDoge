@@ -227,6 +227,61 @@ func TestStaticQMIDeviceIndexLookupPriority(t *testing.T) {
 	}
 }
 
+func TestWorkerDiscoveryIndexRejectsReusedDynamicNodeAcrossUSBTopologies(t *testing.T) {
+	idx := BuildWorkerDiscoveryIndex([]*Worker{{
+		ID: "telecom",
+		Config: config.DeviceConfig{
+			ID:            "telecom",
+			ControlDevice: "/dev/cdc-wdm1",
+			Interface:     "wwan1",
+			USBPath:       "/sys/bus/usb/devices/2-2",
+			ModemIMEI:     "862547055142811",
+		},
+	}}, false)
+
+	if _, ok := idx.Lookup("/dev/cdc-wdm1", "/sys/bus/usb/devices/2-4.1", "wwan1"); ok {
+		t.Fatal("dynamic cdc-wdm/wwan reuse across USB topologies must not reuse a worker identity")
+	}
+
+	info, ok := idx.Lookup("/dev/cdc-wdm0", "/sys/bus/usb/devices/2-2", "wwan0")
+	if !ok || info.ID != "telecom" {
+		t.Fatalf("stable USB lookup = (%+v, %v), want telecom worker", info, ok)
+	}
+}
+
+func TestWorkerDiscoveryIndexAllowsDynamicFallbackForLegacyWorkerWithoutUSBPath(t *testing.T) {
+	idx := BuildWorkerDiscoveryIndex([]*Worker{{
+		ID: "legacy",
+		Config: config.DeviceConfig{
+			ID:            "legacy",
+			ControlDevice: "/dev/cdc-wdm1",
+			Interface:     "wwan1",
+		},
+	}}, false)
+
+	info, ok := idx.Lookup("/dev/cdc-wdm1", "/sys/bus/usb/devices/2-4.1", "wwan1")
+	if !ok || info.ID != "legacy" {
+		t.Fatalf("legacy fallback = (%+v, %v), want legacy worker", info, ok)
+	}
+}
+
+func TestWorkerDiscoveryIndexTreatsWWANClassPathAsDynamic(t *testing.T) {
+	idx := BuildWorkerDiscoveryIndex([]*Worker{{
+		ID: "fallback",
+		Config: config.DeviceConfig{
+			ID:            "fallback",
+			ControlDevice: "/dev/cdc-wdm1",
+			Interface:     "wwan1",
+			USBPath:       "/sys/class/wwan/wwan1",
+		},
+	}}, false)
+
+	info, ok := idx.Lookup("/dev/cdc-wdm1", "/sys/bus/usb/devices/2-4.1", "wwan1")
+	if !ok || info.ID != "fallback" {
+		t.Fatalf("WWAN class path must fall back to dynamic lookup, got (%+v, %v)", info, ok)
+	}
+}
+
 func TestConfiguredDeviceIndexLookupFallsBackToIMEI(t *testing.T) {
 	idx := BuildConfiguredDeviceIndex([]config.DeviceConfig{
 		{

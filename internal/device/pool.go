@@ -232,6 +232,10 @@ type Pool struct {
 	startOnce       sync.Once
 	policyResolver  cardpolicy.Resolver
 	readerOccupancy *pcsc.Occupancy
+	// rescanMu serializes udev, health-check, and manual discovery passes. A
+	// concurrent pass can otherwise observe half-rebound dynamic QMI nodes and
+	// apply two conflicting Worker mutations.
+	rescanMu sync.Mutex
 }
 
 func NewPool(cfg *config.Config) *Pool {
@@ -2070,6 +2074,9 @@ func (p *Pool) collectRescanHardware(discovered []QMIDevice, liveWorkerIndex Wor
 }
 
 func (p *Pool) rescanAndReconnect(opts rescanReconnectOptions) error {
+	p.rescanMu.Lock()
+	defer p.rescanMu.Unlock()
+
 	discovered, err := discoverQMIDevicesFn()
 	if err != nil {
 		logger.Warn("QMI 硬件扫描失败，将继续使用兼容扫描", "err", err)

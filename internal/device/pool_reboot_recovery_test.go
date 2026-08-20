@@ -150,6 +150,50 @@ func TestQMIRecoveryScanGateMatchesNormalizedLiveIMEI(t *testing.T) {
 	}
 }
 
+func TestQMIRecoveryScanGateRejectsReusedDynamicNodeAcrossUSBTopologies(t *testing.T) {
+	cfg := config.DeviceConfig{
+		ID:            "telecom",
+		DeviceBackend: "qmi",
+		ControlDevice: "/dev/cdc-wdm1",
+		Interface:     "wwan1",
+		USBPath:       "/sys/bus/usb/devices/2-2",
+	}
+
+	decision := qmiRecoveryScanGate(cfg, []qmiRecoveryLiveCandidate{{
+		Device: QMIDevice{
+			ControlPath:  "/dev/cdc-wdm1",
+			NetInterface: "wwan1",
+			USBPath:      "/sys/bus/usb/devices/2-4.1",
+		},
+	}}, true)
+
+	if decision.Ready {
+		t.Fatalf("decision = %+v, want no attachment for a conflicting USB topology", decision)
+	}
+}
+
+func TestQMIRecoveryScanGateTreatsWWANClassPathAsUnknownTopology(t *testing.T) {
+	cfg := config.DeviceConfig{
+		ID:            "legacy-qmi",
+		DeviceBackend: "qmi",
+		ControlDevice: "/dev/cdc-wdm1",
+		Interface:     "wwan1",
+		USBPath:       "/sys/class/wwan/wwan1",
+	}
+
+	decision := qmiRecoveryScanGate(cfg, []qmiRecoveryLiveCandidate{{
+		Device: QMIDevice{
+			ControlPath:  "/dev/cdc-wdm1",
+			NetInterface: "wwan1",
+			USBPath:      "/sys/bus/usb/devices/2-4.1",
+		},
+	}}, true)
+
+	if !decision.Ready || decision.Reason != "configured_attachment_seen" {
+		t.Fatalf("decision = %+v, want dynamic fallback for a WWAN class path", decision)
+	}
+}
+
 func TestModemRebootRecoveryDoesNotBlockScanOnStaleConfiguredControlPath(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(configPath, []byte("devices:\n- id: dev-qmi\n  device_backend: qmi\n  modem_imei: \"867383058993207\"\n  control_device: /dev/cdc-wdm2\n  interface: wwan1\n"), 0600); err != nil {

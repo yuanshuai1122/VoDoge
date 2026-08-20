@@ -18,7 +18,7 @@ func (p *Pool) ResolveQMIRecoveryAttachment(cfg config.DeviceConfig) qmiRecovery
 			return qmiRecoveryScanGate(cfg, live, discoveryAvailable)
 		}
 		for _, candidate := range live {
-			if strings.TrimSpace(candidate.IMEI) == configuredIMEI {
+			if config.IMEIMatches(candidate.IMEI, configuredIMEI) {
 				return qmiRecoveryScanDecision{
 					Ready:      true,
 					Reason:     "live_imei_match",
@@ -26,7 +26,8 @@ func (p *Pool) ResolveQMIRecoveryAttachment(cfg config.DeviceConfig) qmiRecovery
 				}
 			}
 		}
-		// IMEI 暂时不匹配（可能 DMS 还没就绪），fallback 到路径匹配
+		// IMEI 仍不可读时才允许路径兜底；已读到不同 IMEI 由扫描门控拒绝，
+		// 防止 cdc-wdm/wwan 重编号把另一张卡接管进来。
 		return qmiRecoveryScanGate(cfg, live, discoveryAvailable)
 	}
 

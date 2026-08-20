@@ -142,6 +142,17 @@ type WorkerDiscoveryIndex struct {
 	byIface   map[string]WorkerDiscoveryInfo
 }
 
+// stableUSBTopologyPath returns a physical USB topology key when one is known.
+// /sys/class/wwan/<iface> is named after the dynamic wwanN interface, so it
+// must never be used as a stable device identity.
+func stableUSBTopologyPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" || path == "/sys/class/wwan" || strings.HasPrefix(path, "/sys/class/wwan/") {
+		return ""
+	}
+	return path
+}
+
 func BuildWorkerDiscoveryIndex(workers []*Worker, includeRuntimeStatus bool) WorkerDiscoveryIndex {
 	idx := WorkerDiscoveryIndex{
 		byControl: map[string]WorkerDiscoveryInfo{},
@@ -157,7 +168,7 @@ func BuildWorkerDiscoveryIndex(workers []*Worker, includeRuntimeStatus bool) Wor
 		info := WorkerDiscoveryInfo{
 			ID:          worker.ID,
 			ControlPath: strings.TrimSpace(cfg.ControlDevice),
-			USBPath:     strings.TrimSpace(cfg.USBPath),
+			USBPath:     stableUSBTopologyPath(cfg.USBPath),
 			Interface:   strings.TrimSpace(cfg.Interface),
 			ATPort:      strings.TrimSpace(cfg.ATPort),
 			IMEI:        strings.TrimSpace(cfg.ModemIMEI),
@@ -194,18 +205,43 @@ func BuildWorkerDiscoveryIndex(workers []*Worker, includeRuntimeStatus bool) Wor
 }
 
 func (idx WorkerDiscoveryIndex) Lookup(controlPath, usbPath, iface string) (WorkerDiscoveryInfo, bool) {
-	if key := strings.TrimSpace(controlPath); key != "" {
-		if info, ok := idx.byControl[key]; ok {
+	controlPath = strings.TrimSpace(controlPath)
+	usbPath = stableUSBTopologyPath(usbPath)
+	iface = strings.TrimSpace(iface)
+
+	// cdc-wdm and wwan names are assigned again after a USB reconnect. Once both
+	// sides have a physical USB topology, a mismatch means they are different
+	// modems even when their dynamic control path happens to be the same.
+	if usbPath != "" {
+		if info, ok := idx.byUSB[usbPath]; ok {
+			return info, true
+		}
+		if controlPath != "" {
+			if info, ok := idx.byControl[controlPath]; ok {
+				if info.USBPath == "" {
+					return info, true
+				}
+				return WorkerDiscoveryInfo{}, false
+			}
+		}
+		if iface != "" {
+			if info, ok := idx.byIface[iface]; ok {
+				if info.USBPath == "" {
+					return info, true
+				}
+				return WorkerDiscoveryInfo{}, false
+			}
+		}
+		return WorkerDiscoveryInfo{}, false
+	}
+
+	if controlPath != "" {
+		if info, ok := idx.byControl[controlPath]; ok {
 			return info, true
 		}
 	}
-	if key := strings.TrimSpace(usbPath); key != "" {
-		if info, ok := idx.byUSB[key]; ok {
-			return info, true
-		}
-	}
-	if key := strings.TrimSpace(iface); key != "" {
-		if info, ok := idx.byIface[key]; ok {
+	if iface != "" {
+		if info, ok := idx.byIface[iface]; ok {
 			return info, true
 		}
 	}

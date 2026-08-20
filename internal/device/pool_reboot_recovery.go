@@ -247,9 +247,13 @@ func qmiRecoveryScanGate(cfg config.DeviceConfig, live []qmiRecoveryLiveCandidat
 		return qmiRecoveryScanDecision{Ready: false, Reason: "configured_control_missing"}
 	}
 	for _, candidate := range live {
-		if strings.TrimSpace(candidate.Device.ControlPath) == strings.TrimSpace(cfg.ControlDevice) ||
-			strings.TrimSpace(candidate.Device.NetInterface) == strings.TrimSpace(cfg.Interface) ||
-			strings.TrimSpace(candidate.Device.USBPath) == strings.TrimSpace(cfg.USBPath) {
+		// A readable, non-matching IMEI is authoritative. Path fallback only
+		// exists for the short period before the modem can return its identity.
+		if configuredIMEI != "" && strings.TrimSpace(candidate.IMEI) != "" &&
+			!config.IMEIMatches(candidate.IMEI, configuredIMEI) {
+			continue
+		}
+		if qmiRecoveryAttachmentMatches(cfg, candidate.Device) {
 			return qmiRecoveryScanDecision{
 				Ready:      true,
 				Reason:     "configured_attachment_seen",
@@ -258,6 +262,24 @@ func qmiRecoveryScanGate(cfg config.DeviceConfig, live []qmiRecoveryLiveCandidat
 		}
 	}
 	return qmiRecoveryScanDecision{Ready: false, Reason: "no_matching_qmi_attachment"}
+}
+
+func qmiRecoveryAttachmentMatches(cfg config.DeviceConfig, candidate QMIDevice) bool {
+	configuredUSB := stableUSBTopologyPath(cfg.USBPath)
+	candidateUSB := stableUSBTopologyPath(candidate.USBPath)
+	if configuredUSB != "" && candidateUSB != "" {
+		return configuredUSB == candidateUSB
+	}
+
+	if configuredControl := strings.TrimSpace(cfg.ControlDevice); configuredControl != "" &&
+		configuredControl == strings.TrimSpace(candidate.ControlPath) {
+		return true
+	}
+	if configuredInterface := strings.TrimSpace(cfg.Interface); configuredInterface != "" &&
+		configuredInterface == strings.TrimSpace(candidate.NetInterface) {
+		return true
+	}
+	return false
 }
 
 func (p *Pool) qmiRecoveryLiveCandidates(cfg config.DeviceConfig) ([]qmiRecoveryLiveCandidate, bool) {

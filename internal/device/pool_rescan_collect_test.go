@@ -54,6 +54,45 @@ func TestCollectRescanHardwarePopulatesIMEIAndPaths(t *testing.T) {
 	}
 }
 
+func TestCollectRescanHardwareProbesIMEIAfterDynamicNodeMovesToAnotherUSBTopology(t *testing.T) {
+	origResolve := resolveDiscoveredQMIDeviceFn
+	t.Cleanup(func() { resolveDiscoveredQMIDeviceFn = origResolve })
+
+	probes := 0
+	resolveDiscoveredQMIDeviceFn = func(dev QMIDevice, timeout time.Duration, allowIMEIProbe bool) (QMIDevice, string) {
+		probes++
+		if dev.USBPath != "/sys/bus/usb/devices/2-4.1" {
+			t.Fatalf("probe USBPath = %q, want current physical topology", dev.USBPath)
+		}
+		return dev, "867018069509705"
+	}
+
+	p := &Pool{}
+	liveWorkerIndex := BuildWorkerDiscoveryIndex([]*Worker{{
+		ID: "telecom",
+		Config: config.DeviceConfig{
+			ID:            "telecom",
+			ControlDevice: "/dev/cdc-wdm1",
+			Interface:     "wwan1",
+			USBPath:       "/sys/bus/usb/devices/2-2",
+			ModemIMEI:     "862547055142811",
+		},
+	}}, false)
+
+	hardware := p.collectRescanHardware([]QMIDevice{{
+		ControlPath:  "/dev/cdc-wdm1",
+		NetInterface: "wwan1",
+		USBPath:      "/sys/bus/usb/devices/2-4.1",
+	}}, liveWorkerIndex)
+
+	if probes != 1 {
+		t.Fatalf("IMEI probes = %d, want 1 after USB topology changed", probes)
+	}
+	if len(hardware) != 1 || hardware[0].IMEI != "867018069509705" {
+		t.Fatalf("hardware = %+v, want freshly probed mobile modem", hardware)
+	}
+}
+
 func TestCollectRescanHardwarePopulatesNonQMIIMEIAndPaths(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	raw := "devices:\n- id: dev-mbim\n  device_backend: mbim\n  modem_imei: \"999999999999999\"\n  control_device: /dev/cdc-wdm1\n  interface: wwan1\n"

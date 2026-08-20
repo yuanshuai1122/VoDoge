@@ -108,7 +108,7 @@ func stubQMIRecoveryDiscovery(t *testing.T, devices []QMIDevice, imeis map[strin
 	}
 }
 
-func TestQMIRecoveryAttachmentResolverIMEINotMatchFallbacksToPathMatch(t *testing.T) {
+func TestQMIRecoveryAttachmentResolverRejectsKnownMismatchedIMEIOnPathMatch(t *testing.T) {
 	pool := NewPool(&config.Config{})
 	defer pool.cancel()
 
@@ -127,11 +127,30 @@ func TestQMIRecoveryAttachmentResolverIMEINotMatchFallbacksToPathMatch(t *testin
 		Interface:     "wwan0",
 	})
 
-	if !decision.Ready {
-		t.Fatalf("Ready=false, reason=%s", decision.Reason)
+	if decision.Ready {
+		t.Fatalf("Ready=true, want false when the same path reports a different IMEI: %#v", decision)
 	}
-	if decision.Attachment.ControlPath != "/dev/cdc-wdm0" {
-		t.Fatalf("ControlPath=%q want /dev/cdc-wdm0", decision.Attachment.ControlPath)
+}
+
+func TestQMIRecoveryAttachmentResolverFallsBackToPathWhenIMEIUnreadable(t *testing.T) {
+	pool := NewPool(&config.Config{})
+	defer pool.cancel()
+
+	restore := stubQMIRecoveryDiscovery(t, []QMIDevice{
+		{ControlPath: "/dev/cdc-wdm0", NetInterface: "wwan0", USBPath: "1-1"},
+	}, map[string]string{})
+	defer restore()
+
+	decision := pool.ResolveQMIRecoveryAttachment(config.DeviceConfig{
+		ID:            "dev-qmi",
+		DeviceBackend: "qmi",
+		ModemIMEI:     "target-imei",
+		ControlDevice: "/dev/cdc-wdm0",
+		Interface:     "wwan0",
+	})
+
+	if !decision.Ready || decision.Reason != "configured_attachment_seen" {
+		t.Fatalf("decision = %#v, want a path fallback while IMEI is unreadable", decision)
 	}
 }
 
