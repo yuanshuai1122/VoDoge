@@ -30,6 +30,14 @@ func (w *Worker) smsQMICore() qmiSMSCore {
 	return w.QMICore
 }
 
+// canPollSMSQMI avoids asking WMS for storage contents before the modem has
+// read an ICCID. EC20 returns "operation unsupported" for that request when
+// its UIM has no ATR, which is a card/contact condition rather than an SMS
+// transport failure. The next tick resumes polling once ICCID is available.
+func (w *Worker) canPollSMSQMI() bool {
+	return w != nil && strings.TrimSpace(w.CurrentICCID()) != ""
+}
+
 func (w *Worker) qmiSMSStorageHasIndex(storage uint8, index uint32) bool {
 	smsCore := w.smsQMICore()
 	if smsCore == nil {

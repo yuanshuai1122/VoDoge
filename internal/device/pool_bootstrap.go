@@ -747,7 +747,7 @@ func (p *Pool) AddWorkerFromConfig(devCfg config.DeviceConfig) (*Worker, error) 
 				switch worker.smsMode {
 				case smsModeAT:
 				case smsModeQMI:
-					if worker.QMICore != nil {
+					if worker.QMICore != nil && worker.canPollSMSQMI() {
 						if err := worker.CheckAllSMSQMI(); err != nil {
 							logger.Warn(fmt.Sprintf("[%s] QMI 轮询短信失败", worker.ID), "err", err)
 						}

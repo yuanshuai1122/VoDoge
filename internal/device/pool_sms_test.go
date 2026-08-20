@@ -42,3 +42,15 @@ func TestShouldDeferSMSPollWhenAPDUHeld(t *testing.T) {
 		t.Fatal("AKA lease must defer CMGL")
 	}
 }
+
+func TestCanPollSMSQMIRequiresICCID(t *testing.T) {
+	w := &Worker{}
+	if w.canPollSMSQMI() {
+		t.Fatal("canPollSMSQMI() = true without an ICCID")
+	}
+
+	w.state.Identity.ICCID = "8986000000000000000"
+	if !w.canPollSMSQMI() {
+		t.Fatal("canPollSMSQMI() = false with an ICCID")
+	}
+}

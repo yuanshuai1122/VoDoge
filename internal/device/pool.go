@@ -1904,7 +1904,7 @@ func (p *Pool) startAllSynchronousLegacy() error {
 						}
 					case smsModeQMI:
 						// QMI 模式：只走 QMI 轮询，不 fallback AT
-						if worker.QMICore != nil {
+						if worker.QMICore != nil && worker.canPollSMSQMI() {
 							if err := worker.CheckAllSMSQMI(); err != nil {
 								logger.Warn(fmt.Sprintf("[%s] QMI 轮询短信失败", worker.ID), "err", err)
 							}
