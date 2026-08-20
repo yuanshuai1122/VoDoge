@@ -2568,9 +2568,9 @@ func (m *Manager) SwitchProfile(ctx context.Context, targetICCID string, aidHex 
 	return err
 }
 
-func (m *Manager) SwitchProfileWithResult(ctx context.Context, targetICCID string, aidHex string) (SwitchProfileResult, error) {
+func (m *Manager) SwitchProfileWithResult(ctx context.Context, targetICCID string, aidHex string) (result SwitchProfileResult, err error) {
 	const operation = SwitchOperationEnableProfile
-	result := SwitchProfileResult{TargetICCID: targetICCID}
+	result = SwitchProfileResult{TargetICCID: targetICCID}
 	m.opMu.Lock()
 	writeStarted := time.Now()
 	switchSucceeded := false
@@ -2579,6 +2579,22 @@ func (m *Manager) SwitchProfileWithResult(ctx context.Context, targetICCID strin
 	var switchFailureErr error
 	defer func() {
 		if !switchSucceeded {
+			// 切卡失败的真实原因此前只回给了前端，一行日志都不留：
+			// 服务端只看得到 switch_phase=failed，运维和排查全是瞎的。
+			//
+			// 用具名返回值兜住**所有**退出路径——switchFailureErr 只在
+			// enableErr 那一处赋值，而无效 ICCID、找不到 AID、LPA 创建失败
+			// 等早退分支上它一直是 nil，连 onSwitchFailed 回调都拿不到原因。
+			if switchFailureErr == nil {
+				switchFailureErr = err
+			}
+			logger.Error("eSIM profile 切换失败",
+				"device", m.deviceID,
+				"target", targetICCID,
+				"aid", aidHex,
+				"switch_token", switchToken,
+				"started", switchStarted,
+				"err", switchFailureErr)
 			m.emitSwitchPhase(operation, switchToken, SwitchPhaseFailed)
 		}
 		m.logWriteOperationHold("switch_profile", writeStarted)

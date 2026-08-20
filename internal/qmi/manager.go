@@ -1629,30 +1629,58 @@ func (m *Manager) apduTransportProfile(channel byte) (string, apduarbiter.APDUCl
 }
 
 func (m *Manager) releaseAllAPDULeases(reason string) {
+	m.releaseAPDULeases(reason, false)
+}
+
+// releaseAPDULeases 清理 APDU 逻辑会话。
+//
+// keepEUICCWrite 保留 eSIM 自己的写卡通道。切卡前置钩子的用意是把**竞争者**
+// （VoWiFi AKA、SMSC 读卡等）赶走，免得它们和切卡抢同一张卡；但此前它把
+// eSIM 自己那条通道也一并清了，而 EnableProfile 的 APDU 正要从那条通道发出去。
+//
+// 结果就是切卡必然失败，真机日志：
+//
+//	切卡阶段 apdu_switching
+//	transmit APDU: qmi_apdu_session_invalidated
+//
+// 切卡完成后 eUICC 会自己 RESET，那时所有通道本来就失效，由 card_reset_settling
+// 之后的流程收尾——不需要在发命令之前先把自己的通道掐掉。
+func (m *Manager) releaseAPDULeases(reason string, keepEUICCWrite bool) {
 	if m == nil {
 		return
 	}
 	m.apduLeaseMu.Lock()
-	count := len(m.apduSessions)
-	clear(m.apduSessions)
+	count := 0
+	kept := 0
+	for ch, info := range m.apduSessions {
+		if keepEUICCWrite && info.Class == apduarbiter.APDUClassEUICCWrite {
+			kept++
+			continue
+		}
+		delete(m.apduSessions, ch)
+		count++
+	}
 	arbiter := m.apduArbiter
 	m.apduLeaseMu.Unlock()
 
 	if arbiter != nil {
 		arbiter.InvalidateSIMAuthReady(reason)
 	}
-	if count > 0 {
-		logger.Warn(fmt.Sprintf("[%s] APDU logical session registry 已清理", m.cfg.ID), "reason", reason, "session_count", count)
+	if count > 0 || kept > 0 {
+		logger.Warn(fmt.Sprintf("[%s] APDU logical session registry 已清理", m.cfg.ID),
+			"reason", reason, "session_count", count, "kept_euicc_write", kept)
 	}
 }
 
+// ReleaseAPDULeasesForSwitchTeardown 在切卡前赶走竞争的 APDU 使用方，
+// 但**保留 eSIM 自己的写卡通道**——EnableProfile 的 APDU 还要从它发出去。
 func (m *Manager) ReleaseAPDULeasesForSwitchTeardown() {
 	if m == nil {
 		return
 	}
 	m.qmiLifecycleMu.Lock()
 	defer m.qmiLifecycleMu.Unlock()
-	m.releaseAllAPDULeases("esim_switch_teardown")
+	m.releaseAPDULeases("esim_switch_teardown", true)
 }
 
 func (m *Manager) OpenEUICCLogicalChannel(ctx context.Context, slot byte, aid []byte) (byte, error) {
