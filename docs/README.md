@@ -6,6 +6,7 @@
 
 | 文档 | 说明 |
 |------|------|
+| [saas-blueprint.md](./saas-blueprint.md) | **SaaS 重构蓝图**：两仓库划分、垂直工厂抽象、边缘↔云协议、多区域数据模型、50 项任务分解。**新工程的起点，本仓库转为参考实现** |
 | [../DEPLOY.md](../DEPLOY.md) | **当前部署与升级入口**：Linux Compose、二进制/systemd、持久 PostgreSQL 卷与反向代理 |
 | [production-vm-ssh-tunnel.md](./production-vm-ssh-tunnel.md) | **NAT 后生产 VM**：systemd、最小权限 SSH 隧道、云端 Caddy 与验收 |
 | [hardware-bringup-vmware.md](./hardware-bringup-vmware.md) | **VMware 虚机 USB 直通**：`.vmx` 默认全禁、`Unknown error` 要靠重插、`allowCCID` 是独立闸门、客户机验收链 |
