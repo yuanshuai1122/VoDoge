@@ -22,6 +22,13 @@ type qmiSMSCoreStub struct {
 		Index uint32
 		Tag   qmi.MessageTagType
 	}
+	// ignoreTagFilter 让 stub 无视 ListSMS 的 tag 入参，把条目原样全返回。
+	//
+	// 默认的 stub 会老老实实按 tag 过滤——那模拟的是「守规矩的模组」，
+	// 比真固件更正确，所以它测不出真机上的问题：EC20 会把卡里的已发送存档
+	// 和草稿一并塞进 MTNotRead 的结果里。打开这个开关才能复现。
+	ignoreTagFilter bool
+
 	readResults map[string]*qmimanager.DecodedSMS
 	readErrors  map[string]error
 
@@ -56,7 +63,7 @@ func (s *qmiSMSCoreStub) ListSMS(storageType uint8, tag qmi.MessageTagType) ([]s
 		Tag   qmi.MessageTagType
 	}, 0)
 	for _, msg := range s.listByStorage[storageType] {
-		if msg.Tag == tag {
+		if s.ignoreTagFilter || msg.Tag == tag {
 			out = append(out, msg)
 		}
 	}
@@ -298,5 +305,87 @@ func TestHandleRawSMSQMIAcksDecodeFailure(t *testing.T) {
 	}
 	if stub.ackCalls[0].TransactionID != 0x55667788 {
 		t.Fatalf("ack transaction=0x%x, want 0x55667788", stub.ackCalls[0].TransactionID)
+	}
+}
+
+// EC20 固件不遵守 ListSMS 的 tag 过滤：卡上存的已发送存档（MOSent）和草稿
+// （MONotSent）会一并出现在 MTNotRead 的结果里。这些条目 WMS RAW_READ 读不了，
+// 而读失败并不会让它们消失——于是每 60 秒重试一次，日志刷满 ERROR 且永不收敛。
+//
+// 真机现场（移动卡插入 EC20 后，AT 侧看到的就是这三条）：
+//
+//	+CMGL: 0,"STO SENT","10086"
+//	+CMGL: 5,"STO SENT","10086"
+//	+CMGL: 6,"STO UNSENT",""
+//
+// 判据必须落在返回值自带的 msg.Tag 上，不能只信入参。
+func TestCheckAllSMSQMISkipsNonIncomingTags(t *testing.T) {
+	stub := &qmiSMSCoreStub{
+		ignoreTagFilter: true,
+		listByStorage: map[uint8][]struct {
+			Index uint32
+			Tag   qmi.MessageTagType
+		}{
+			0: {
+				{Index: 0, Tag: qmi.TagTypeMOSent},
+				{Index: 5, Tag: qmi.TagTypeMOSent},
+				{Index: 6, Tag: qmi.TagTypeMONotSent},
+			},
+		},
+	}
+	worker := &Worker{
+		ID:          "wwan0",
+		Pool:        &Pool{},
+		qmiSMS:      stub,
+		reassembler: smscodec.NewReassembler(),
+	}
+
+	if err := worker.CheckAllSMSQMI(); err != nil {
+		t.Fatalf("CheckAllSMSQMI() error=%v", err)
+	}
+	if len(stub.readCalls) != 0 {
+		t.Fatalf("尝试读取了 %v，want 空：已发送和草稿不是来信", stub.readCalls)
+	}
+	if len(stub.deleteCalls) != 0 {
+		t.Fatalf("删除了 %v，want 空：不该动用户卡上的已发送存档和草稿", stub.deleteCalls)
+	}
+}
+
+// 过滤不能做成全拒：同一批结果里混着真来信时，它仍要被读走。
+func TestCheckAllSMSQMIReadsIncomingAmongForeignTags(t *testing.T) {
+	stub := &qmiSMSCoreStub{
+		ignoreTagFilter: true,
+		listByStorage: map[uint8][]struct {
+			Index uint32
+			Tag   qmi.MessageTagType
+		}{
+			0: {
+				{Index: 0, Tag: qmi.TagTypeMOSent},
+				{Index: 3, Tag: qmi.TagTypeMTNotRead},
+				{Index: 6, Tag: qmi.TagTypeMONotSent},
+			},
+		},
+		readResults: map[string]*qmimanager.DecodedSMS{
+			"0:3": {
+				Index:     3,
+				Storage:   0,
+				Sender:    "10086",
+				Message:   "hello",
+				Timestamp: time.Unix(1700000002, 0),
+			},
+		},
+	}
+	worker := &Worker{
+		ID:          "wwan0",
+		Pool:        &Pool{},
+		qmiSMS:      stub,
+		reassembler: smscodec.NewReassembler(),
+	}
+
+	if err := worker.CheckAllSMSQMI(); err != nil {
+		t.Fatalf("CheckAllSMSQMI() error=%v", err)
+	}
+	if len(stub.readCalls) != 1 || stub.readCalls[0] != "0:3" {
+		t.Fatalf("readCalls=%v want [0:3]", stub.readCalls)
 	}
 }

@@ -108,6 +108,15 @@ func (w *Worker) CheckAllSMSQMI() error {
 	var errs []error
 	successes := 0
 
+	// 每条结果都要按 msg.Tag 再核一遍，不能只信 ListSMS 的入参。
+	//
+	// EC20 固件**不遵守**这个过滤条件：卡上存着的已发送存档（MOSent）和草稿
+	// （MONotSent）会一并出现在 MTNotRead 的结果里。而 WMS RAW_READ 读不了
+	// 这类条目，于是每轮轮询都会对同一批索引报 error=0x0049，60 秒一次，
+	// 永远不收敛——真机上就是这么坏的：移动卡插上后 0/5/6 三个索引反复失败，
+	// 而它们其实是 `+CMGL: 0,"STO SENT"` / `5,"STO SENT"` / `6,"STO UNSENT"`。
+	//
+	// 好在 ListSMS 的返回值里带着每条的真实 Tag，客户端复核一次即可。
 	for _, storage := range []uint8{0, 1} {
 		messages, err := smsCore.ListSMS(storage, qmi.TagTypeMTNotRead)
 		if err != nil {
@@ -116,6 +125,9 @@ func (w *Worker) CheckAllSMSQMI() error {
 		}
 		successes++
 		for _, msg := range messages {
+			if msg.Tag != qmi.TagTypeMTNotRead {
+				continue
+			}
 			key := fmt.Sprintf("%d:%d", storage, msg.Index)
 			if _, ok := seen[key]; ok {
 				continue
@@ -131,6 +143,9 @@ func (w *Worker) CheckAllSMSQMI() error {
 		}
 		successes++
 		for _, msg := range messages {
+			if msg.Tag != qmi.TagTypeMTRead {
+				continue
+			}
 			key := fmt.Sprintf("%d:%d", storage, msg.Index)
 			if _, ok := seen[key]; ok {
 				continue
